@@ -84,16 +84,21 @@ app.get("/api/registros", async (req, res) => {
   }
 });
 
-// --- ¡NUEVA RUTA! Obtener el estado de producción ---
+// --- RUTA GET /api/produccion (ACTUALIZADA) ---
+// Devuelve una lista (array) de productos, no un string.
 app.get("/api/produccion", async (req, res) => {
   try {
     const { rows } = await db.query("SELECT * FROM estado_produccion");
-    // Transforma el array [ {estacion_id: 1, ...}, {estacion_id: 2, ...} ]
-    // en un objeto { 1: "...", 2: "..." } para el frontend
     const estado = rows.reduce((acc, row) => {
-      acc[row.estacion_id] = row.producto_actual;
+      try {
+        // Intenta parsear el JSON de la DB. Si falla, devuelve array vacío.
+        acc[row.estacion_id] = JSON.parse(row.producto_actual || "[]");
+      } catch (e) {
+        acc[row.estacion_id] = [];
+      }
       return acc;
     }, {});
+    // Devuelve: { 1: ["Tanque", "Silla"], 2: ["Kayak"] }
     res.json(estado);
   } catch (err) {
     console.error(err.message);
@@ -101,23 +106,70 @@ app.get("/api/produccion", async (req, res) => {
   }
 });
 
-// --- ¡NUEVA RUTA! Actualizar el estado de producción ---
+// --- RUTA POST /api/produccion (ACTUALIZADA) ---
+// Añade un producto a la lista JSON, no la reemplaza.
 app.post("/api/produccion", async (req, res) => {
-  const { estacion_id, producto_actual } = req.body;
+  const { estacion_id, producto } = req.body; // Cambiado de 'producto_actual' a 'producto'
 
-  if (!estacion_id || !producto_actual) {
-    return res
-      .status(400)
-      .json({ msg: "Faltan estacion_id o producto_actual" });
+  if (!estacion_id || !producto) {
+    return res.status(400).json({ msg: "Faltan estacion_id o producto" });
   }
 
+  const client = await db.connect();
   try {
-    const { rows } = await db.query(
+    await client.query("BEGIN");
+
+    // 1. Obtenemos la lista actual
+    const { rows: currentRows } = await client.query(
+      "SELECT producto_actual FROM estado_produccion WHERE estacion_id = $1 FOR UPDATE",
+      [estacion_id]
+    );
+
+    let currentList = [];
+    try {
+      currentList = JSON.parse(currentRows[0].producto_actual || "[]");
+    } catch (e) {
+      currentList = []; // Si hay JSON inválido, reseteamos
+    }
+
+    // 2. Añadimos el nuevo producto a la lista
+    currentList.push(producto);
+
+    // 3. Guardamos la lista actualizada (como string JSON)
+    const newListString = JSON.stringify(currentList);
+    const { rows } = await client.query(
       `UPDATE estado_produccion 
        SET producto_actual = $1 
        WHERE estacion_id = $2
        RETURNING *`,
-      [producto_actual, estacion_id]
+      [newListString, estacion_id]
+    );
+
+    await client.query("COMMIT");
+
+    // Devolvemos la lista actualizada (ya parseada)
+    res.json(currentList);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err.message);
+    res.status(500).send("Error en el servidor");
+  } finally {
+    client.release();
+  }
+});
+
+// --- ¡NUEVA RUTA! Limpiar la lista de productos de una estación ---
+app.delete("/api/produccion/:estacion_id", async (req, res) => {
+  const { estacion_id } = req.params;
+
+  try {
+    // Resetea la lista a un array vacío
+    const { rows } = await db.query(
+      `UPDATE estado_produccion 
+       SET producto_actual = '[]' 
+       WHERE estacion_id = $1
+       RETURNING *`,
+      [estacion_id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -126,9 +178,8 @@ app.post("/api/produccion", async (req, res) => {
   }
 });
 
-// Ruta de Sincronización Manual
+// Ruta de Sincronización Manual (Sin cambios)
 app.post("/api/sincronizar", async (req, res) => {
-  // ... (sin cambios)
   const resultado = await sincronizarBaseDeDatos();
   if (resultado.success) {
     res.json({ msg: resultado.msg });
@@ -137,9 +188,8 @@ app.post("/api/sincronizar", async (req, res) => {
   }
 });
 
-// Ruta de Prueba de Drive
+// Ruta de Prueba de Drive (Sin cambios)
 app.get("/api/leer-archivo", async (req, res) => {
-  // ... (sin cambios)
   try {
     const contenidoDelArchivo = await leerArchivoHorno();
     res.type("text/plain");
