@@ -1,98 +1,101 @@
-/**
- * Esta función "parsea" (traduce) el contenido crudo del .txt
- * a un array de objetos que la base de datos entiende,
- * FILTRANDO eventos duplicados y de "encendido".
- */
+// backend/parser.js
+
 function parsearLog(textoCrudo) {
-  const registros = []; // Aquí irán los registros filtrados
+  const registros = [];
+  const currentState = { 1: null, 2: null };
 
-  // 1. Mantenemos un "mapa" del estado actual de cada estación
-  const currentState = {
-    1: null, // Estado de la Estación 1 (ej: 'cocinando' o 'enfriando')
-    2: null, // Estado de la Estación 2
-  };
-
-  // 2. Dividimos el texto en líneas. Asumimos que la MÁS ANTIGUA está PRIMERO.
   const lineas = textoCrudo.split("\n");
-  const regex = /^E#(\d{2}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.*)$/;
+
+  // Definimos DOS "traductores", uno para Eventos y otro para Alarmas
+  const regexEvento = /^E#(\d{2}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.*)$/;
+  const regexAlarma = /^A#(\d{2}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})\s+(.*)$/;
 
   let duplicadosIgnorados = 0;
   let lineasNoCoincidentes = 0;
-  let encendidoIgnorado = 0; // <-- Contador para los "ENCENDIÓ EL HORNO"
+  let encendidoIgnorado = 0;
 
   console.log(
     `[Parser] Texto crudo recibido. Procesando ${lineas.length} líneas...`
   );
 
-  // 3. Recorremos cada línea (de la más antigua a la más nueva)
   for (const linea of lineas) {
     const lineaLimpia = linea.trim();
-    const match = lineaLimpia.match(regex);
 
-    if (match) {
-      try {
-        // Datos crudos del log
-        const fechaOriginal = match[1];
-        const hora = match[2];
-        const accionLimpia = match[3].trim();
+    // Intentamos "traducir" como Evento
+    const matchEvento = lineaLimpia.match(regexEvento);
+    // Intentamos "traducir" como Alarma
+    const matchAlarma = lineaLimpia.match(regexAlarma);
 
-        // --- ¡NUEVO FILTRO! ---
-        // Ignoramos la línea si es "ENCENDIÓ EL HORNO"
+    try {
+      if (matchEvento) {
+        // --- ES UN EVENTO E# ---
+        const fechaOriginal = matchEvento[1];
+        const hora = matchEvento[2];
+        const accionLimpia = matchEvento[3].trim();
+
         if (accionLimpia.toUpperCase() === "ENCENDIÓ EL HORNO") {
-          encendidoIgnorado++; // Contamos el evento ignorado
-          continue; // <-- Salta al siguiente loop, ignorando esta línea
+          encendidoIgnorado++;
+          continue;
         }
-        // --- FIN DEL NUEVO FILTRO ---
 
         let stationId = null;
         let newState = null;
 
-        // Determinamos la estación y el nuevo estado del evento
         if (accionLimpia.includes("Estacion 1")) stationId = 1;
         else if (accionLimpia.includes("Estacion 2")) stationId = 2;
 
         if (accionLimpia.includes("Se inicio ciclo")) newState = "cocinando";
         else if (accionLimpia.includes("Enfriando")) newState = "enfriando";
 
-        // 4. LA LÓGICA DE FILTRADO
-        // Si este evento tiene una estación y un estado...
         if (stationId && newState) {
-          // Comparamos el estado del evento (newState) con el guardado (currentState[stationId])
           if (currentState[stationId] !== newState) {
-            // ¡HUBO UN CAMBIO DE ESTADO!
-            // 1. Guardamos el nuevo estado
             currentState[stationId] = newState;
-
-            // 2. Formateamos y guardamos el registro en la base de datos
-            const partesFecha = fechaOriginal.split("-");
-            const fechaFormateada = `20${partesFecha[2]}-${partesFecha[1]}-${partesFecha[0]}`;
+            const fechaFormateada = `20${fechaOriginal.split("-")[2]}-${
+              fechaOriginal.split("-")[1]
+            }-${fechaOriginal.split("-")[0]}`;
+            // Añadimos el 'tipo'
             registros.push({
               fecha: fechaFormateada,
               hora,
               accion: accionLimpia,
+              tipo: "EVENTO",
             });
           } else {
-            // NO HUBO CAMBIO (ej: E1 ya estaba 'cocinando' y llegó otro 'Se inicio ciclo E1')
-            // Ignoramos este evento duplicado.
             duplicadosIgnorados++;
           }
         } else {
-          // Es un evento E# pero no es 'cocinando' ni 'enfriando'
-          // (ej: "Mantenimiento"). Lo guardamos.
-          const partesFecha = fechaOriginal.split("-");
-          const fechaFormateada = `20${partesFecha[2]}-${partesFecha[1]}-${partesFecha[0]}`;
+          const fechaFormateada = `20${fechaOriginal.split("-")[2]}-${
+            fechaOriginal.split("-")[1]
+          }-${fechaOriginal.split("-")[0]}`;
           registros.push({
             fecha: fechaFormateada,
             hora,
             accion: accionLimpia,
+            tipo: "EVENTO",
           });
         }
-      } catch (e) {
-        console.warn(`Error parseando línea: "${lineaLimpia}"`, e);
+      } else if (matchAlarma) {
+        // --- ¡ES UNA ALARMA A#! ---
+        // No filtramos duplicados, solo la guardamos
+        const fechaOriginal = matchAlarma[1];
+        const hora = matchAlarma[2];
+        const accionLimpia = matchAlarma[3].trim();
+
+        const fechaFormateada = `20${fechaOriginal.split("-")[2]}-${
+          fechaOriginal.split("-")[1]
+        }-${fechaOriginal.split("-")[0]}`;
+        // Añadimos el 'tipo'
+        registros.push({
+          fecha: fechaFormateada,
+          hora,
+          accion: accionLimpia,
+          tipo: "ALARMA",
+        });
+      } else if (lineaLimpia.length > 0) {
+        lineasNoCoincidentes++;
       }
-    } else if (lineaLimpia.length > 0) {
-      // Líneas que no son E# (como las A# de alarma)
-      lineasNoCoincidentes++;
+    } catch (e) {
+      console.warn(`Error parseando línea: "${lineaLimpia}"`, e);
     }
   }
 
@@ -102,9 +105,9 @@ function parsearLog(textoCrudo) {
   );
   console.log(
     `[Parser] Total de líneas "ENCENDIÓ EL HORNO" ignoradas: ${encendidoIgnorado}`
-  ); // <-- Nuevo log
+  );
   console.log(
-    `[Parser] Total de líneas no-E# (Alarmas, etc.) ignoradas: ${lineasNoCoincidentes}`
+    `[Parser] Total de líneas no-E# / no-A# ignoradas: ${lineasNoCoincidentes}`
   );
 
   return registros;

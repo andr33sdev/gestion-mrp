@@ -1,22 +1,23 @@
 const express = require("express");
 const cors = require("cors");
-const db = require("./db"); // Importa el pool de db
+const db = require("./db");
 const { leerArchivoHorno, setupAuth } = require("./google-drive");
 const { parsearLog } = require("./parser");
-const format = require("pg-format"); // Para el bulk-insert
+const format = require("pg-format");
 
 const app = express();
+// --- CAMBIO: Usamos el puerto de Render o 4000 si es local ---
 const PORT = process.env.PORT || 4000;
 
 // --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
 
-// --- FUNCIÓN HELPER DE SINCRONIZACIÓN ---
+// --- FUNCIÓN HELPER DE SINCRONIZACIÓN (¡ACTUALIZADA!) ---
 async function sincronizarBaseDeDatos() {
   console.log("[TIMER] ¡Iniciando sincronización automática!");
 
-  const client = await db.connect(); // db ahora es el pool
+  const client = await db.connect();
   console.log("[TIMER] Cliente de base de datos conectado.");
 
   try {
@@ -28,6 +29,7 @@ async function sincronizarBaseDeDatos() {
     console.log("[TIMER] Paso 2: Parseando el texto...");
     const registros = parsearLog(textoCrudo);
     if (registros.length === 0) {
+      // ... (código de error sin cambios)
       console.log("[TIMER] No se encontraron registros válidos en el archivo.");
       client.release();
       return { success: false, msg: "No se encontraron registros válidos." };
@@ -37,13 +39,15 @@ async function sincronizarBaseDeDatos() {
       `[TIMER] Paso 3: Sincronizando ${registros.length} registros...`
     );
 
-    // 3. EJECUTAR LA TRANSACCIÓN
+    // 3. EJECUTAR LA TRANSACCIÓN (¡ACTUALIZADA!)
     await client.query("BEGIN");
     await client.query("DELETE FROM registros");
 
-    const valores = registros.map((r) => [r.fecha, r.hora, r.accion]);
+    // --- CAMBIO: Mapeamos el 'tipo' también ---
+    const valores = registros.map((r) => [r.fecha, r.hora, r.accion, r.tipo]);
+    // --- CAMBIO: Insertamos la nueva columna 'tipo' ---
     const consulta = format(
-      "INSERT INTO registros (fecha, hora, accion) VALUES %L",
+      "INSERT INTO registros (fecha, hora, accion, tipo) VALUES %L",
       valores
     );
 
@@ -73,18 +77,14 @@ app.get("/", (req, res) => {
   res.send("¡Mi servidor de backend funciona!");
 });
 
-// RUTA GET: Obtener todos los registros (¡LA VERSIÓN CORREGIDA!)
+// --- RUTA GET: (¡ACTUALIZADA!) ---
 app.get("/api/registros", async (req, res) => {
   try {
-    // 1. Convierte 'fecha' (DATE) y 'hora' (TIME) a texto (TEXT).
-    // 2. Los concatena (ej: '2025-11-06 07:45:08').
-    // 3. Convierte esa cadena de texto a un TIMESTAMP.
-    // 4. LE AVISA a Postgres que ese timestamp es hora 'America/Argentina/Buenos_Aires'.
-    // 5. Postgres lo convierte a UTC (con la 'Z') para que Javascript lo entienda.
     const { rows } = await db.query(`
       SELECT 
         id, 
         accion,
+        tipo, -- <-- ¡NUEVA COLUMNA ENVIADA AL FRONTEND!
         CAST(fecha::TEXT || ' ' || hora::TEXT AS TIMESTAMP) 
           AT TIME ZONE 'America/Argentina/Buenos_Aires' AS timestamp
       FROM registros 
@@ -97,6 +97,8 @@ app.get("/api/registros", async (req, res) => {
     res.status(500).send("Error en el servidor");
   }
 });
+
+// (El resto de rutas y la función iniciarServidor no cambian)
 
 // RUTA POST: Sincronización manual
 app.post("/api/sincronizar", async (req, res) => {
@@ -123,22 +125,14 @@ app.get("/api/leer-archivo", async (req, res) => {
 
 // --- FUNCIÓN PARA INICIAR EL SERVIDOR ---
 async function iniciarServidor() {
-  // 1. Nos conectamos a Google Drive
   await setupAuth();
-
-  // 2. Iniciamos el servidor web
   app.listen(PORT, () => {
     console.log(`Servidor corriendo en http://localhost:${PORT}`);
   });
-
-  // 3. Ejecuta la sincronización AHORA MISMO
   console.log("Ejecutando sincronización inicial...");
   await sincronizarBaseDeDatos();
-
-  // 4. La programa para cada 2 minutos
   const DOS_MINUTOS = 2 * 60 * 1000;
   setInterval(sincronizarBaseDeDatos, DOS_MINUTOS);
-
   console.log(`La sincronización automática se ejecutará cada 2 minutos.`);
 }
 
