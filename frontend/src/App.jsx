@@ -1,8 +1,7 @@
 // src/App.jsx
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-// --- ¡CAMBIO CORREGIDO! ---
-// Unificamos todos los íconos en el paquete principal 'fa'
+// --- CAMBIO: Importamos el ícono de Alerta ---
 import {
   FaFire,
   FaSnowflake,
@@ -11,26 +10,18 @@ import {
   FaChartPie,
   FaHistory,
   FaTachometerAlt,
+  FaExclamationTriangle, // <-- Ícono para el nuevo menú
 } from "react-icons/fa";
-// --- Fin del cambio ---
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
+// --- CAMBIO: Ya no importamos 'recharts' (quitamos el gráfico) ---
 
 // --- Constantes ---
 const API_URL = "https://horno-backend.onrender.com/api/registros";
 const POLLING_INTERVAL = 10000;
 const HORAS_TIMEOUT_ENFRIADO = 2;
-const MAX_HORAS_CICLO_PROMEDIO = 4; // Límite para el promedio Y el gráfico
+const MAX_HORAS_CICLO_PROMEDIO = 4;
+const ALARMA_WINDOW_HOURS = 24; // Mostrar alarmas de las últimas 24 horas
 
-// --- FUNCIÓN AUXILIAR 1: Formatear Duración ---
+// --- (Las funciones formatDuration y getStationStatus no cambian) ---
 function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
@@ -41,10 +32,8 @@ function formatDuration(ms) {
     .toString()
     .padStart(2, "0")}`;
 }
-
-// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 function getStationStatus(stationId, allRecords) {
-  // 1. Get Status y Last Event
+  // (Esta función es idéntica a la versión anterior)
   const lastEvent = allRecords.find((reg) =>
     reg.accion.includes(`Estacion ${stationId}`)
   );
@@ -55,12 +44,9 @@ function getStationStatus(stationId, allRecords) {
     if (lastEvent.accion.includes("Se inicio ciclo")) status = "COCINANDO";
     else if (lastEvent.accion.includes("Enfriando")) status = "ENFRIANDO";
   }
-  // 2. Filtrar todos los inicios de ciclo
   const cycleStartEvents = allRecords.filter((reg) =>
     reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
   );
-
-  // 3. Lógica de Promedio y Ciclo Anterior
   let cycleDuration = "N/A";
   let averageCycleTime = "N/A";
   let averageCycleTimeMs = null;
@@ -89,7 +75,6 @@ function getStationStatus(stationId, allRecords) {
       averageCycleTimeMs = avgMs;
     }
   }
-  // 4. Get Hora de Inicio del Ciclo EN VIVO
   let liveCycleStartTime = null;
   if (status === "COCINANDO" || status === "ENFRIANDO") {
     if (cycleStartEvents[0]) {
@@ -100,7 +85,6 @@ function getStationStatus(stationId, allRecords) {
       }
     }
   }
-  // 5. KPI: Ciclos de Hoy
   let cyclesToday = 0;
   try {
     const today = new Date();
@@ -116,7 +100,6 @@ function getStationStatus(stationId, allRecords) {
   } catch (e) {
     console.error(e);
   }
-  // 6. Lógica de Timeout
   if (status === "ENFRIANDO") {
     try {
       const enfriandoStartTime = new Date(lastEventTimestamp);
@@ -131,7 +114,6 @@ function getStationStatus(stationId, allRecords) {
       console.error(e);
     }
   }
-  // 7. Devolvemos todo
   return {
     status,
     lastEvent: lastEvent || null,
@@ -143,11 +125,10 @@ function getStationStatus(stationId, allRecords) {
   };
 }
 
-// --- Componente de la Tarjeta de Estación ---
+// --- Componente de la Tarjeta de Estación (Sin cambios) ---
 function StationCard({ title, data }) {
+  // (Este componente es idéntico a la versión anterior)
   const [liveDuration, setLiveDuration] = useState("---");
-
-  // Animaciones
   const animations = {
     COCINANDO: {
       opacity: [1, 0.6, 1],
@@ -159,7 +140,6 @@ function StationCard({ title, data }) {
     },
     INACTIVA: { opacity: 1, rotate: 0 },
   };
-  // Estilos
   const statusStyles = {
     COCINANDO: {
       bgColor: "bg-gradient-to-br from-red-700 to-red-900",
@@ -179,8 +159,6 @@ function StationCard({ title, data }) {
   };
   const styles = statusStyles[data.status];
   const IconComponent = styles.icon;
-
-  // Efecto Timer
   useEffect(() => {
     if (!data.liveCycleStartTime) {
       setLiveDuration("---");
@@ -195,8 +173,6 @@ function StationCard({ title, data }) {
     const timerId = setInterval(updateDuration, 1000);
     return () => clearInterval(timerId);
   }, [data.liveCycleStartTime]);
-
-  // Formateador de fecha
   const formatFullTimestamp = (timestampString) => {
     if (!timestampString) return { fecha: "N/A", hora: "N/A" };
     const date = new Date(timestampString);
@@ -214,7 +190,6 @@ function StationCard({ title, data }) {
   const { fecha: lastEventFecha, hora: lastEventHora } = formatFullTimestamp(
     data.lastEvent?.timestamp
   );
-
   return (
     <div
       className={`rounded-xl shadow-2xl p-6 ${styles.bgColor} transition-all duration-500`}
@@ -278,6 +253,88 @@ function StationCard({ title, data }) {
   );
 }
 
+// --- CAMBIO 2: NUEVO COMPONENTE: Menú Desplegable de Alarmas ---
+function AlarmMenu({ alarms }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (alarms.length === 0) {
+    return null; // No renderizar nada si no hay alarmas
+  }
+
+  // Formateador de hora local
+  const formatTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const options = { timeZone: "America/Argentina/Buenos_Aires" };
+    return date.toLocaleTimeString("es-AR", {
+      ...options,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  // Variantes de animación para Framer Motion
+  const dropdownVariants = {
+    closed: {
+      opacity: 0,
+      scaleY: 0, // Anima la altura (escala)
+      transition: { duration: 0.2, ease: "easeOut" },
+    },
+    open: {
+      opacity: 1,
+      scaleY: 1, // Altura completa
+      transition: { duration: 0.3, ease: "easeIn" },
+    },
+  };
+
+  return (
+    <div className="relative mb-8 w-full md:w-1/2 mx-auto z-10">
+      {" "}
+      {/* Contenedor relativo para el dropdown */}
+      {/* 1. El Botón/Icono de Alerta */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full bg-red-700 text-white p-3 rounded-lg shadow-lg flex items-center justify-center font-bold text-lg hover:bg-red-600 transition-colors"
+      >
+        <motion.div
+          animate={{ scale: [1, 1.2, 1] }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <FaExclamationTriangle className="mr-3" />
+        </motion.div>
+        {alarms.length} Alarma(s) en las últimas {ALARMA_WINDOW_HOURS}hs
+      </button>
+      {/* 2. El Menú Desplegable Animado */}
+      <motion.div
+        initial="closed"
+        animate={isOpen ? "open" : "closed"}
+        variants={dropdownVariants}
+        // Tailwind: 'absolute' para flotar, 'transform-origin-top' para la animación de escala
+        className="absolute w-full bg-slate-700 rounded-b-lg shadow-xl overflow-hidden transform-origin-top"
+      >
+        {/* Lista de alarmas */}
+        <div className="p-4 max-h-60 overflow-y-auto">
+          {" "}
+          {/* Límite de altura y scroll */}
+          {alarms.map((alarm) => (
+            <div
+              key={alarm.id}
+              className="flex items-start p-2 border-b border-slate-600 last:border-b-0"
+            >
+              <FaExclamationTriangle className="text-yellow-300 mr-3 mt-1 flex-shrink-0" />
+              <div>
+                <span className="font-semibold text-gray-200">
+                  ({formatTime(alarm.timestamp)})
+                </span>
+                <p className="text-gray-300">{alarm.accion}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // --- Componente Principal de la App ---
 export default function App() {
   const [registros, setRegistros] = useState([]);
@@ -285,7 +342,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
-  // Polling
+  // Polling (Sin cambios)
   useEffect(() => {
     const fetchRegistros = () => {
       fetch(API_URL)
@@ -304,8 +361,9 @@ export default function App() {
     return () => clearInterval(intervalId);
   }, []);
 
-  // Pre-cálculo para la tabla
+  // Pre-cálculo para la tabla (Sin cambios)
   const cycleTimeMap = useMemo(() => {
+    // (Lógica idéntica)
     const station1Starts = registros.filter((reg) =>
       reg.accion.includes("Se inicio ciclo Estacion 1")
     );
@@ -335,50 +393,28 @@ export default function App() {
     return newMap;
   }, [registros]);
 
-  // --- Procesamiento de datos para el gráfico ---
-  const cycleChartData = useMemo(() => {
-    const combinedData = [];
-    const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60; // ej. 4 * 60 = 240 minutos
+  // --- CAMBIO: Eliminamos 'cycleChartData' ---
+  // (El useMemo para el gráfico de líneas fue eliminado)
 
-    const processStationCycles = (stationId, stationName) => {
-      const starts = registros.filter((reg) =>
-        reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
-      );
-      for (let i = 0; i < starts.length - 1; i++) {
-        const currentEvent = starts[i];
-        const previousEvent = starts[i + 1];
-        try {
-          const date1 = new Date(currentEvent.timestamp);
-          const date2 = new Date(previousEvent.timestamp);
-          const diffMs = date1.getTime() - date2.getTime();
-          const durationMinutes = diffMs / (1000 * 60);
+  // --- NUEVO: Pre-cálculo para el Menú de Alarmas ---
+  const recentAlarms = useMemo(() => {
+    const now = new Date();
+    const windowMs = ALARMA_WINDOW_HOURS * 60 * 60 * 1000;
+    const pastLimit = now.getTime() - windowMs;
 
-          if (durationMinutes > 0 && durationMinutes <= maxMinutes) {
-            combinedData.push({
-              timestamp: currentEvent.timestamp,
-              [stationName]: durationMinutes,
-            });
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    };
-
-    processStationCycles(1, "Estación 1");
-    processStationCycles(2, "Estación 2");
-    return combinedData
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-      .slice(-30);
+    return registros.filter(
+      (reg) =>
+        reg.tipo === "ALARMA" && new Date(reg.timestamp).getTime() > pastLimit
+    );
   }, [registros]);
 
-  // Derivamos los estados
+  // Derivamos los estados (Sin cambios)
   const statusEstacion1 = getStationStatus(1, registros);
   const statusEstacion2 = getStationStatus(2, registros);
   const avgMsEstacion1 = statusEstacion1.averageCycleTimeMs;
   const avgMsEstacion2 = statusEstacion2.averageCycleTimeMs;
 
-  // Paginación
+  // Paginación (Sin cambios)
   const totalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
   const historialPaginado = registros.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
@@ -388,18 +424,7 @@ export default function App() {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
 
-  // --- Formateador para el eje X del gráfico ---
-  const formatXAxis = (timestamp) => {
-    const date = new Date(timestamp);
-    const options = { timeZone: "America/Argentina/Buenos_Aires" };
-    return date.toLocaleDateString("es-AR", {
-      ...options,
-      day: "2-digit",
-      month: "2-digit",
-    });
-  };
-
-  // Carga
+  // Carga (Sin cambios)
   if (cargando) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900 text-white text-2xl animate-pulse">
@@ -416,92 +441,32 @@ export default function App() {
           Monitor en Vivo - Horno de Rotomoldeo
         </h1>
 
-        {/* Tarjetas de Estaciones */}
+        {/* --- CAMBIO: Renderizamos el nuevo Menú de Alarmas --- */}
+        <AlarmMenu alarms={recentAlarms} />
+
+        {/* Tarjetas de Estaciones (Sin cambios) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 mb-12">
           <StationCard title="Estación 1 (Izquierda)" data={statusEstacion1} />
           <StationCard title="Estación 2 (Derecha)" data={statusEstacion2} />
         </div>
 
-        {/* Gráfico de Líneas */}
-        <h2 className="text-3xl font-semibold mb-6">
-          Evolución de Tiempos de Ciclo (Últimos 30)
-        </h2>
-        <div className="bg-slate-800 rounded-lg shadow-xl p-6 h-[400px] mb-12">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={cycleChartData}
-              margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-              <XAxis
-                dataKey="timestamp"
-                stroke="#94a3b8"
-                tickFormatter={formatXAxis}
-                padding={{ left: 20, right: 20 }}
-              />
-              <YAxis
-                stroke="#94a3b8"
-                allowDecimals={false}
-                label={{
-                  value: "Duración (Minutos)",
-                  angle: -90,
-                  position: "insideLeft",
-                  fill: "#94a3b8",
-                  dy: 40,
-                }}
-                domain={[25, "dataMax + 10"]}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "rgba(30, 41, 59, 0.9)",
-                  borderColor: "#334155",
-                  borderRadius: "8px",
-                }}
-                labelStyle={{ color: "#cbd5e1" }}
-                formatter={(value) => [`${value.toFixed(0)} minutos`, null]}
-                labelFormatter={(label) =>
-                  new Date(label).toLocaleString("es-AR", {
-                    timeZone: "America/Argentina/Buenos_Aires",
-                    dateStyle: "short",
-                    timeStyle: "short",
-                  })
-                }
-              />
-              <Legend wrapperStyle={{ color: "#cbd5e1" }} />
-              <Line
-                type="monotone"
-                dataKey="Estación 1"
-                stroke="#c0392b" // Rojo
-                strokeWidth={2}
-                connectNulls
-                dot={{ r: 4 }}
-                activeDot={{ r: 8 }}
-              />
-              <Line
-                type="monotone"
-                dataKey="Estación 2"
-                stroke="#2980b9" // Azul
-                strokeWidth={2}
-                connectNulls
-                dot={{ r: 4 }}
-                activeDot={{ r: 8 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+        {/* --- CAMBIO: Eliminamos la sección del gráfico de líneas --- */}
 
-        {/* Tabla de Historial Reciente */}
+        {/* Tabla de Historial Reciente (ACTUALIZADA con 'tipo') */}
         <h2 className="text-3xl font-semibold mb-6">
           Historial Reciente (Global)
         </h2>
         <div className="bg-slate-800 rounded-lg shadow-xl overflow-x-auto">
-          <table className="w-full table-auto min-w-[700px]">
+          <table className="w-full table-auto min-w-[800px]">
             <thead className="bg-slate-700 text-left text-xs uppercase text-gray-400">
               <tr>
-                <th className="px-4 py-3">Fecha</th>
-                <th className="px-4 py-3">Hora</th>
-                <th className="px-4 py-3">Acción</th>
-                <th className="px-4 py-3">Tiempo de Ciclo (HH:MM:SS)</th>
+                <th className="px-4 py-3 text-center">Fecha</th>
+                <th className="px-4 py-3 text-center">Hora</th>
+                <th className="px-4 py-3 text-center">Tipo</th>
+                <th className="px-4 py-3 text-center">Acción</th>
+                <th className="px-4 py-3 text-center">
+                  Tiempo de Ciclo (HH:MM:SS)
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
@@ -537,11 +502,30 @@ export default function App() {
                   }
                 }
 
+                // Lógica de Etiqueta de Tipo
+                const isAlarma = reg.tipo === "ALARMA";
+                const tipoClass = isAlarma
+                  ? "bg-red-600/90 text-red-100"
+                  : "bg-blue-600/90 text-blue-100";
+
                 return (
-                  <tr key={reg.id} className="hover:bg-slate-700/50">
+                  <tr
+                    key={reg.id}
+                    className="hover:bg-slate-700/50 text-center"
+                  >
                     <td className="px-4 py-3 text-sm">{fechaStr}</td>
                     <td className="px-4 py-3 text-sm font-mono">{horaStr}</td>
-                    <td className="px-4 py-3">{reg.accion}</td>
+
+                    {/* Celda de Tipo */}
+                    <td className="px-4 py-3 text-center">
+                      <span
+                        className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${tipoClass}`}
+                      >
+                        {reg.tipo}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-3 text-left">{reg.accion}</td>
                     <td
                       className={`px-4 py-3 text-sm font-mono ${slowCycleClass}`}
                     >
@@ -554,7 +538,7 @@ export default function App() {
           </table>
         </div>
 
-        {/* Controles de Paginación */}
+        {/* Controles de Paginación (Sin cambios) */}
         <div className="flex justify-between items-center mt-6 text-gray-300">
           <button
             onClick={handlePrevPage}
