@@ -1,23 +1,36 @@
 // src/App.jsx
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
+// --- ¡CAMBIO CORREGIDO! ---
+// Unificamos todos los íconos en el paquete principal 'fa'
 import {
   FaFire,
   FaSnowflake,
   FaPowerOff,
-  FaHistory,
   FaHourglassHalf,
   FaChartPie,
+  FaHistory,
   FaTachometerAlt,
 } from "react-icons/fa";
+// --- Fin del cambio ---
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 
 // --- Constantes ---
 const API_URL = "https://horno-backend.onrender.com/api/registros";
 const POLLING_INTERVAL = 10000;
 const HORAS_TIMEOUT_ENFRIADO = 2;
-const MAX_HORAS_CICLO_PROMEDIO = 4;
+const MAX_HORAS_CICLO_PROMEDIO = 4; // Límite para el promedio Y el gráfico
 
-// --- FUNCIÓN AUXILIAR 1: Formatear Duración (Sin cambios) ---
+// --- FUNCIÓN AUXILIAR 1: Formatear Duración ---
 function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
@@ -29,9 +42,9 @@ function formatDuration(ms) {
     .padStart(2, "0")}`;
 }
 
-// --- FUNCIÓN AUXILIAR 2: Obtener Estado (¡ACTUALIZADA!) ---
+// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 function getStationStatus(stationId, allRecords) {
-  // 1. Get Status y Last Event (sin cambios)
+  // 1. Get Status y Last Event
   const lastEvent = allRecords.find((reg) =>
     reg.accion.includes(`Estacion ${stationId}`)
   );
@@ -42,26 +55,22 @@ function getStationStatus(stationId, allRecords) {
     if (lastEvent.accion.includes("Se inicio ciclo")) status = "COCINANDO";
     else if (lastEvent.accion.includes("Enfriando")) status = "ENFRIANDO";
   }
-
-  // 2. Filtrar todos los inicios de ciclo (sin cambios)
+  // 2. Filtrar todos los inicios de ciclo
   const cycleStartEvents = allRecords.filter((reg) =>
     reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
   );
 
-  // (Quitamos el cálculo de totalCycles, ya no se usa)
-
-  // 3. Lógica de Promedio y Ciclo Anterior (sin cambios)
+  // 3. Lógica de Promedio y Ciclo Anterior
   let cycleDuration = "N/A";
   let averageCycleTime = "N/A";
+  let averageCycleTimeMs = null;
   const allCycleDurationsMs = [];
-
   if (cycleStartEvents.length >= 2) {
     for (let i = 0; i < cycleStartEvents.length - 1; i++) {
       try {
         const date1 = new Date(cycleStartEvents[i].timestamp);
         const date2 = new Date(cycleStartEvents[i + 1].timestamp);
         const diffMs = date1.getTime() - date2.getTime();
-
         if (i === 0) {
           cycleDuration = formatDuration(diffMs);
         }
@@ -70,19 +79,17 @@ function getStationStatus(stationId, allRecords) {
         console.error(e);
       }
     }
-
     const last10Durations = allCycleDurationsMs.slice(0, 10);
     const maxMs = MAX_HORAS_CICLO_PROMEDIO * 60 * 60 * 1000;
     const validDurations = last10Durations.filter((ms) => ms < maxMs);
-
     if (validDurations.length > 0) {
       const totalMs = validDurations.reduce((sum, ms) => sum + ms, 0);
       const avgMs = totalMs / validDurations.length;
       averageCycleTime = formatDuration(avgMs);
+      averageCycleTimeMs = avgMs;
     }
   }
-
-  // 4. Get Hora de Inicio del Ciclo EN VIVO (sin cambios)
+  // 4. Get Hora de Inicio del Ciclo EN VIVO
   let liveCycleStartTime = null;
   if (status === "COCINANDO" || status === "ENFRIANDO") {
     if (cycleStartEvents[0]) {
@@ -93,8 +100,7 @@ function getStationStatus(stationId, allRecords) {
       }
     }
   }
-
-  // 5. KPI: Ciclos de Hoy (sin cambios)
+  // 5. KPI: Ciclos de Hoy
   let cyclesToday = 0;
   try {
     const today = new Date();
@@ -110,8 +116,7 @@ function getStationStatus(stationId, allRecords) {
   } catch (e) {
     console.error(e);
   }
-
-  // 6. Lógica de Timeout (sin cambios)
+  // 6. Lógica de Timeout
   if (status === "ENFRIANDO") {
     try {
       const enfriandoStartTime = new Date(lastEventTimestamp);
@@ -126,7 +131,6 @@ function getStationStatus(stationId, allRecords) {
       console.error(e);
     }
   }
-
   // 7. Devolvemos todo
   return {
     status,
@@ -134,16 +138,16 @@ function getStationStatus(stationId, allRecords) {
     cycleDuration,
     liveCycleStartTime,
     cyclesToday,
-    // (quitamos 'totalCycles')
     averageCycleTime,
+    averageCycleTimeMs,
   };
 }
 
-// --- Componente de la Tarjeta de Estación (¡ACTUALIZADO!) ---
+// --- Componente de la Tarjeta de Estación ---
 function StationCard({ title, data }) {
   const [liveDuration, setLiveDuration] = useState("---");
 
-  // Animaciones (sin cambios)
+  // Animaciones
   const animations = {
     COCINANDO: {
       opacity: [1, 0.6, 1],
@@ -155,7 +159,7 @@ function StationCard({ title, data }) {
     },
     INACTIVA: { opacity: 1, rotate: 0 },
   };
-  // Estilos (sin cambios)
+  // Estilos
   const statusStyles = {
     COCINANDO: {
       bgColor: "bg-gradient-to-br from-red-700 to-red-900",
@@ -176,7 +180,7 @@ function StationCard({ title, data }) {
   const styles = statusStyles[data.status];
   const IconComponent = styles.icon;
 
-  // Efecto Timer (sin cambios)
+  // Efecto Timer
   useEffect(() => {
     if (!data.liveCycleStartTime) {
       setLiveDuration("---");
@@ -192,7 +196,7 @@ function StationCard({ title, data }) {
     return () => clearInterval(timerId);
   }, [data.liveCycleStartTime]);
 
-  // Formateador de fecha (sin cambios)
+  // Formateador de fecha
   const formatFullTimestamp = (timestampString) => {
     if (!timestampString) return { fecha: "N/A", hora: "N/A" };
     const date = new Date(timestampString);
@@ -215,11 +219,7 @@ function StationCard({ title, data }) {
     <div
       className={`rounded-xl shadow-2xl p-6 ${styles.bgColor} transition-all duration-500`}
     >
-      {/* --- CAMBIO: Título SIN subtítulo --- */}
       <h2 className="text-3xl font-bold text-white mb-5">{title}</h2>
-      {/* (Se eliminó el <p> con 'data.totalCycles') */}
-
-      {/* Indicador de Estado (sin cambios) */}
       <div
         className={`flex flex-col items-center justify-center p-8 rounded-lg ${styles.textColor} mb-6`}
       >
@@ -228,21 +228,17 @@ function StationCard({ title, data }) {
         </motion.div>
         <span className="text-4xl font-extrabold mt-4">{data.status}</span>
       </div>
-
-      {/* Grid de 4 KPIs (2x2) (sin cambios) */}
       <div className="grid grid-cols-2 gap-4 mb-6 text-white text-center">
         <div className="bg-green-800/80 p-3 rounded-lg shadow-inner">
           <FaHourglassHalf className="text-2xl text-green-300 mx-auto mb-1" />
           <div className="text-xs text-green-300 uppercase">En Vivo</div>
           <div className="text-2xl font-bold font-mono">{liveDuration}</div>
         </div>
-
         <div className="bg-blue-900/80 p-3 rounded-lg shadow-inner">
           <FaChartPie className="text-2xl text-blue-300 mx-auto mb-1" />
           <div className="text-xs text-blue-300 uppercase">Ciclos Hoy</div>
           <div className="text-2xl font-bold font-mono">{data.cyclesToday}</div>
         </div>
-
         <div className="bg-black/20 p-3 rounded-lg shadow-inner">
           <FaHistory className="text-2xl text-gray-300 mx-auto mb-1" />
           <div className="text-xs text-gray-300 uppercase">Ciclo Ant.</div>
@@ -250,7 +246,6 @@ function StationCard({ title, data }) {
             {data.cycleDuration}
           </div>
         </div>
-
         <div className="bg-purple-900/80 p-3 rounded-lg shadow-inner">
           <FaTachometerAlt className="text-2xl text-purple-300 mx-auto mb-1" />
           <div className="text-xs text-purple-300 uppercase">
@@ -261,8 +256,6 @@ function StationCard({ title, data }) {
           </div>
         </div>
       </div>
-
-      {/* Detalles del Último Evento (sin cambios) */}
       <div className="text-sm text-gray-200 bg-black/20 p-4 rounded-lg">
         <h3 className="font-semibold text-lg mb-2">Último Evento:</h3>
         {data.lastEvent ? (
@@ -285,7 +278,7 @@ function StationCard({ title, data }) {
   );
 }
 
-// --- Componente Principal de la App (Sin cambios) ---
+// --- Componente Principal de la App ---
 export default function App() {
   const [registros, setRegistros] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -322,11 +315,16 @@ export default function App() {
     const newMap = {};
     const processStarts = (starts) => {
       for (let i = 0; i < starts.length - 1; i++) {
+        const currentEvent = starts[i];
+        const previousEvent = starts[i + 1];
         try {
-          const date1 = new Date(starts[i].timestamp);
-          const date2 = new Date(starts[i + 1].timestamp);
+          const date1 = new Date(currentEvent.timestamp);
+          const date2 = new Date(previousEvent.timestamp);
           const diffMs = date1.getTime() - date2.getTime();
-          newMap[starts[i].id] = formatDuration(diffMs);
+          newMap[currentEvent.id] = {
+            durationMs: diffMs,
+            durationStr: formatDuration(diffMs),
+          };
         } catch (e) {
           console.error(e);
         }
@@ -337,9 +335,48 @@ export default function App() {
     return newMap;
   }, [registros]);
 
-  // Derivamos los estados (ya no incluyen 'totalCycles')
+  // --- Procesamiento de datos para el gráfico ---
+  const cycleChartData = useMemo(() => {
+    const combinedData = [];
+    const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60; // ej. 4 * 60 = 240 minutos
+
+    const processStationCycles = (stationId, stationName) => {
+      const starts = registros.filter((reg) =>
+        reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+      );
+      for (let i = 0; i < starts.length - 1; i++) {
+        const currentEvent = starts[i];
+        const previousEvent = starts[i + 1];
+        try {
+          const date1 = new Date(currentEvent.timestamp);
+          const date2 = new Date(previousEvent.timestamp);
+          const diffMs = date1.getTime() - date2.getTime();
+          const durationMinutes = diffMs / (1000 * 60);
+
+          if (durationMinutes > 0 && durationMinutes <= maxMinutes) {
+            combinedData.push({
+              timestamp: currentEvent.timestamp,
+              [stationName]: durationMinutes,
+            });
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+
+    processStationCycles(1, "Estación 1");
+    processStationCycles(2, "Estación 2");
+    return combinedData
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .slice(-30);
+  }, [registros]);
+
+  // Derivamos los estados
   const statusEstacion1 = getStationStatus(1, registros);
   const statusEstacion2 = getStationStatus(2, registros);
+  const avgMsEstacion1 = statusEstacion1.averageCycleTimeMs;
+  const avgMsEstacion2 = statusEstacion2.averageCycleTimeMs;
 
   // Paginación
   const totalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
@@ -350,6 +387,17 @@ export default function App() {
   const handleNextPage = () =>
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
+
+  // --- Formateador para el eje X del gráfico ---
+  const formatXAxis = (timestamp) => {
+    const date = new Date(timestamp);
+    const options = { timeZone: "America/Argentina/Buenos_Aires" };
+    return date.toLocaleDateString("es-AR", {
+      ...options,
+      day: "2-digit",
+      month: "2-digit",
+    });
+  };
 
   // Carga
   if (cargando) {
@@ -368,11 +416,81 @@ export default function App() {
           Monitor en Vivo - Horno de Rotomoldeo
         </h1>
 
+        {/* Tarjetas de Estaciones */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 mb-12">
           <StationCard title="Estación 1 (Izquierda)" data={statusEstacion1} />
           <StationCard title="Estación 2 (Derecha)" data={statusEstacion2} />
         </div>
 
+        {/* Gráfico de Líneas */}
+        <h2 className="text-3xl font-semibold mb-6">
+          Evolución de Tiempos de Ciclo (Últimos 30)
+        </h2>
+        <div className="bg-slate-800 rounded-lg shadow-xl p-6 h-[400px] mb-12">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={cycleChartData}
+              margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+              <XAxis
+                dataKey="timestamp"
+                stroke="#94a3b8"
+                tickFormatter={formatXAxis}
+                padding={{ left: 20, right: 20 }}
+              />
+              <YAxis
+                stroke="#94a3b8"
+                allowDecimals={false}
+                label={{
+                  value: "Duración (Minutos)",
+                  angle: -90,
+                  position: "insideLeft",
+                  fill: "#94a3b8",
+                  dy: 40,
+                }}
+                domain={[25, "dataMax + 10"]}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "rgba(30, 41, 59, 0.9)",
+                  borderColor: "#334155",
+                  borderRadius: "8px",
+                }}
+                labelStyle={{ color: "#cbd5e1" }}
+                formatter={(value) => [`${value.toFixed(0)} minutos`, null]}
+                labelFormatter={(label) =>
+                  new Date(label).toLocaleString("es-AR", {
+                    timeZone: "America/Argentina/Buenos_Aires",
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })
+                }
+              />
+              <Legend wrapperStyle={{ color: "#cbd5e1" }} />
+              <Line
+                type="monotone"
+                dataKey="Estación 1"
+                stroke="#c0392b" // Rojo
+                strokeWidth={2}
+                connectNulls
+                dot={{ r: 4 }}
+                activeDot={{ r: 8 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="Estación 2"
+                stroke="#2980b9" // Azul
+                strokeWidth={2}
+                connectNulls
+                dot={{ r: 4 }}
+                activeDot={{ r: 8 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Tabla de Historial Reciente */}
         <h2 className="text-3xl font-semibold mb-6">
           Historial Reciente (Global)
         </h2>
@@ -398,13 +516,36 @@ export default function App() {
                   second: "2-digit",
                 });
 
+                // Lógica de Alerta de Ciclo Lento
+                let durationStr = "---";
+                let slowCycleClass = "";
+                const cycleData = cycleTimeMap[reg.id];
+
+                if (cycleData) {
+                  durationStr = cycleData.durationStr;
+                  if (reg.accion.includes("Estacion 1") && avgMsEstacion1) {
+                    if (cycleData.durationMs > avgMsEstacion1 * 1.5) {
+                      slowCycleClass = "text-red-400 font-bold";
+                    }
+                  } else if (
+                    reg.accion.includes("Estacion 2") &&
+                    avgMsEstacion2
+                  ) {
+                    if (cycleData.durationMs > avgMsEstacion2 * 1.5) {
+                      slowCycleClass = "text-red-400 font-bold";
+                    }
+                  }
+                }
+
                 return (
                   <tr key={reg.id} className="hover:bg-slate-700/50">
                     <td className="px-4 py-3 text-sm">{fechaStr}</td>
                     <td className="px-4 py-3 text-sm font-mono">{horaStr}</td>
                     <td className="px-4 py-3">{reg.accion}</td>
-                    <td className="px-4 py-3 text-sm font-mono">
-                      {cycleTimeMap[reg.id] || "---"}
+                    <td
+                      className={`px-4 py-3 text-sm font-mono ${slowCycleClass}`}
+                    >
+                      {durationStr}
                     </td>
                   </tr>
                 );
