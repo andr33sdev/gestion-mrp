@@ -1,0 +1,17 @@
+{
+    "sqltools.connections": [
+        {
+            "pgOptions": {
+                "ssl": {
+                    "rejectUnauthorized": true
+                }
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "driver": "PostgreSQL",
+            "name": "DB Horno Render",
+            "connectString": "postgresql://horno_user:kMdzDJl02to3N4TkYJWgUNt7GC8DDK3e@dpg-d46b026uk2gs73d23jag-a.oregon-postgres.render.com/horno_db"
+        }
+    ]
+}
