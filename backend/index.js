@@ -6,7 +6,7 @@ const { parsearLog } = require("./parser");
 const format = require("pg-format"); // Para el bulk-insert
 
 const app = express();
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 
 // --- MIDDLEWARE ---
 app.use(cors());
