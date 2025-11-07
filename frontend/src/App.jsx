@@ -12,7 +12,7 @@ import {
 } from "react-icons/fa";
 
 // --- Constantes ---
-const API_URL = "http://localhost:4000/api/registros";
+const API_URL = "https://horno-backend.onrender.com/api/registros";
 const POLLING_INTERVAL = 10000;
 const HORAS_TIMEOUT_ENFRIADO = 2;
 const MAX_HORAS_CICLO_PROMEDIO = 4;
