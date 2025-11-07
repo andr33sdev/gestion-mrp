@@ -1,7 +1,7 @@
 // src/App.jsx
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
-// --- CAMBIO: Importamos el ícono de Alerta ---
+// Importamos TODOS los íconos
 import {
   FaFire,
   FaSnowflake,
@@ -10,18 +10,28 @@ import {
   FaChartPie,
   FaHistory,
   FaTachometerAlt,
-  FaExclamationTriangle, // <-- Ícono para el nuevo menú
+  FaExclamationTriangle,
 } from "react-icons/fa";
-// --- CAMBIO: Ya no importamos 'recharts' (quitamos el gráfico) ---
+// Importamos Recharts (para el gráfico de líneas)
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
 
 // --- Constantes ---
 const API_URL = "https://horno-backend.onrender.com/api/registros";
 const POLLING_INTERVAL = 10000;
 const HORAS_TIMEOUT_ENFRIADO = 2;
 const MAX_HORAS_CICLO_PROMEDIO = 4;
-const ALARMA_WINDOW_HOURS = 24; // Mostrar alarmas de las últimas 24 horas
+const ALARMA_WINDOW_HOURS = 24;
 
-// --- (Las funciones formatDuration y getStationStatus no cambian) ---
+// --- FUNCIÓN AUXILIAR 1: Formatear Duración (Sin cambios) ---
 function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
@@ -32,6 +42,8 @@ function formatDuration(ms) {
     .toString()
     .padStart(2, "0")}`;
 }
+
+// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación (Sin cambios) ---
 function getStationStatus(stationId, allRecords) {
   // (Esta función es idéntica a la versión anterior)
   const lastEvent = allRecords.find((reg) =>
@@ -253,15 +265,10 @@ function StationCard({ title, data }) {
   );
 }
 
-// --- CAMBIO 2: NUEVO COMPONENTE: Menú Desplegable de Alarmas ---
+// --- Componente del Menú de Alarmas (Sin cambios) ---
 function AlarmMenu({ alarms }) {
   const [isOpen, setIsOpen] = useState(false);
-
-  if (alarms.length === 0) {
-    return null; // No renderizar nada si no hay alarmas
-  }
-
-  // Formateador de hora local
+  if (alarms.length === 0) return null;
   const formatTime = (timestamp) => {
     const date = new Date(timestamp);
     const options = { timeZone: "America/Argentina/Buenos_Aires" };
@@ -271,26 +278,20 @@ function AlarmMenu({ alarms }) {
       minute: "2-digit",
     });
   };
-
-  // Variantes de animación para Framer Motion
   const dropdownVariants = {
     closed: {
       opacity: 0,
-      scaleY: 0, // Anima la altura (escala)
+      scaleY: 0,
       transition: { duration: 0.2, ease: "easeOut" },
     },
     open: {
       opacity: 1,
-      scaleY: 1, // Altura completa
+      scaleY: 1,
       transition: { duration: 0.3, ease: "easeIn" },
     },
   };
-
   return (
     <div className="relative mb-8 w-full md:w-1/2 mx-auto z-10">
-      {" "}
-      {/* Contenedor relativo para el dropdown */}
-      {/* 1. El Botón/Icono de Alerta */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full bg-red-700 text-white p-3 rounded-lg shadow-lg flex items-center justify-center font-bold text-lg hover:bg-red-600 transition-colors"
@@ -303,24 +304,19 @@ function AlarmMenu({ alarms }) {
         </motion.div>
         {alarms.length} Alarma(s) en las últimas {ALARMA_WINDOW_HOURS}hs
       </button>
-      {/* 2. El Menú Desplegable Animado */}
       <motion.div
         initial="closed"
         animate={isOpen ? "open" : "closed"}
         variants={dropdownVariants}
-        // Tailwind: 'absolute' para flotar, 'transform-origin-top' para la animación de escala
         className="absolute w-full bg-slate-700 rounded-b-lg shadow-xl overflow-hidden transform-origin-top"
       >
-        {/* Lista de alarmas */}
         <div className="p-4 max-h-60 overflow-y-auto">
-          {" "}
-          {/* Límite de altura y scroll */}
           {alarms.map((alarm) => (
             <div
               key={alarm.id}
               className="flex items-start p-2 border-b border-slate-600 last:border-b-0"
             >
-              <FaExclamationTriangle className="text-yellow-300 mr-3 mt-1 flex-shrink-0" />
+              <FaExclamationTriangle className="text-yellow-300 mr-3 mt-1" />
               <div>
                 <span className="font-semibold text-gray-200">
                   ({formatTime(alarm.timestamp)})
@@ -393,15 +389,46 @@ export default function App() {
     return newMap;
   }, [registros]);
 
-  // --- CAMBIO: Eliminamos 'cycleChartData' ---
-  // (El useMemo para el gráfico de líneas fue eliminado)
+  // Pre-cálculo para el gráfico (Sin cambios)
+  const cycleChartData = useMemo(() => {
+    // (Lógica idéntica)
+    const combinedData = [];
+    const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60;
+    const processStationCycles = (stationId, stationName) => {
+      const starts = registros.filter((reg) =>
+        reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+      );
+      for (let i = 0; i < starts.length - 1; i++) {
+        const currentEvent = starts[i];
+        const previousEvent = starts[i + 1];
+        try {
+          const date1 = new Date(currentEvent.timestamp);
+          const date2 = new Date(previousEvent.timestamp);
+          const diffMs = date1.getTime() - date2.getTime();
+          const durationMinutes = diffMs / (1000 * 60);
+          if (durationMinutes > 0 && durationMinutes <= maxMinutes) {
+            combinedData.push({
+              timestamp: currentEvent.timestamp,
+              [stationName]: durationMinutes,
+            });
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    };
+    processStationCycles(1, "Estación 1");
+    processStationCycles(2, "Estación 2");
+    return combinedData
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .slice(-30);
+  }, [registros]);
 
-  // --- NUEVO: Pre-cálculo para el Menú de Alarmas ---
+  // Pre-cálculo para el Menú de Alarmas (Sin cambios)
   const recentAlarms = useMemo(() => {
     const now = new Date();
     const windowMs = ALARMA_WINDOW_HOURS * 60 * 60 * 1000;
     const pastLimit = now.getTime() - windowMs;
-
     return registros.filter(
       (reg) =>
         reg.tipo === "ALARMA" && new Date(reg.timestamp).getTime() > pastLimit
@@ -414,15 +441,37 @@ export default function App() {
   const avgMsEstacion1 = statusEstacion1.averageCycleTimeMs;
   const avgMsEstacion2 = statusEstacion2.averageCycleTimeMs;
 
-  // Paginación (Sin cambios)
-  const totalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
+  // --- LÓGICA DE PAGINACIÓN ACTUALIZADA ---
+  const calculatedTotalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
+  // --- LÍMITE DE 25 PÁGINAS ---
+  const totalPages = Math.min(calculatedTotalPages, 25);
+
+  // --- Efecto para reajustar la página si está fuera de los límites ---
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages); // Vuelve a la última página válida (ej: 25)
+    }
+  }, [currentPage, totalPages]);
+
   const historialPaginado = registros.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
   const handleNextPage = () =>
-    setCurrentPage((prev) => Math.min(prev + 1, totalPages));
+    setCurrentPage((prev) => Math.min(prev + 1, totalPages)); // totalPages ya está limitado
   const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
+  // --- FIN LÓGICA DE PAGINACIÓN ---
+
+  // Formateador para el eje X (Sin cambios)
+  const formatXAxis = (timestamp) => {
+    const date = new Date(timestamp);
+    const options = { timeZone: "America/Argentina/Buenos_Aires" };
+    return date.toLocaleDateString("es-AR", {
+      ...options,
+      day: "2-digit",
+      month: "2-digit",
+    });
+  };
 
   // Carga (Sin cambios)
   if (cargando) {
@@ -441,18 +490,84 @@ export default function App() {
           Monitor en Vivo - Horno de Rotomoldeo
         </h1>
 
-        {/* --- CAMBIO: Renderizamos el nuevo Menú de Alarmas --- */}
+        {/* Menú de Alarmas */}
         <AlarmMenu alarms={recentAlarms} />
 
-        {/* Tarjetas de Estaciones (Sin cambios) */}
+        {/* Tarjetas de Estaciones */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 mb-12">
           <StationCard title="Estación 1 (Izquierda)" data={statusEstacion1} />
           <StationCard title="Estación 2 (Derecha)" data={statusEstacion2} />
         </div>
 
-        {/* --- CAMBIO: Eliminamos la sección del gráfico de líneas --- */}
+        {/* Gráfico de Líneas */}
+        <h2 className="text-3xl font-semibold mb-6">
+          Evolución de Tiempos de Ciclo (Últimos 30)
+        </h2>
+        <div className="bg-slate-800 rounded-lg shadow-xl p-6 h-[400px] mb-12">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={cycleChartData}
+              margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+              <XAxis
+                dataKey="timestamp"
+                stroke="#94a3b8"
+                tickFormatter={formatXAxis}
+                padding={{ left: 20, right: 20 }}
+              />
+              <YAxis
+                stroke="#94a3b8"
+                allowDecimals={false}
+                label={{
+                  value: "Duración (Minutos)",
+                  angle: -90,
+                  position: "insideLeft",
+                  fill: "#94a3b8",
+                  dy: 40,
+                }}
+                domain={[25, "dataMax + 10"]}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "rgba(30, 41, 59, 0.9)",
+                  borderColor: "#334155",
+                  borderRadius: "8px",
+                }}
+                labelStyle={{ color: "#cbd5e1" }}
+                formatter={(value) => [`${value.toFixed(0)} minutos`, null]}
+                labelFormatter={(label) =>
+                  new Date(label).toLocaleString("es-AR", {
+                    timeZone: "America/Argentina/Buenos_Aires",
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })
+                }
+              />
+              <Legend wrapperStyle={{ color: "#cbd5e1" }} />
+              <Line
+                type="monotone"
+                dataKey="Estación 1"
+                stroke="#c0392b"
+                strokeWidth={2}
+                connectNulls
+                dot={{ r: 4 }}
+                activeDot={{ r: 8 }}
+              />
+              <Line
+                type="monotone"
+                dataKey="Estación 2"
+                stroke="#2980b9"
+                strokeWidth={2}
+                connectNulls
+                dot={{ r: 4 }}
+                activeDot={{ r: 8 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
 
-        {/* Tabla de Historial Reciente (ACTUALIZADA con 'tipo') */}
+        {/* Tabla de Historial Reciente (con 'tipo') */}
         <h2 className="text-3xl font-semibold mb-6">
           Historial Reciente (Global)
         </h2>
@@ -516,7 +631,6 @@ export default function App() {
                     <td className="px-4 py-3 text-sm">{fechaStr}</td>
                     <td className="px-4 py-3 text-sm font-mono">{horaStr}</td>
 
-                    {/* Celda de Tipo */}
                     <td className="px-4 py-3 text-center">
                       <span
                         className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${tipoClass}`}
@@ -538,7 +652,7 @@ export default function App() {
           </table>
         </div>
 
-        {/* Controles de Paginación (Sin cambios) */}
+        {/* Controles de Paginación */}
         <div className="flex justify-between items-center mt-6 text-gray-300">
           <button
             onClick={handlePrevPage}
