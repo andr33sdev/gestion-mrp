@@ -112,6 +112,7 @@ function getStationStatus(stationId, allRecords) {
   } catch (e) {
     console.error(e);
   }
+  
   if (status === "ENFRIANDO") {
     try {
       const enfriandoStartTime = new Date(lastEventTimestamp);
