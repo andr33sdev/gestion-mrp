@@ -109,9 +109,24 @@ async function sincronizarBaseDeDatos() {
             // ¡MODIFICADO! Usamos la "accion" guardada (ej: "Estacion 1")
             const archiveAction = products.accion
 
+            // --- ¡CAMBIO CRÍTICO! ---
+            // Restamos 1 segundo al timestamp del trigger para el registro de PRODUCCION
+            // Usamos el timestamp del evento trigger ("Inicio Ciclo")
+            const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`)
+            // Restamos 1 segundo (1000 milisegundos)
+            const archiveDateTime = new Date(triggerDateTime.getTime() - 1000)
+
+            // Lo formateamos de nuevo a YYYY-MM-DD y HH:MM:SS
+            const newFecha = archiveDateTime.toISOString().split("T")[0]
+            const newHora = archiveDateTime
+              .toTimeString()
+              .split(" ")[0]
+              .split("(")[0]
+              .trim() // Formato HH:MM:SS
+
             newArchiveRecords.push({
-              fecha: reg.fecha, // Usar timestamp del evento trigger
-              hora: reg.hora,
+              fecha: newFecha, // ¡NUEVO TIMESTAMP!
+              hora: newHora, // ¡NUEVO TIMESTAMP!
               accion: archiveAction, // Guardamos "Estacion 1" o "Estacion 2"
               tipo: "PRODUCCION", // Nuevo tipo
               productos_json: products.json, // El JSON string
@@ -367,10 +382,18 @@ app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
     }
 
     // 3. Crear el nuevo registro de historial
+    // ¡CAMBIO CRÍTICO!
+    // Creamos el registro 1 segundo ANTES de "ahora" (simulando que "ahora" es el "Inicio Ciclo")
     const now = new Date()
+    const archiveDateTime = new Date(now.getTime() - 1000) // 1 segundo antes
+
     // Formatear fecha y hora para la DB (YYYY-MM-DD y HH:MM:SS)
-    const fecha = now.toISOString().split("T")[0]
-    const hora = now.toTimeString().split(" ")[0]
+    const fecha = archiveDateTime.toISOString().split("T")[0]
+    const hora = archiveDateTime
+      .toTimeString()
+      .split(" ")[0]
+      .split("(")[0]
+      .trim()
 
     // ¡MODIFICADO!
     const accion = `Estacion ${estacion_id}` // Simula el dato que guardamos ahora
@@ -397,6 +420,7 @@ app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
     res.status(200).json({
       msg: `Archivado exitoso para estación ${estacion_id}. La producción actual NO se limpió.`,
       productos_archivados: producto_list,
+      timestamp_registro: `${fecha} ${hora}`,
     })
   } catch (err) {
     await client.query("ROLLBACK")
@@ -516,9 +540,22 @@ app.get("/api/test/simular-sync-con-enfriado", async (req, res) => {
             console.log(
               `[TEST-ENFRIADO] Archivando productos para ${key}: ${products.json}`
             )
+
+            // --- ¡CAMBIO CRÍTICO! ---
+            // Restamos 1 segundo también en la simulación
+            const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`)
+            const archiveDateTime = new Date(triggerDateTime.getTime() - 1000)
+
+            const newFecha = archiveDateTime.toISOString().split("T")[0]
+            const newHora = archiveDateTime
+              .toTimeString()
+              .split(" ")[0]
+              .split("(")[0]
+              .trim()
+
             newArchiveRecords.push({
-              fecha: reg.fecha,
-              hora: reg.hora,
+              fecha: newFecha, // ¡NUEVO TIMESTAMP!
+              hora: newHora, // ¡NUEVO TIMESTAMP!
               accion: products.accion,
               tipo: "PRODUCCION",
               productos_json: products.json,
