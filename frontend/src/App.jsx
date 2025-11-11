@@ -437,7 +437,7 @@ function Dashboard() {
           // Buscar si existe un registro de PRODUCCION con el *mismo timestamp*
           const matchingProdEvent = registros.find(
             (r) =>
-              r.tipo === "FIN CICLO" && r.timestamp === currentEvent.timestamp
+              r.tipo === "PRODUCCION" && r.timestamp === currentEvent.timestamp
           );
 
           if (matchingProdEvent) {
@@ -696,7 +696,7 @@ function Dashboard() {
               const isAlarma = reg.tipo === "ALARMA";
               const tipoClass = isAlarma
                 ? "bg-red-600/90 text-red-100"
-                : reg.tipo === "FIN CICLO" // <-- ¡AÑADIDO!
+                : reg.tipo === "PRODUCCION" // <-- ¡AÑADIDO!
                 ? "bg-green-600/90 text-green-100" // <-- ¡AÑADIDO!
                 : "bg-blue-600/90 text-blue-100";
               return (
@@ -712,7 +712,7 @@ function Dashboard() {
                   </td>
                   <td className="px-4 py-3 text-left">
                     {/* --- ¡NUEVA LÓGICA DE RENDERIZADO! --- */}
-                    {reg.tipo === "FIN CICLO" && reg.productos_json ? (
+                    {reg.tipo === "PRODUCCION" && reg.productos_json ? (
                       <div>
                         <span className="text-sm text-gray-400 block mb-2">
                           Fin de ciclo (Productos archivados):
