@@ -45,12 +45,30 @@ async function sincronizarBaseDeDatos() {
       return acc;
     }, {});
 
-    const newArchiveRecords = [];
-    // let station1Cleared = false; // ELIMINADO
-    // let station2Cleared = false; // ELIMINADO
+    // --- ¡NUEVO PASO! ---
+    // 2c. Obtener todos los triggers de EVENTO que ya existen en la DB
+    // para no duplicar los archivos de PRODUCCION.
+    const { rows: dbTriggers } = await client.query(
+      `SELECT fecha, hora, accion 
+       FROM registros 
+       WHERE tipo = 'EVENTO' 
+       AND (accion LIKE 'Se inicio ciclo%' OR accion LIKE 'Enfriando%')`
+    );
+    // Creamos un "Set" para búsqueda rápida
+    const dbTriggerSet = new Set(
+      dbTriggers.map((r) => {
+        // Formateamos la fecha a YYYY-MM-DD (la base de datos la devuelve como objeto Date)
+        const fechaDB = r.fecha.toISOString().split("T")[0];
+        return `${fechaDB}T${r.hora}_${r.accion}`;
+      })
+    );
+    console.log(
+      `[TIMER] Encontrados ${dbTriggerSet.size} triggers de ciclo ya existentes en la DB.`
+    );
 
-    // 2c. Iterar sobre los *nuevos* logs para encontrar triggers de archivado
-    // (parsearLog los devuelve en orden cronológico, de más viejo a más nuevo)
+    const newArchiveRecords = [];
+
+    // 2d. Iterar sobre los *nuevos* logs para encontrar triggers de archivado
     for (const reg of registrosOriginales) {
       let stationId = null;
       let isStartCycle = false;
@@ -65,45 +83,41 @@ async function sincronizarBaseDeDatos() {
       const triggerEvent = stationId && (isStartCycle || isCooling);
 
       if (triggerEvent) {
-        // Usamos el estado de producción *en memoria* (que se va actualizando)
-        const products = currentProduccion[stationId];
+        // --- ¡LÓGICA DE CONTROL ACTUALIZADA! ---
+        // Solo procesamos este trigger si es NUEVO
+        const key = `${reg.fecha}T${reg.hora}_${reg.accion}`;
 
-        // Si hay productos en esa estación, archivarlos y limpiarlos
-        if (products && products.list.length > 0) {
-          // i. Crear el nuevo registro de archivo
-          const archiveAction = `Fin de ciclo (productos: ${products.list.join(
-            ", "
-          )})`;
+        if (!dbTriggerSet.has(key)) {
+          console.log(`[TIMER] Nuevo trigger detectado: ${key}`);
+          // Es un trigger nuevo, revisamos si hay productos para archivar
+          const products = currentProduccion[stationId];
 
-          newArchiveRecords.push({
-            fecha: reg.fecha, // Usar timestamp del evento trigger
-            hora: reg.hora,
-            accion: archiveAction,
-            tipo: "PRODUCCION", // Nuevo tipo
-            productos_json: products.json, // El JSON string
-          });
+          if (products && products.list.length > 0) {
+            console.log(
+              `[TIMER] Archivando productos para ${key}: ${products.json}`
+            );
+            // i. Crear el nuevo registro de archivo
+            const archiveAction = `Fin de ciclo (productos: ${products.list.join(
+              ", "
+            )})`;
 
-          // ii. Limpiar el estado de producción en memoria para el próximo trigger
-          // currentProduccion[stationId] = { json: "[]", list: [] }; // ELIMINADO
-          // if (stationId === 1) station1Cleared = true; // ELIMINADO
-          // if (stationId === 2) station2Cleared = true; // ELIMINADO
+            newArchiveRecords.push({
+              fecha: reg.fecha, // Usar timestamp del evento trigger
+              hora: reg.hora,
+              accion: archiveAction,
+              tipo: "PRODUCCION", // Nuevo tipo
+              productos_json: products.json, // El JSON string
+            });
+          }
         }
       }
     }
 
-    // 2d. Actualizar la DB de estado_produccion si algo se limpió
-    /* ELIMINADO
-    if (station1Cleared) {
-        await client.query("UPDATE estado_produccion SET producto_actual = '[]' WHERE estacion_id = 1");
-    }
-    if (station2Cleared) {
-        await client.query("UPDATE estado_produccion SET producto_actual = '[]' WHERE estacion_id = 2");
-    }
-    */
+    // 2e. No se limpia la producción actual (lógica eliminada en el paso anterior)
 
     // --- FIN DE LA NUEVA LÓGICA ---
 
-    // 2e. Combinar logs originales + nuevos archivos de producción
+    // 2f. Combinar logs originales + nuevos archivos de producción
     const allRecordsToInsert = [...registrosOriginales, ...newArchiveRecords];
 
     if (allRecordsToInsert.length === 0) {
