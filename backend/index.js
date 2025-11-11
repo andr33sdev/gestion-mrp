@@ -97,9 +97,9 @@ async function sincronizarBaseDeDatos() {
               `[TIMER] Archivando productos para ${key}: ${products.json}`
             );
             // i. Crear el nuevo registro de archivo
-            const archiveAction = `Fin de ciclo (productos: ${products.list.join(
+            const archiveAction = `Fin de ciclo E${stationId} (productos: ${products.list.join(
               ", "
-            )})`;
+            )})`; // <-- ¡MODIFICADO!
 
             newArchiveRecords.push({
               fecha: reg.fecha, // Usar timestamp del evento trigger
@@ -131,7 +131,10 @@ async function sincronizarBaseDeDatos() {
       `[TIMER] Paso 3: Sincronizando ${registrosOriginales.length} logs y ${newArchiveRecords.length} archivos de producción.`
     );
     // await client.query("BEGIN"); // Movido arriba
-    await client.query("DELETE FROM registros");
+
+    // --- ¡CAMBIO CRÍTICO! ---
+    // Borramos solo los logs viejos (EVENTO/ALARMA), pero conservamos nuestros registros de PRODUCCION generados.
+    await client.query("DELETE FROM registros WHERE tipo != 'PRODUCCION'");
 
     // ¡ACTUALIZADO! Añadido productos_json
     const valores = allRecordsToInsert.map((r) => [
@@ -362,9 +365,9 @@ app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
     // Formatear fecha y hora para la DB (YYYY-MM-DD y HH:MM:SS)
     const fecha = now.toISOString().split("T")[0];
     const hora = now.toTimeString().split(" ")[0];
-    const accion = `Fin de ciclo (TEST MANUAL) (productos: ${producto_list.join(
+    const accion = `Fin de ciclo E${estacion_id} (TEST MANUAL) (productos: ${producto_list.join(
       ", "
-    )})`;
+    )})`; // <-- ¡MODIFICADO!
 
     await client.query(
       "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES ($1, $2, $3, $4, $5)",
