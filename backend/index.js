@@ -110,11 +110,11 @@ async function sincronizarBaseDeDatos() {
             const archiveAction = products.accion
 
             // --- ¡CAMBIO CRÍTICO! ---
-            // Restamos 1 segundo al timestamp del trigger para el registro de PRODUCCION
+            // Restamos 5 segundos al timestamp del trigger para el registro de PRODUCCION
             // Usamos el timestamp del evento trigger ("Inicio Ciclo")
             const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`)
-            // Restamos 1 segundo (1000 milisegundos)
-            const archiveDateTime = new Date(triggerDateTime.getTime() - 1000)
+            // Restamos 5 segundos (5000 milisegundos)
+            const archiveDateTime = new Date(triggerDateTime.getTime() - 5000)
 
             // Lo formateamos de nuevo a YYYY-MM-DD y HH:MM:SS
             const newFecha = archiveDateTime.toISOString().split("T")[0]
@@ -383,9 +383,9 @@ app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
 
     // 3. Crear el nuevo registro de historial
     // ¡CAMBIO CRÍTICO!
-    // Creamos el registro 1 segundo ANTES de "ahora" (simulando que "ahora" es el "Inicio Ciclo")
+    // Creamos el registro 5 segundos ANTES de "ahora" (simulando que "ahora" es el "Inicio Ciclo")
     const now = new Date()
-    const archiveDateTime = new Date(now.getTime() - 1000) // 1 segundo antes
+    const archiveDateTime = new Date(now.getTime() - 5000) // 5 segundos antes
 
     // Formatear fecha y hora para la DB (YYYY-MM-DD y HH:MM:SS)
     const fecha = archiveDateTime.toISOString().split("T")[0]
@@ -542,9 +542,9 @@ app.get("/api/test/simular-sync-con-enfriado", async (req, res) => {
             )
 
             // --- ¡CAMBIO CRÍTICO! ---
-            // Restamos 1 segundo también en la simulación
+            // Restamos 5 segundos también en la simulación
             const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`)
-            const archiveDateTime = new Date(triggerDateTime.getTime() - 1000)
+            const archiveDateTime = new Date(triggerDateTime.getTime() - 5000)
 
             const newFecha = archiveDateTime.toISOString().split("T")[0]
             const newHora = archiveDateTime
