@@ -35,9 +35,10 @@ import {
   CartesianGrid,
 } from "recharts";
 
+// INICIO DEL CÓDIGO DEL DASHBOARD Y PANEL DE CONTROL
 // --- Constantes ---
 const API_BASE_URL = "https://horno-backend.onrender.com/api";
-//const API_BASE_URL = "http://localhost:4000/api";
+//const API_BASE_URL = "http://localhost:4000/api"; <-- Para desarrollo local
 const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
 
