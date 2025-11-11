@@ -1,5 +1,6 @@
 // backend/db.js
 const { Pool } = require('pg');
+require('dotenv').config(); // <-- ¡LÍNEA AÑADIDA! Carga el .env
 
 // Render nos dará esta variable 'DATABASE_URL' automáticamente
 const connectionString = process.env.DATABASE_URL;
