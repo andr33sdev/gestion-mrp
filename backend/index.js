@@ -132,7 +132,7 @@ async function sincronizarBaseDeDatos() {
     );
     // await client.query("BEGIN"); // Movido arriba
 
-    // --- ¡CAMBIO CRÍTICO! ---
+    // --- ¡ESTA ES LA LÍNEA CRÍTICA! ---
     // Borramos solo los logs viejos (EVENTO/ALARMA), pero conservamos nuestros registros de PRODUCCION generados.
     await client.query("DELETE FROM registros WHERE tipo != 'PRODUCCION'");
 
