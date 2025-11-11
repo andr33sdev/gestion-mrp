@@ -371,7 +371,7 @@ app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
 
     await client.query(
       "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES ($1, $2, $3, $4, $5)",
-      [fecha, hora, accion, "PRODUCCION", producto_json]
+      [fecha, hora, accion, "FIN CICLO", producto_json]
     );
 
     // 4. Limpiar la lista de producción de la estación - ELIMINADO
