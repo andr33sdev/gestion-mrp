@@ -18,9 +18,10 @@ import {
   FaTrash,
   FaBoxOpen,
   FaSpinner,
-  FaKey, // <-- ¡NUEVO ICONO!
-  FaSignOutAlt, // <-- ¡NUEVO ICONO!
-} from "react-icons/fa"; // <-- ¡RUTA CORREGIDA (intento 3)!
+  FaKey,
+  FaSignOutAlt,
+  FaCubes,
+} from "react-icons/fa"; // <-- ¡RUTA CORREGIDA! Volvemos al import estándar.
 
 // Gráficos
 import {
@@ -35,8 +36,8 @@ import {
 } from "recharts";
 
 // --- Constantes ---
-// ¡URL Base de la API actualizada!
-const API_BASE_URL = "https://horno-backend.onrender.com/api";
+//const API_BASE_URL = "https://horno-backend.onrender.com/api";
+const API_BASE_URL = "http://localhost:4000/api";
 const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
 
@@ -59,7 +60,6 @@ function formatDuration(ms) {
 
 // --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación (Sin cambios) ---
 function getStationStatus(stationId, allRecords) {
-  // (Esta función es idéntica a la versión anterior)
   const lastEvent = allRecords.find((reg) =>
     reg.accion.includes(`Estacion ${stationId}`)
   );
@@ -152,7 +152,7 @@ function getStationStatus(stationId, allRecords) {
   };
 }
 
-// --- Componente de la Tarjeta de Estación (¡ACTUALIZADO!) ---
+// --- Componente de la Tarjeta de Estación (Sin cambios) ---
 function StationCard({ title, data }) {
   const [liveDuration, setLiveDuration] = useState("---");
   const animations = {
@@ -258,7 +258,6 @@ function StationCard({ title, data }) {
         </div>
       </div>
 
-      {/* --- ¡NUEVO BLOQUE DE PRODUCCIÓN! --- */}
       {data.status !== "INACTIVA" && (
         <div className="mb-4">
           <h3 className="font-semibold text-lg mb-2 text-gray-200">
@@ -279,7 +278,6 @@ function StationCard({ title, data }) {
           </div>
         </div>
       )}
-      {/* --- FIN NUEVO BLOQUE --- */}
 
       <div className="text-sm text-gray-200 bg-black/20 p-4 rounded-lg">
         <h3 className="font-semibold text-lg mb-2">Último Evento:</h3>
@@ -369,18 +367,17 @@ function AlarmMenu({ alarms }) {
   );
 }
 
-// --- (NUEVO) Componente de la Página: Dashboard (¡ACTUALIZADO!) ---
+// --- Componente de la Página: Dashboard (¡ACTUALIZADO!) ---
 function Dashboard() {
   const [registros, setRegistros] = useState([]);
-  const [produccion, setProduccion] = useState({ 1: [], 2: [] }); // <-- AÑADIDO
+  const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [cargando, setCargando] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
-  // Polling (¡ACTUALIZADO!)
+  // Polling (Sin cambios desde la última vez)
   useEffect(() => {
     const fetchDatos = () => {
-      // Usamos Promise.all para pedir registros y producción al mismo tiempo
       Promise.all([
         fetch(REGISTROS_API_URL).then((res) => {
           if (!res.ok) throw new Error(`Error HTTP ${res.status} en registros`);
@@ -394,23 +391,21 @@ function Dashboard() {
       ])
         .then(([dataRegistros, dataProduccion]) => {
           setRegistros(dataRegistros);
-          setProduccion(dataProduccion); // <-- AÑADIDO
+          setProduccion(dataProduccion);
           setCargando(false);
         })
         .catch((err) => {
           console.error("Error al cargar datos:", err);
           setCargando(false);
-          // Opcional: mostrar un error en la UI
         });
     };
-    fetchDatos(); // Carga inicial
-    const intervalId = setInterval(fetchDatos, POLLING_INTERVAL); // Polling
+    fetchDatos();
+    const intervalId = setInterval(fetchDatos, POLLING_INTERVAL);
     return () => clearInterval(intervalId);
   }, []);
 
   // Pre-cálculo para la tabla (Sin cambios)
   const cycleTimeMap = useMemo(() => {
-    // (Lógica idéntica)
     const station1Starts = registros.filter((reg) =>
       reg.accion.includes("Se inicio ciclo Estacion 1")
     );
@@ -442,7 +437,6 @@ function Dashboard() {
 
   // Pre-cálculo para el gráfico (Sin cambios)
   const cycleChartData = useMemo(() => {
-    // (Lógica idéntica)
     const combinedData = [];
     const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60;
     const processStationCycles = (stationId, stationName) => {
@@ -486,21 +480,18 @@ function Dashboard() {
     );
   }, [registros]);
 
-  // Derivamos los estados (¡ACTUALIZADO!)
+  // Derivamos los estados (Sin cambios)
   const statusEstacion1 = getStationStatus(1, registros);
   const statusEstacion2 = getStationStatus(2, registros);
   const avgMsEstacion1 = statusEstacion1.averageCycleTimeMs;
   const avgMsEstacion2 = statusEstacion2.averageCycleTimeMs;
 
-  // --- ¡LÍNEAS AÑADIDAS! ---
-  // Añadimos la lista de productos al objeto de estado
   statusEstacion1.productos = produccion[1] || [];
   statusEstacion2.productos = produccion[2] || [];
-  // --- FIN LÍNEAS AÑADIDAS ---
 
   // Lógica de Paginación (Sin cambios)
   const calculatedTotalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
-  const totalPages = Math.min(calculatedTotalPages, 25);
+  const totalPages = Math.min(calculatedTotalPages, 50);
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
       setCurrentPage(totalPages);
@@ -535,7 +526,7 @@ function Dashboard() {
     );
   }
 
-  // Render (Sin cambios, ya que los datos se pasan vía 'statusEstacion1')
+  // Render
   return (
     <>
       <h1 className="text-4xl md:text-5xl font-bold text-center mb-10">
@@ -612,6 +603,8 @@ function Dashboard() {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {/* --- ¡TABLA DE HISTORIAL ACTUALIZADA! --- */}
       <h2 className="text-3xl font-semibold mb-6">
         Historial Reciente (Global)
       </h2>
@@ -622,7 +615,7 @@ function Dashboard() {
               <th className="px-4 py-3 text-center">Fecha</th>
               <th className="px-4 py-3 text-center">Hora</th>
               <th className="px-4 py-3 text-center">Tipo</th>
-              <th className="px-4 py-3 text-center">Acción</th>
+              <th className="px-4 py-3">Acción / Productos</th>
               <th className="px-4 py-3 text-center">
                 Tiempo de Ciclo (HH:MM:SS)
               </th>
@@ -661,10 +654,31 @@ function Dashboard() {
               const tipoClass = isAlarma
                 ? "bg-red-600/90 text-red-100"
                 : "bg-blue-600/90 text-blue-100";
+
+              // --- ¡NUEVA LÓGICA! ---
+              // Parseamos los productos guardados en el registro
+              let productosDelCiclo = [];
+              if (
+                reg.accion.includes("Se inicio ciclo") &&
+                reg.productos_json
+              ) {
+                try {
+                  productosDelCiclo = JSON.parse(reg.productos_json);
+                } catch (e) {
+                  console.warn(
+                    "JSON inválido en registros:",
+                    reg.productos_json
+                  );
+                }
+              }
+              // --- FIN NUEVA LÓGICA ---
+
               return (
-                <tr key={reg.id} className="hover:bg-slate-700/50 text-center">
-                  <td className="px-4 py-3 text-sm">{fechaStr}</td>
-                  <td className="px-4 py-3 text-sm font-mono">{horaStr}</td>
+                <tr key={reg.id} className="hover:bg-slate-700/50">
+                  <td className="px-4 py-3 text-sm text-center">{fechaStr}</td>
+                  <td className="px-4 py-3 text-sm font-mono text-center">
+                    {horaStr}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span
                       className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${tipoClass}`}
@@ -672,9 +686,32 @@ function Dashboard() {
                       {reg.tipo}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-left">{reg.accion}</td>
+
+                  {/* --- ¡CELDA MODIFICADA! --- */}
+                  <td className="px-4 py-3 text-left">
+                    {/* La acción principal */}
+                    <span>{reg.accion}</span>
+                    {/* Si hay productos en este ciclo, los mostramos */}
+                    {productosDelCiclo.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        <FaCubes className="text-gray-400 mt-1" />
+                        <div className="flex flex-wrap gap-2">
+                          {productosDelCiclo.map((prod, idx) => (
+                            <span
+                              key={idx}
+                              className="text-xs bg-gray-600 text-gray-200 px-2 py-0.5 rounded-full"
+                            >
+                              {prod}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  {/* --- FIN CELDA MODIFICADA --- */}
+
                   <td
-                    className={`px-4 py-3 text-sm font-mono ${slowCycleClass}`}
+                    className={`px-4 py-3 text-sm font-mono text-center ${slowCycleClass}`}
                   >
                     {durationStr}
                   </td>
@@ -684,6 +721,8 @@ function Dashboard() {
           </tbody>
         </table>
       </div>
+      {/* --- FIN TABLA ACTUALIZADA --- */}
+
       <div className="flex justify-between items-center mt-6 text-gray-300">
         <button
           onClick={handlePrevPage}
@@ -707,7 +746,7 @@ function Dashboard() {
   );
 }
 
-// --- ¡NUEVO! Componente de la Página: Panel de Control ---
+// --- Componente de la Página: Panel de Control (Sin cambios) ---
 function PanelControl() {
   const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [input1, setInput1] = useState("");
@@ -715,7 +754,6 @@ function PanelControl() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Carga inicial de productos
   const fetchProduccion = async () => {
     try {
       setLoading(true);
@@ -736,9 +774,8 @@ function PanelControl() {
     fetchProduccion();
   }, []);
 
-  // Añadir un producto
   const handleAdd = async (estacion_id, producto) => {
-    if (!producto) return; // No añadir si está vacío
+    if (!producto) return;
     try {
       const res = await fetch(PRODUCCION_API_URL, {
         method: "POST",
@@ -746,7 +783,6 @@ function PanelControl() {
         body: JSON.stringify({ estacion_id, producto }),
       });
       if (!res.ok) throw new Error("Error del servidor al añadir");
-      // Limpiar input y recargar
       if (estacion_id === 1) setInput1("");
       if (estacion_id === 2) setInput2("");
       fetchProduccion();
@@ -756,12 +792,7 @@ function PanelControl() {
     }
   };
 
-  // Limpiar lista de productos
   const handleClear = async (estacion_id) => {
-    // Pedir confirmación
-    // NOTA: window.confirm no funciona en todos los entornos,
-    // pero lo dejamos por simplicidad para desarrollo local.
-    // Para producción robusta, se necesitaría un modal custom.
     if (
       !window.confirm(
         `¿Estás seguro de que quieres borrar TODOS los productos de la Estación ${estacion_id}?`
@@ -775,7 +806,7 @@ function PanelControl() {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Error del servidor al borrar");
-      fetchProduccion(); // Recargar
+      fetchProduccion();
     } catch (err) {
       console.error(err);
       setError(err.message || "Error al borrar productos");
@@ -804,7 +835,6 @@ function PanelControl() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Columna Estación 1 */}
         <EstacionControlPanel
           title="Estación 1 (Izquierda)"
           estacionId={1}
@@ -816,7 +846,6 @@ function PanelControl() {
           color="red"
         />
 
-        {/* Columna Estación 2 */}
         <EstacionControlPanel
           title="Estación 2 (Derecha)"
           estacionId={2}
@@ -832,7 +861,7 @@ function PanelControl() {
   );
 }
 
-// --- ¡NUEVO! Sub-componente del Panel de Control ---
+// --- Sub-componente del Panel de Control (Sin cambios) ---
 function EstacionControlPanel({
   title,
   estacionId,
@@ -865,7 +894,6 @@ function EstacionControlPanel({
     >
       <h2 className="text-3xl font-bold text-white mb-6">{title}</h2>
 
-      {/* Input y Botón de Añadir */}
       <div className="flex gap-2 mb-4">
         <input
           type="text"
@@ -883,7 +911,6 @@ function EstacionControlPanel({
         </button>
       </div>
 
-      {/* Lista de Productos Actuales */}
       <h3 className="text-xl font-semibold text-gray-300 mb-3 mt-8">
         Productos en Horno ({productos.length})
       </h3>
@@ -909,7 +936,6 @@ function EstacionControlPanel({
         )}
       </div>
 
-      {/* Botón de Limpiar */}
       <button
         onClick={() => onClear(estacionId)}
         disabled={productos.length === 0}
@@ -921,7 +947,7 @@ function EstacionControlPanel({
   );
 }
 
-// --- ¡NUEVO! Componente de la Página: Login ---
+// --- Componente de la Página: Login (Sin cambios) ---
 function LoginPage({ onLoginSuccess }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
@@ -930,7 +956,7 @@ function LoginPage({ onLoginSuccess }) {
     e.preventDefault();
     if (input === ADMIN_PASSWORD) {
       setError("");
-      onLoginSuccess(); // Llama a la función de éxito
+      onLoginSuccess();
     } else {
       setError("Contraseña incorrecta. Intente de nuevo.");
       setInput("");
@@ -983,20 +1009,16 @@ function LoginPage({ onLoginSuccess }) {
   );
 }
 
-// --- ¡CONTRASEÑA! ---
-// Cámbiala aquí por la que tú quieras
+// --- Contraseña (Sin cambios) ---
 const ADMIN_PASSWORD = "admin123";
 
-// --- ¡NUEVO! Componente Principal 'App' que actúa como Router (¡ACTUALIZADO!) ---
+// --- Componente Principal 'App' (Sin cambios) ---
 export default function App() {
-  // Usamos el 'pathname' de la URL para decidir qué página mostrar
   const [page, setPage] = useState(window.location.pathname);
-  // Estado de autenticación, lee desde sessionStorage
   const [isAuthenticated, setIsAuthenticated] = useState(
     sessionStorage.getItem("isAutenticado") === "true"
   );
 
-  // Escuchamos los botones de 'atrás/adelante' del navegador
   useEffect(() => {
     const onLocationChange = () => {
       setPage(window.location.pathname);
@@ -1005,31 +1027,22 @@ export default function App() {
     return () => window.removeEventListener("popstate", onLocationChange);
   }, []);
 
-  // Función para navegar sin recargar la página
   const navigate = (path) => {
     window.history.pushState({}, "", path);
     setPage(path);
   };
 
-  // --- ¡NUEVA FUNCIÓN! ---
-  // Llamada cuando el login es exitoso
   const handleLoginSuccess = () => {
     sessionStorage.setItem("isAutenticado", "true");
     setIsAuthenticated(true);
-    // No es necesario navegar, el componente 'App' se re-renderizará
-    // y 'component' se actualizará a <PanelControl />
   };
 
-  // --- ¡NUEVA FUNCIÓN! ---
-  // Llamada al hacer clic en "Salir"
   const handleLogout = () => {
     sessionStorage.removeItem("isAutenticado");
     setIsAuthenticated(false);
-    navigate("/"); // Vuelve al monitor
+    navigate("/");
   };
 
-  // --- ¡LÓGICA DE RENDERIZADO ACTUALIZADA! ---
-  // Determina qué componente mostrar
   let component;
   if (page === "/panel-control") {
     component = isAuthenticated ? (
@@ -1041,14 +1054,12 @@ export default function App() {
     component = <Dashboard />;
   }
 
-  // Clases para el botón de navegación activo
   const activeClass = "bg-slate-600 text-white";
   const inactiveClass = "bg-slate-800 text-gray-400 hover:bg-slate-700";
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* --- ¡MENÚ DE NAVEGACIÓN ACTUALIZADO! --- */}
         <nav className="flex justify-center items-center gap-4 mb-8">
           <button
             onClick={() => navigate("/")}
@@ -1069,7 +1080,6 @@ export default function App() {
             Panel de Control
           </button>
 
-          {/* --- ¡NUEVO BOTÓN DE SALIR! --- */}
           {isAuthenticated && (
             <button
               onClick={handleLogout}
@@ -1081,7 +1091,6 @@ export default function App() {
           )}
         </nav>
 
-        {/* Renderiza la página activa */}
         {component}
       </div>
     </div>

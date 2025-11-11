@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// --- (Función sincronizarBaseDeDatos - SIN CAMBIOS) ---
+// --- (Función sincronizarBaseDeDatos - ¡ACTUALIZADA!) ---
 async function sincronizarBaseDeDatos() {
   console.log("[TIMER] ¡Iniciando sincronización automática!");
   const client = await db.connect();
@@ -21,20 +21,116 @@ async function sincronizarBaseDeDatos() {
     console.log("[TIMER] Paso 1: Leyendo archivo de Google Drive...");
     const textoCrudo = await leerArchivoHorno();
     console.log("[TIMER] Paso 2: Parseando el texto...");
-    const registros = parsearLog(textoCrudo);
-    if (registros.length === 0) {
+    const registrosOriginales = parsearLog(textoCrudo);
+
+    // --- ¡NUEVA LÓGICA DE ARCHIVADO DE PRODUCCIÓN! ---
+
+    // 2a. Iniciar transacción (movido aquí para incluir la lectura/escritura de estado_produccion)
+    await client.query("BEGIN");
+
+    // 2b. Obtener el estado actual de producción (CON BLOQUEO)
+    const { rows: currentProdRows } = await client.query(
+      "SELECT * FROM estado_produccion FOR UPDATE"
+    );
+    const currentProduccion = currentProdRows.reduce((acc, row) => {
+      try {
+        const list = JSON.parse(row.producto_actual || "[]");
+        acc[row.estacion_id] = {
+          json: row.producto_actual || "[]",
+          list: list,
+        };
+      } catch (e) {
+        acc[row.estacion_id] = { json: "[]", list: [] };
+      }
+      return acc;
+    }, {});
+
+    const newArchiveRecords = [];
+    // let station1Cleared = false; // ELIMINADO
+    // let station2Cleared = false; // ELIMINADO
+
+    // 2c. Iterar sobre los *nuevos* logs para encontrar triggers de archivado
+    // (parsearLog los devuelve en orden cronológico, de más viejo a más nuevo)
+    for (const reg of registrosOriginales) {
+      let stationId = null;
+      let isStartCycle = false;
+      let isCooling = false;
+
+      if (reg.accion.includes("Estacion 1")) stationId = 1;
+      else if (reg.accion.includes("Estacion 2")) stationId = 2;
+
+      if (reg.accion.includes("Se inicio ciclo")) isStartCycle = true;
+      if (reg.accion.includes("Enfriando")) isCooling = true;
+
+      const triggerEvent = stationId && (isStartCycle || isCooling);
+
+      if (triggerEvent) {
+        // Usamos el estado de producción *en memoria* (que se va actualizando)
+        const products = currentProduccion[stationId];
+
+        // Si hay productos en esa estación, archivarlos y limpiarlos
+        if (products && products.list.length > 0) {
+          // i. Crear el nuevo registro de archivo
+          const archiveAction = `Fin de ciclo (productos: ${products.list.join(
+            ", "
+          )})`;
+
+          newArchiveRecords.push({
+            fecha: reg.fecha, // Usar timestamp del evento trigger
+            hora: reg.hora,
+            accion: archiveAction,
+            tipo: "PRODUCCION", // Nuevo tipo
+            productos_json: products.json, // El JSON string
+          });
+
+          // ii. Limpiar el estado de producción en memoria para el próximo trigger
+          // currentProduccion[stationId] = { json: "[]", list: [] }; // ELIMINADO
+          // if (stationId === 1) station1Cleared = true; // ELIMINADO
+          // if (stationId === 2) station2Cleared = true; // ELIMINADO
+        }
+      }
+    }
+
+    // 2d. Actualizar la DB de estado_produccion si algo se limpió
+    /* ELIMINADO
+    if (station1Cleared) {
+        await client.query("UPDATE estado_produccion SET producto_actual = '[]' WHERE estacion_id = 1");
+    }
+    if (station2Cleared) {
+        await client.query("UPDATE estado_produccion SET producto_actual = '[]' WHERE estacion_id = 2");
+    }
+    */
+
+    // --- FIN DE LA NUEVA LÓGICA ---
+
+    // 2e. Combinar logs originales + nuevos archivos de producción
+    const allRecordsToInsert = [...registrosOriginales, ...newArchiveRecords];
+
+    if (allRecordsToInsert.length === 0) {
       console.log("[TIMER] No se encontraron registros válidos en el archivo.");
+      // await client.query("ROLLBACK"); // Ya no es necesario, el bloque catch lo maneja
       client.release();
       return { success: false, msg: "No se encontraron registros válidos." };
     }
+
     console.log(
-      `[TIMER] Paso 3: Sincronizando ${registros.length} registros...`
+      `[TIMER] Paso 3: Sincronizando ${registrosOriginales.length} logs y ${newArchiveRecords.length} archivos de producción.`
     );
-    await client.query("BEGIN");
+    // await client.query("BEGIN"); // Movido arriba
     await client.query("DELETE FROM registros");
-    const valores = registros.map((r) => [r.fecha, r.hora, r.accion, r.tipo]);
+
+    // ¡ACTUALIZADO! Añadido productos_json
+    const valores = allRecordsToInsert.map((r) => [
+      r.fecha,
+      r.hora,
+      r.accion,
+      r.tipo,
+      r.productos_json || null, // Columna nueva
+    ]);
+
+    // ¡ACTUALIZADO! Añadido productos_json
     const consulta = format(
-      "INSERT INTO registros (fecha, hora, accion, tipo) VALUES %L",
+      "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES %L",
       valores
     );
     await client.query(consulta);
@@ -42,7 +138,7 @@ async function sincronizarBaseDeDatos() {
     console.log("[TIMER] ¡Sincronización completa!");
     return {
       success: true,
-      msg: `Sincronización completa. ${registros.length} registros guardados.`,
+      msg: `Sincronización completa. ${allRecordsToInsert.length} registros guardados.`,
     };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -72,6 +168,7 @@ app.get("/api/registros", async (req, res) => {
         id, 
         accion,
         tipo,
+        productos_json, -- ¡NUEVO! Devolver también los productos
         CAST(fecha::TEXT || ' ' || hora::TEXT AS TIMESTAMP) 
           AT TIME ZONE 'America/Argentina/Buenos_Aires' AS timestamp
       FROM registros 
@@ -197,6 +294,93 @@ app.get("/api/leer-archivo", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send("Error al leer el archivo de Drive");
+  }
+});
+
+// --- ¡NUEVA RUTA DE PRUEBA PARA FORZAR ARCHIVADO! ---
+app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
+  const { estacion_id } = req.params;
+  if (estacion_id !== "1" && estacion_id !== "2") {
+    return res
+      .status(400)
+      .json({ msg: "ID de estación inválido. Usar 1 o 2." });
+  }
+
+  console.log(`[TEST] Forzando archivado para estación ${estacion_id}...`);
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1. Obtener productos actuales de la estación (con bloqueo)
+    const { rows: currentRows } = await client.query(
+      "SELECT producto_actual FROM estado_produccion WHERE estacion_id = $1 FOR UPDATE",
+      [estacion_id]
+    );
+
+    if (currentRows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ msg: "Estación no encontrada" });
+    }
+
+    const producto_json = currentRows[0].producto_actual || "[]";
+    let producto_list = [];
+    try {
+      producto_list = JSON.parse(producto_json);
+    } catch (e) {
+      console.error(
+        `[TEST] JSON inválido en estación ${estacion_id}, se tratará como vacío.`
+      );
+    }
+
+    // 2. Verificar si hay algo que archivar
+    if (producto_list.length === 0) {
+      await client.query("ROLLBACK");
+      return res
+        .status(200)
+        .json({
+          msg: `Estación ${estacion_id} ya estaba vacía. No se archivó nada.`,
+        });
+    }
+
+    // 3. Crear el nuevo registro de historial
+    const now = new Date();
+    // Formatear fecha y hora para la DB (YYYY-MM-DD y HH:MM:SS)
+    const fecha = now.toISOString().split("T")[0];
+    const hora = now.toTimeString().split(" ")[0];
+    const accion = `Fin de ciclo (TEST MANUAL) (productos: ${producto_list.join(
+      ", "
+    )})`;
+
+    await client.query(
+      "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES ($1, $2, $3, $4, $5)",
+      [fecha, hora, accion, "PRODUCCION", producto_json]
+    );
+
+    // 4. Limpiar la lista de producción de la estación - ELIMINADO
+    /*
+        await client.query(
+            "UPDATE estado_produccion SET producto_actual = '[]' WHERE estacion_id = $1",
+            [estacion_id]
+        );
+        */
+
+    // 5. Confirmar transacción
+    await client.query("COMMIT");
+
+    console.log(
+      `[TEST] ¡Archivado exitoso para estación ${estacion_id}! (Sin limpiar la producción actual)`
+    );
+    res.status(200).json({
+      msg: `Archivado exitoso para estación ${estacion_id}. La producción actual NO se limpió.`,
+      productos_archivados: producto_list,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("[TEST] Error al forzar archivado:", err.message);
+    res.status(500).send("Error en el servidor durante el archivado de prueba");
+  } finally {
+    client.release();
   }
 });
 
