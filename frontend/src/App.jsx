@@ -2,7 +2,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 
-// Íconos del Dashboard y Panel de Control
 import {
   FaFire,
   FaSnowflake,
@@ -22,9 +21,10 @@ import {
   FaSignOutAlt,
   FaCubes,
   FaChartLine,
+  FaUsers,
+  FaUserTie, // <--- Asegurate de tener estos dos nuevos
 } from "react-icons/fa";
 
-// Gráficos (Librería Recharts)
 import {
   LineChart,
   Line,
@@ -37,11 +37,13 @@ import {
   BarChart,
   Bar,
   Cell,
+  PieChart,
+  Pie, // <--- Asegurate de tener estos nuevos gráficos
 } from "recharts";
 
 // --- Constantes ---
-const API_BASE_URL = "https://horno-backend.onrender.com/api";
-//const API_BASE_URL = "http://localhost:4000/api"; // Descomentar para desarrollo local
+//const API_BASE_URL = "https://horno-backend.onrender.com/api";
+const API_BASE_URL = "http://localhost:4000/api"; // Descomentar para desarrollo local
 
 const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
@@ -942,8 +944,8 @@ function EstacionControlPanel({
           type="text"
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
-          placeholder="Nombre del producto (ej: Kayak Rojo)"
-          className="flex-grow p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-opacity-50"
+          placeholder="Nombre del producto"
+          className="p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-opacity-50"
           list={listId} // Conectamos con el datalist
         />
 
@@ -1060,17 +1062,22 @@ function LoginPage({ onLoginSuccess }) {
   );
 }
 
-// --- ¡COMPONENTE ACTUALIZADO v9! (Con Buscador y Modal de Detalle) ---
+// --- COMPONENTE DE ANÁLISIS DE PEDIDOS (Versión Final: Productos + Clientes) ---
 function AnalisisPedidos() {
   const [datos, setDatos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // --- ESTADOS PARA EL BUSCADOR Y MODAL ---
+  // Estados de Interfaz
+  const [modoVista, setModoVista] = useState("PRODUCTOS"); // "PRODUCTOS" o "CLIENTES"
   const [busqueda, setBusqueda] = useState("");
   const [sugerencias, setSugerencias] = useState([]);
-  const [productoSeleccionado, setProductoSeleccionado] = useState(null); // Si no es null, muestra el Modal
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+
+  // Estado del Modal
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [modalPage, setModalPage] = useState(1);
+  const MODAL_ITEMS_PER_PAGE = 5;
 
   useEffect(() => {
     fetch(PEDIDOS_API_URL)
@@ -1089,13 +1096,14 @@ function AnalisisPedidos() {
       });
   }, []);
 
-  // --- LÓGICA DE PROCESAMIENTO GENERAL (DASHBOARD) ---
+  // --- PROCESAMIENTO DE DATOS ---
   const analysisData = useMemo(() => {
     if (datos.length === 0) return null;
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
+    // Helper: Inicio de semana
     const getStartOfWeek = (date) => {
       const d = new Date(date);
       const day = d.getDay();
@@ -1106,7 +1114,7 @@ function AnalisisPedidos() {
     };
     const startOfWeek = getStartOfWeek(now);
 
-    // Filtrado 2025+
+    // 1. Filtrar por año 2025
     const filteredData = datos.filter((row) => {
       const dateVal = row.FECHA || row.Fecha || row.fecha;
       if (!dateVal) return false;
@@ -1116,11 +1124,26 @@ function AnalisisPedidos() {
 
     if (filteredData.length === 0) return null;
 
+    // Estructuras de datos
     const uniqueOrders = new Set();
     const uniqueMLOrders = new Set();
+
+    // Mapas Productos
     const productMapYear = {};
     const productMapMonth = {};
     const productMapWeek = {};
+
+    // Mapas Clientes
+    const clientMapYear = {};
+    const clientMapMonth = {};
+    const clientMapWeek = {};
+    const activeClients = new Set(); // Clientes únicos
+
+    // Listas para el buscador
+    const allModelsSet = new Set();
+    const allClientsSet = new Set();
+
+    // Mapa Global Mensual
     const monthMap = {};
     const monthNames = [
       "Ene",
@@ -1138,20 +1161,40 @@ function AnalisisPedidos() {
     ];
     monthNames.forEach((m) => (monthMap[m] = 0));
 
-    // Set para la lista de TODOS los productos (para el buscador)
-    const allModelsSet = new Set();
-
     filteredData.forEach((row) => {
       const dateVal = row.FECHA || row.Fecha || row.fecha;
       const rowDate = new Date(dateVal);
       const oc = row.OC || row.oc || row.Oc;
       const detalles = row.DETALLES || row.Detalles || row.detalles || "";
       const prodName = row.MODELO || row.Modelo || "Desconocido";
+      const clientName = row.CLIENTE || row.Cliente || "Desconocido";
       const cantidad = Number(row.CANTIDAD || row.Cantidad || 1);
 
-      // Guardamos modelo para el buscador
-      if (prodName && prodName !== "Desconocido") allModelsSet.add(prodName);
+      // --- PRODUCTOS ---
+      if (prodName && prodName !== "Desconocido") {
+        allModelsSet.add(prodName);
+        productMapYear[prodName] = (productMapYear[prodName] || 0) + cantidad;
+        if (rowDate.getMonth() === currentMonth)
+          productMapMonth[prodName] =
+            (productMapMonth[prodName] || 0) + cantidad;
+        if (rowDate >= startOfWeek)
+          productMapWeek[prodName] = (productMapWeek[prodName] || 0) + cantidad;
+      }
 
+      // --- CLIENTES ---
+      if (clientName && clientName !== "Desconocido") {
+        allClientsSet.add(clientName);
+        activeClients.add(clientName);
+        clientMapYear[clientName] = (clientMapYear[clientName] || 0) + cantidad;
+        if (rowDate.getMonth() === currentMonth)
+          clientMapMonth[clientName] =
+            (clientMapMonth[clientName] || 0) + cantidad;
+        if (rowDate >= startOfWeek)
+          clientMapWeek[clientName] =
+            (clientMapWeek[clientName] || 0) + cantidad;
+      }
+
+      // --- PEDIDOS ---
       if (oc !== undefined && oc !== null && oc !== "") {
         uniqueOrders.add(oc);
         if (detalles.toString().toLowerCase().includes("mercadolibre")) {
@@ -1159,20 +1202,7 @@ function AnalisisPedidos() {
         }
       }
 
-      if (prodName && prodName !== "Desconocido") {
-        productMapYear[prodName] = (productMapYear[prodName] || 0) + cantidad;
-        if (
-          rowDate.getMonth() === currentMonth &&
-          rowDate.getFullYear() === currentYear
-        ) {
-          productMapMonth[prodName] =
-            (productMapMonth[prodName] || 0) + cantidad;
-        }
-        if (rowDate >= startOfWeek) {
-          productMapWeek[prodName] = (productMapWeek[prodName] || 0) + cantidad;
-        }
-      }
-
+      // --- MENSUAL GLOBAL ---
       const monthIndex = rowDate.getMonth();
       const monthName = monthNames[monthIndex];
       if (monthMap[monthName] !== undefined) {
@@ -1180,46 +1210,62 @@ function AnalisisPedidos() {
       }
     });
 
-    const getTop3Products = (map) =>
+    // Helpers de ordenamiento
+    const getTop3 = (map) =>
       Object.entries(map)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
         .slice(0, 3);
 
-    const topProductsYear = Object.entries(productMapYear)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 10);
+    const getTop10 = (map) =>
+      Object.entries(map)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 10);
 
+    // Data procesada para retornar
     const salesByMonth = monthNames.slice(0, currentMonth + 1).map((name) => ({
       mes: name,
       ventas: monthMap[name],
     }));
-
     const recordMonth = [...salesByMonth].sort(
       (a, b) => b.ventas - a.ventas
     )[0];
 
     return {
-      topProductsYear,
+      // Globales
       salesByMonth,
       totalOrders: uniqueOrders.size,
       mlOrders: uniqueMLOrders.size,
-      top3Month: getTop3Products(productMapMonth),
-      top3Week: getTop3Products(productMapWeek),
       recordMonthName: recordMonth?.mes || "-",
-      allModels: Array.from(allModelsSet).sort(), // Lista ordenada para el buscador
-      filteredRawData: filteredData, // Guardamos la data cruda filtrada para usarla en el Modal
+      filteredRawData: filteredData,
+
+      // Datos Productos
+      topProductsYear: getTop10(productMapYear),
+      top3ProdMonth: getTop3(productMapMonth),
+      top3ProdWeek: getTop3(productMapWeek),
+      allModels: Array.from(allModelsSet).sort(),
+
+      // Datos Clientes
+      topClientsYear: getTop10(clientMapYear),
+      totalActiveClients: activeClients.size,
+      top3ClientMonth: getTop3(clientMapMonth),
+      top3ClientWeek: getTop3(clientMapWeek),
+      allClients: Array.from(allClientsSet).sort(),
     };
   }, [datos]);
 
-  // --- LÓGICA DEL BUSCADOR ---
+  // --- MANEJO DEL BUSCADOR ---
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setBusqueda(val);
     if (val.length > 0 && analysisData) {
-      const coincidencias = analysisData.allModels.filter((m) =>
-        m.toLowerCase().includes(val.toLowerCase())
+      const listaBase =
+        modoVista === "PRODUCTOS"
+          ? analysisData.allModels
+          : analysisData.allClients;
+      const coincidencias = listaBase.filter((item) =>
+        item.toLowerCase().includes(val.toLowerCase())
       );
       setSugerencias(coincidencias);
       setMostrarSugerencias(true);
@@ -1228,73 +1274,93 @@ function AnalisisPedidos() {
     }
   };
 
-  const seleccionarProducto = (nombre) => {
+  // --- SELECCIÓN DE ITEM (ABRIR MODAL) ---
+  const seleccionarItem = (nombre) => {
     setBusqueda("");
     setMostrarSugerencias(false);
+    setModalPage(1);
 
-    // Calculamos los datos específicos para este producto
     const rawData = analysisData.filteredRawData;
-    const productRows = rawData.filter(
-      (r) => (r.MODELO || r.Modelo) === nombre
-    );
 
-    // 1. Ventas por Mes del producto
-    const monthNames = [
-      "Ene",
-      "Feb",
-      "Mar",
-      "Abr",
-      "May",
-      "Jun",
-      "Jul",
-      "Ago",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dic",
-    ];
-    const prodMonthMap = {};
-    monthNames.forEach((m) => (prodMonthMap[m] = 0));
+    // Filtramos las filas correspondientes al item seleccionado
+    const rows =
+      modoVista === "PRODUCTOS"
+        ? rawData.filter((r) => (r.MODELO || r.Modelo) === nombre)
+        : rawData.filter((r) => (r.CLIENTE || r.Cliente) === nombre);
 
-    // 2. Top Clientes del producto
-    const clientMap = {};
+    if (rows.length === 0) return;
+
+    // Estadísticas del Modal
     let totalUnits = 0;
+    const pieMap = {}; // Mapa para la torta (Relación Cliente-Producto)
 
-    productRows.forEach((row) => {
+    rows.forEach((row) => {
       const cant = Number(row.CANTIDAD || row.Cantidad || 1);
-      const dateVal = row.FECHA || row.Fecha || row.fecha;
-      const rowDate = new Date(dateVal);
-      const cliente = row.CLIENTE || row.Cliente || "Desconocido";
-
-      // Mes
-      if (!isNaN(rowDate)) {
-        const mName = monthNames[rowDate.getMonth()];
-        if (prodMonthMap[mName] !== undefined) prodMonthMap[mName] += cant;
-      }
-
-      // Cliente
-      clientMap[cliente] = (clientMap[cliente] || 0) + cant;
       totalUnits += cant;
+
+      // Si veo un cliente, quiero saber qué productos compra.
+      // Si veo un producto, quiero saber qué clientes lo compran.
+      const key =
+        modoVista === "CLIENTES"
+          ? row.MODELO || row.Modelo || "Desconocido"
+          : row.CLIENTE || row.Cliente || "Desconocido";
+
+      pieMap[key] = (pieMap[key] || 0) + cant;
     });
 
-    const now = new Date();
-    const salesChart = monthNames
-      .slice(0, now.getMonth() + 1)
-      .map((m) => ({ mes: m, ventas: prodMonthMap[m] }));
-
-    const topClients = Object.entries(clientMap)
+    // Top 5 para gráfico de torta
+    const topPie = Object.entries(pieMap)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 5); // Top 5 clientes
+      .slice(0, 5);
 
-    setProductoSeleccionado({
+    // Historial de pedidos (Bitácora)
+    const lastOrders = [...rows]
+      .sort(
+        (a, b) => new Date(b.FECHA || b.Fecha) - new Date(a.FECHA || a.Fecha)
+      ) // Más reciente primero
+      .slice(0, 100) // Máximo 100 para paginar
+      .map((row) => ({
+        fecha: new Date(row.FECHA || row.Fecha).toLocaleDateString("es-AR"),
+        // La columna variable muestra el dato complementario
+        columnaVariable:
+          modoVista === "CLIENTES"
+            ? row.MODELO || row.Modelo || "-"
+            : row.CLIENTE || row.Cliente || "-",
+        cantidad: row.CANTIDAD || row.Cantidad || 1,
+        oc: row.OC || row.oc || "-",
+      }));
+
+    const lastDate = lastOrders.length > 0 ? lastOrders[0].fecha : "-";
+
+    setSelectedItem({
+      type: modoVista,
       nombre,
       totalUnits,
-      salesChart,
-      topClients,
+      topPie,
+      lastOrders,
+      lastDate,
     });
   };
 
+  // Paginación del Modal en tiempo de render
+  let modalPaginationData = [];
+  let totalModalPages = 0;
+  if (selectedItem) {
+    totalModalPages = Math.ceil(
+      selectedItem.lastOrders.length / MODAL_ITEMS_PER_PAGE
+    );
+    const startIndex = (modalPage - 1) * MODAL_ITEMS_PER_PAGE;
+    modalPaginationData = selectedItem.lastOrders.slice(
+      startIndex,
+      startIndex + MODAL_ITEMS_PER_PAGE
+    );
+  }
+
+  // Colores para gráfico de torta
+  const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A28DFF"];
+
+  // --- RENDERIZADO ---
   if (loading)
     return (
       <div className="flex justify-center items-center h-64 text-white text-2xl">
@@ -1313,82 +1379,171 @@ function AnalisisPedidos() {
   if (!analysisData)
     return <div className="text-white text-center p-10">Sin datos 2025.</div>;
 
+  const isClientMode = modoVista === "CLIENTES";
+
+  // Configuración dinámica de las tarjetas según el modo
+  const cardTotalTitle = isClientMode ? "Clientes Activos" : "Total Pedidos";
+  const cardTotalValue = isClientMode
+    ? analysisData.totalActiveClients
+    : analysisData.totalOrders;
+  const cardTotalSub = isClientMode
+    ? "Han comprado en 2025"
+    : "OCs Únicos (Año)";
+
+  const cardTopList = isClientMode
+    ? analysisData.topClientsYear
+    : analysisData.topProductsYear;
+  const cardTop3Month = isClientMode
+    ? analysisData.top3ClientMonth
+    : analysisData.top3ProdMonth;
+  const cardTop3Week = isClientMode
+    ? analysisData.top3ClientWeek
+    : analysisData.top3ProdWeek;
+
   return (
     <div className="animate-in fade-in duration-500 relative">
-      {/* --- HEADER CON BUSCADOR --- */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-6">
         <div>
-          <h1 className="text-4xl font-bold text-left">
-            Análisis de Pedidos 2025
+          <h1 className="text-4xl font-bold text-left flex items-center gap-3">
+            {isClientMode ? (
+              <FaUsers className="text-purple-400" />
+            ) : (
+              <FaCubes className="text-blue-400" />
+            )}
+            Análisis de {isClientMode ? "Clientes" : "Pedidos"} 2025
           </h1>
-          <p className="text-gray-400 mt-1">Datos en tiempo real</p>
+          <p className="text-gray-400 mt-1 ml-1">
+            Tablero de control comercial
+          </p>
         </div>
 
-        {/* Buscador */}
-        <div className="relative w-full md:w-96">
-          <div className="relative">
+        <div className="flex flex-col md:flex-row gap-4 items-center w-full md:w-auto">
+          {/* SWITCH */}
+          <div className="bg-slate-800 p-1 rounded-lg flex border border-slate-600">
+            <button
+              onClick={() => {
+                setModoVista("PRODUCTOS");
+                setBusqueda("");
+              }}
+              className={`px-6 py-2 rounded-md font-bold transition-all ${
+                !isClientMode
+                  ? "bg-blue-600 text-white shadow-lg"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              PRODUCTOS
+            </button>
+            <button
+              onClick={() => {
+                setModoVista("CLIENTES");
+                setBusqueda("");
+              }}
+              className={`px-6 py-2 rounded-md font-bold transition-all ${
+                isClientMode
+                  ? "bg-purple-600 text-white shadow-lg"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              CLIENTES
+            </button>
+          </div>
+
+          {/* BUSCADOR */}
+          <div className="relative w-full md:w-80">
             <input
               type="text"
-              placeholder="Buscar producto..."
+              placeholder={
+                isClientMode ? "Buscar cliente..." : "Buscar producto..."
+              }
               value={busqueda}
               onChange={handleSearchChange}
               className="w-full bg-slate-800 text-white border border-slate-600 rounded-full py-3 px-5 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-lg"
             />
             <FaBoxOpen className="absolute right-4 top-3.5 text-gray-400" />
-          </div>
 
-          {/* Lista de Sugerencias */}
-          {mostrarSugerencias && sugerencias.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto border border-slate-600">
-              {sugerencias.map((prod, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => seleccionarProducto(prod)}
-                  className="px-4 py-3 hover:bg-blue-600 cursor-pointer text-white border-b border-slate-600 last:border-0 transition-colors flex items-center gap-3"
-                >
-                  <FaCubes className="text-blue-300" />
-                  {prod}
-                </div>
-              ))}
-            </div>
-          )}
+            {mostrarSugerencias && sugerencias.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-slate-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto border border-slate-600">
+                {sugerencias.map((item, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => seleccionarItem(item)}
+                    className="px-4 py-3 hover:bg-slate-600 cursor-pointer text-white border-b border-slate-600 last:border-0 transition-colors flex items-center gap-3"
+                  >
+                    {isClientMode ? (
+                      <FaUserTie className="text-purple-300" />
+                    ) : (
+                      <FaCubes className="text-blue-300" />
+                    )}
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* --- DASHBOARD GENERAL (Igual que antes) --- */}
+      {/* TARJETAS DE RESUMEN (KPIs) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
-        <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-blue-500 flex flex-col justify-center">
+        {/* Card 1: Total */}
+        <div
+          className={`bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 flex flex-col justify-center ${
+            isClientMode ? "border-purple-500" : "border-blue-500"
+          }`}
+        >
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
-            Total Pedidos
+            {cardTotalTitle}
           </h3>
-          <p className="text-4xl font-bold text-blue-400">
-            {analysisData.totalOrders}
+          <p
+            className={`text-4xl font-bold ${
+              isClientMode ? "text-purple-400" : "text-blue-400"
+            }`}
+          >
+            {cardTotalValue}
           </p>
-          <p className="text-xs text-gray-500 mt-1">OCs Únicos (Año)</p>
+          <p className="text-xs text-gray-500 mt-1">{cardTotalSub}</p>
         </div>
 
-        <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
-          <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
-            MercadoLibre
-          </h3>
-          <p className="text-4xl font-bold text-yellow-400">
-            {analysisData.mlOrders}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            {((analysisData.mlOrders / analysisData.totalOrders) * 100).toFixed(
-              0
-            )}
-            % del total
-          </p>
-        </div>
+        {/* Card 2: MercadoLibre o Top Cliente */}
+        {!isClientMode ? (
+          <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
+            <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
+              MercadoLibre
+            </h3>
+            <p className="text-4xl font-bold text-yellow-400">
+              {analysisData.mlOrders}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {(
+                (analysisData.mlOrders / analysisData.totalOrders) *
+                100
+              ).toFixed(0)}
+              % del total
+            </p>
+          </div>
+        ) : (
+          <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
+            <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
+              Cliente Top (Año)
+            </h3>
+            <p className="text-lg font-bold text-yellow-400 truncate px-1">
+              {cardTopList[0]?.name || "-"}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {cardTopList[0]?.value || 0} u. compradas
+            </p>
+          </div>
+        )}
 
+        {/* Card 3: Top Mes */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-green-500">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
             Top 3 Mes Actual
           </h3>
-          {analysisData.top3Month.length > 0 ? (
+          {cardTop3Month.length > 0 ? (
             <ul className="space-y-2">
-              {analysisData.top3Month.map((p, i) => (
+              {cardTop3Month.map((p, i) => (
                 <li
                   key={i}
                   className="flex justify-between items-center text-sm border-b border-gray-700 pb-1 last:border-0 last:pb-0"
@@ -1418,13 +1573,14 @@ function AnalisisPedidos() {
           )}
         </div>
 
+        {/* Card 4: Top Semana */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-teal-400">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
             Top 3 Semana
           </h3>
-          {analysisData.top3Week.length > 0 ? (
+          {cardTop3Week.length > 0 ? (
             <ul className="space-y-2">
-              {analysisData.top3Week.map((p, i) => (
+              {cardTop3Week.map((p, i) => (
                 <li
                   key={i}
                   className="flex justify-between items-center text-sm border-b border-gray-700 pb-1 last:border-0 last:pb-0"
@@ -1454,6 +1610,7 @@ function AnalisisPedidos() {
           )}
         </div>
 
+        {/* Card 5: Mes Récord */}
         <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-purple-500 flex flex-col justify-center">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
             Mes Récord
@@ -1461,18 +1618,26 @@ function AnalisisPedidos() {
           <p className="text-3xl font-bold text-purple-400 mt-2">
             {analysisData.recordMonthName}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Mayor volumen</p>
+          <p className="text-xs text-gray-500 mt-1">Mayor volumen global</p>
         </div>
       </div>
 
+      {/* GRÁFICOS PRINCIPALES */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
         <div className="bg-slate-800 p-6 rounded-xl shadow-lg min-h-[450px]">
           <h3 className="text-xl font-bold mb-6 text-gray-200 flex items-center gap-2">
-            <FaBoxOpen className="text-yellow-500" /> Top Modelos 2025 (Global)
+            {isClientMode ? (
+              <FaUserTie className="text-yellow-500" />
+            ) : (
+              <FaBoxOpen className="text-yellow-500" />
+            )}
+            {isClientMode
+              ? " Top 10 Clientes (Volumen Anual)"
+              : " Top 10 Modelos (Global)"}
           </h3>
           <ResponsiveContainer width="100%" height={350}>
             <BarChart
-              data={analysisData.topProductsYear}
+              data={cardTopList}
               layout="vertical"
               margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
             >
@@ -1501,14 +1666,20 @@ function AnalisisPedidos() {
               />
               <Bar
                 dataKey="value"
-                fill="#3b82f6"
+                fill={isClientMode ? "#a855f7" : "#3b82f6"}
                 radius={[0, 4, 4, 0]}
                 barSize={20}
               >
-                {analysisData.topProductsYear.map((entry, index) => (
+                {cardTopList.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={index < 3 ? "#60a5fa" : "#475569"}
+                    fill={
+                      index < 3
+                        ? isClientMode
+                          ? "#d8b4fe"
+                          : "#60a5fa"
+                        : "#475569"
+                    }
                   />
                 ))}
               </Bar>
@@ -1518,7 +1689,8 @@ function AnalisisPedidos() {
 
         <div className="bg-slate-800 p-6 rounded-xl shadow-lg min-h-[450px]">
           <h3 className="text-xl font-bold mb-6 text-gray-200 flex items-center gap-2">
-            <FaChartLine className="text-green-500" /> Evolución Mensual Global
+            <FaChartLine className="text-green-500" /> Evolución de Ventas
+            Global
           </h3>
           <ResponsiveContainer width="100%" height={350}>
             <LineChart
@@ -1565,23 +1737,29 @@ function AnalisisPedidos() {
         </div>
       </div>
 
-      {/* --- MODAL DE DETALLE DE PRODUCTO --- */}
-      {productoSeleccionado && (
+      {/* --- MODAL DE DETALLE --- */}
+      {selectedItem && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[100] p-4">
-          <div className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-600 flex flex-col">
+          <div className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto border border-slate-600 flex flex-col animate-in zoom-in duration-200">
             {/* Header Modal */}
             <div className="p-6 border-b border-slate-700 flex justify-between items-start sticky top-0 bg-slate-800 z-10">
               <div>
                 <h2 className="text-3xl font-bold text-white flex items-center gap-3">
-                  <FaCubes className="text-blue-400" />
-                  {productoSeleccionado.nombre}
+                  {selectedItem.type === "PRODUCTOS" ? (
+                    <FaCubes className="text-blue-400" />
+                  ) : (
+                    <FaUserTie className="text-purple-400" />
+                  )}
+                  {selectedItem.nombre}
                 </h2>
                 <p className="text-gray-400 mt-1">
-                  Detalle exclusivo del producto
+                  {selectedItem.type === "PRODUCTOS"
+                    ? "Ficha técnica del producto"
+                    : "Perfil del cliente"}
                 </p>
               </div>
               <button
-                onClick={() => setProductoSeleccionado(null)}
+                onClick={() => setSelectedItem(null)}
                 className="text-gray-400 hover:text-white text-2xl bg-slate-700 hover:bg-slate-600 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
               >
                 ✕
@@ -1590,83 +1768,180 @@ function AnalisisPedidos() {
 
             {/* Body Modal */}
             <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Columna Izquierda: KPIs y Clientes */}
+              {/* COLUMNA IZQUIERDA */}
               <div className="md:col-span-1 space-y-6">
-                <div className="bg-blue-900/30 p-6 rounded-xl border border-blue-800 text-center">
-                  <h3 className="text-blue-300 uppercase text-xs font-bold mb-2">
-                    Unidades Vendidas (2025)
+                <div
+                  className={`bg-opacity-20 p-5 rounded-xl border text-center ${
+                    selectedItem.type === "PRODUCTOS"
+                      ? "bg-blue-900 border-blue-800"
+                      : "bg-purple-900 border-purple-800"
+                  }`}
+                >
+                  <h3
+                    className={`uppercase text-xs font-bold mb-2 ${
+                      selectedItem.type === "PRODUCTOS"
+                        ? "text-blue-300"
+                        : "text-purple-300"
+                    }`}
+                  >
+                    Total Comprado (2025)
                   </h3>
                   <p className="text-5xl font-bold text-white">
-                    {productoSeleccionado.totalUnits}
+                    {selectedItem.totalUnits}{" "}
+                    <span className="text-base font-normal text-gray-400">
+                      u
+                    </span>
                   </p>
                 </div>
 
+                {/* Gráfico de Torta */}
                 <div className="bg-slate-700/50 p-5 rounded-xl border border-slate-600">
-                  <h3 className="text-gray-300 font-bold mb-4 flex items-center gap-2">
-                    <FaBoxOpen className="text-yellow-400" /> Top Clientes
+                  <h3 className="text-gray-300 font-bold mb-4 text-sm uppercase text-center">
+                    {selectedItem.type === "PRODUCTOS"
+                      ? "Top Clientes"
+                      : "Productos Favoritos"}
                   </h3>
-                  {productoSeleccionado.topClients.length > 0 ? (
-                    <ul className="space-y-3">
-                      {productoSeleccionado.topClients.map((c, i) => (
-                        <li key={i} className="flex justify-between text-sm">
-                          <span
-                            className="text-gray-300 truncate w-32"
-                            title={c.name}
-                          >
-                            {i + 1}. {c.name}
-                          </span>
-                          <span className="font-bold text-white">
-                            {c.value} u
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500">
-                      Sin datos de clientes
-                    </p>
-                  )}
+                  <div className="h-40 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={selectedItem.topPie}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={40}
+                          outerRadius={70}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {selectedItem.topPie.map((entry, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#1e293b",
+                            borderRadius: "8px",
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <ul className="space-y-2 mt-2">
+                    {selectedItem.topPie.map((item, i) => (
+                      <li
+                        key={i}
+                        className="flex justify-between text-xs text-gray-300 border-b border-slate-600 pb-1 last:border-0"
+                      >
+                        <span className="truncate w-32" title={item.name}>
+                          {i + 1}. {item.name}
+                        </span>
+                        <span className="font-bold">{item.value}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
 
-              {/* Columna Derecha: Gráfico */}
-              <div className="md:col-span-2 bg-slate-900/50 p-6 rounded-xl border border-slate-700">
-                <h3 className="text-gray-200 font-bold mb-6">
-                  Evolución de Ventas 2025
-                </h3>
-                <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={productoSeleccionado.salesChart}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        strokeOpacity={0.1}
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="mes"
-                        stroke="#94a3b8"
-                        interval={0}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis stroke="#94a3b8" allowDecimals={false} />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#0f172a",
-                          borderColor: "#334155",
-                          borderRadius: "8px",
-                        }}
-                        itemStyle={{ color: "#3b82f6" }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="ventas"
-                        stroke="#3b82f6"
-                        strokeWidth={3}
-                        dot={{ r: 4, fill: "#3b82f6", stroke: "#fff" }}
-                        activeDot={{ r: 6 }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+              {/* COLUMNA DERECHA */}
+              <div className="md:col-span-2 space-y-6">
+                {/* Bitácora Historial */}
+                <div className="bg-slate-700/30 p-5 rounded-xl border border-slate-600">
+                  <h3 className="text-gray-200 font-bold mb-4 flex items-center justify-between text-sm uppercase">
+                    <div className="flex items-center gap-2">
+                      <FaHistory className="text-green-400" /> Historial de
+                      Pedidos
+                    </div>
+                    <span className="text-xs text-gray-500 normal-case">
+                      Página {modalPage} de {totalModalPages}
+                    </span>
+                  </h3>
+
+                  <div className="overflow-x-auto min-h-[200px]">
+                    <table className="w-full text-sm text-left text-gray-300">
+                      <thead className="text-xs text-gray-400 uppercase bg-slate-700/50">
+                        <tr>
+                          <th className="px-3 py-2">Fecha</th>
+                          <th className="px-3 py-2">
+                            {selectedItem.type === "PRODUCTOS"
+                              ? "Cliente"
+                              : "Producto"}
+                          </th>
+                          <th className="px-3 py-2 text-center">Cant.</th>
+                          <th className="px-3 py-2">OC</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalPaginationData.map((order, idx) => (
+                          <tr
+                            key={idx}
+                            className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors"
+                          >
+                            <td className="px-3 py-2 font-mono text-xs">
+                              {order.fecha}
+                            </td>
+                            <td
+                              className="px-3 py-2 font-medium text-white truncate max-w-[150px]"
+                              title={order.columnaVariable}
+                            >
+                              {order.columnaVariable}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {order.cantidad}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-400">
+                              {order.oc}
+                            </td>
+                          </tr>
+                        ))}
+                        {modalPaginationData.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan="4"
+                              className="text-center py-4 italic text-gray-500"
+                            >
+                              No hay registros recientes
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Controles Paginación */}
+                  <div className="flex justify-between items-center mt-4">
+                    <button
+                      onClick={() =>
+                        setModalPage((prev) => Math.max(prev - 1, 1))
+                      }
+                      disabled={modalPage === 1}
+                      className="px-3 py-1 bg-slate-600 text-xs rounded hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      onClick={() =>
+                        setModalPage((prev) =>
+                          Math.min(prev + 1, totalModalPages)
+                        )
+                      }
+                      disabled={modalPage === totalModalPages}
+                      className="px-3 py-1 bg-slate-600 text-xs rounded hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900/30 p-4 rounded-lg text-center border border-slate-700">
+                  <p className="text-sm text-gray-400">
+                    Último movimiento registrado:{" "}
+                    <span className="text-white font-bold">
+                      {selectedItem.lastDate}
+                    </span>
+                  </p>
                 </div>
               </div>
             </div>
