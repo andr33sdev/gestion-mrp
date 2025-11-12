@@ -18,8 +18,9 @@ import {
   FaTrash,
   FaBoxOpen,
   FaSpinner,
-  FaKey, // <-- ¡NUEVO ICONO!
-  FaSignOutAlt, // <-- ¡NUEVO ICONO!
+  FaKey,
+  FaSignOutAlt,
+  FaCubes, // <-- ¡NUEVO ICONO!
 } from "react-icons/fa"; // <-- ¡RUTA CORREGIDA!
 
 // Gráficos
@@ -37,7 +38,7 @@ import {
 // --- Constantes ---
 // ¡URL Base de la API actualizada!
 const API_BASE_URL = "https://horno-backend.onrender.com/api";
-//const API_BASE_URL = "http://localhost:4000/api"; // Para desarrollo local
+//const API_BASE_URL = "http://localhost:4000/api"
 const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
 
@@ -63,21 +64,29 @@ function getStationStatus(stationId, allRecords) {
   // (Esta función es idéntica a la versión anterior)
   const lastEvent = allRecords.find((reg) =>
     reg.accion.includes(`Estacion ${stationId}`)
+    // ¡MODIFICADO! Excluimos 'PRODUCCION' para que no ponga la estación en INACTIVA
+    && reg.tipo !== 'PRODUCCION'
   );
+  
   let status = "INACTIVA";
   let lastEventTimestamp = null;
+  
   if (lastEvent) {
     lastEventTimestamp = lastEvent.timestamp;
     if (lastEvent.accion.includes("Se inicio ciclo")) status = "COCINANDO";
     else if (lastEvent.accion.includes("Enfriando")) status = "ENFRIANDO";
   }
+
+  // Filtramos solo por EVENTOS de "Inicio ciclo"
   const cycleStartEvents = allRecords.filter((reg) =>
-    reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+    reg.tipo === 'EVENTO' && reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
   );
+  
   let cycleDuration = "N/A";
   let averageCycleTime = "N/A";
   let averageCycleTimeMs = null;
   const allCycleDurationsMs = [];
+
   if (cycleStartEvents.length >= 2) {
     for (let i = 0; i < cycleStartEvents.length - 1; i++) {
       try {
@@ -102,6 +111,7 @@ function getStationStatus(stationId, allRecords) {
       averageCycleTimeMs = avgMs;
     }
   }
+  
   let liveCycleStartTime = null;
   if (status === "COCINANDO" || status === "ENFRIANDO") {
     if (cycleStartEvents[0]) {
@@ -112,6 +122,7 @@ function getStationStatus(stationId, allRecords) {
       }
     }
   }
+  
   let cyclesToday = 0;
   try {
     const today = new Date();
@@ -411,60 +422,69 @@ function Dashboard() {
 
   // Pre-cálculo para la tabla (¡ACTUALIZADO!)
   const cycleTimeMap = useMemo(() => {
+    // Filtramos los eventos de INICIO de ciclo
+    const station1Starts = registros.filter((reg) =>
+        reg.tipo === "EVENTO" && reg.accion.includes("Se inicio ciclo Estacion 1")
+    );
+    const station2Starts = registros.filter((reg) =>
+        reg.tipo === "EVENTO" && reg.accion.includes("Se inicio ciclo Estacion 2")
+    );
+    
+    // Filtramos los eventos de FIN de ciclo (los que creamos nosotros)
+    const station1Prods = registros.filter((reg) =>
+        reg.tipo === "PRODUCCION" && reg.accion.includes("Estacion 1")
+    );
+    const station2Prods = registros.filter((reg) =>
+        reg.tipo === "PRODUCCION" && reg.accion.includes("Estacion 2")
+    );
+
     const newMap = {};
 
-    const processStarts = (stationId) => {
-      // 1. Encontrar todos los triggers de inicio de ciclo para esta estación
-      // (Filtramos por EVENTO y la acción específica)
-      const starts = registros.filter(
-        (reg) =>
-          reg.tipo === "EVENTO" &&
-          reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
-      );
-
-      // 2. Iterar sobre ellos (vienen de más nuevo a más viejo)
+    const processStarts = (starts, prods, estacionAccion) => {
+      // Iteramos sobre los eventos de INICIO
       for (let i = 0; i < starts.length - 1; i++) {
-        const currentEvent = starts[i]; // Evento N (ej: hoy 10 AM)
-        const previousEvent = starts[i + 1]; // Evento N-1 (ej: hoy 8 AM)
-
+        const currentEvent = starts[i];     // Ej: 10:00 AM (el más nuevo)
+        const previousEvent = starts[i + 1]; // Ej: 08:00 AM (el anterior)
+        
         try {
-          // 3. Calcular la duración
           const date1 = new Date(currentEvent.timestamp);
           const date2 = new Date(previousEvent.timestamp);
-          const diffMs = date1.getTime() - date2.getTime();
-          const durationStr = formatDuration(diffMs);
+          const diffMs = date1.getTime() - date2.getTime(); // Duración del ciclo de las 08:00 AM
+          
+          // Este 'diffMs' pertenece al ciclo que TERMINÓ en 'currentEvent' (10:00 AM)
+          // Necesitamos encontrar el registro de PRODUCCION asociado a ESTE evento
+          
+          // Buscamos un registro de PRODUCCION que haya ocurrido (gracias al offset de 5 seg)
+          // *antes* del 'currentEvent' (10:00 AM) pero *después* del 'previousEvent' (08:00 AM)
+          const matchingProd = prods.find(p => {
+              const pDate = new Date(p.timestamp);
+              return pDate < date1 && pDate > date2;
+          });
 
-          // 4. ¡NUEVA LÓGICA!
-          // Buscar si existe un registro de PRODUCCION con el *mismo timestamp*
-          const matchingProdEvent = registros.find(
-            (r) =>
-              r.tipo === "PRODUCCION" && r.timestamp === currentEvent.timestamp
-          );
+          // ¡LÓGICA ACTUALIZADA!
+          // Usamos el ID del registro de PRODUCCION si existe.
+          // Si no existe (ej. no había productos), usamos el ID del evento de INICIO de ciclo
+          // que *terminó* el ciclo (currentEvent).
+          const key = matchingProd ? matchingProd.id : currentEvent.id;
 
-          if (matchingProdEvent) {
-            // 5a. Si existe, guardar la duración en el ID del registro PRODUCCION
-            newMap[matchingProdEvent.id] = {
-              durationMs: diffMs,
-              durationStr: durationStr,
-            };
-          } else {
-            // 5b. Si no, (ej: fue un ciclo sin productos) guardar en el ID del EVENTO
-            newMap[currentEvent.id] = {
-              durationMs: diffMs,
-              durationStr: durationStr,
-            };
-          }
+          newMap[key] = {
+            durationMs: diffMs,
+            durationStr: formatDuration(diffMs),
+            accion: estacionAccion // Guardamos la acción (ej. "Estacion 1") para el cálculo de promedio
+          };
+          
         } catch (e) {
-          console.error("Error calculando cycleTime:", e);
+          console.error(e);
         }
       }
     };
-
-    processStarts(1);
-    processStarts(2);
-
+    
+    processStarts(station1Starts, station1Prods, "Estacion 1");
+    processStarts(station2Starts, station2Prods, "Estacion 2");
+    
     return newMap;
   }, [registros]);
+
 
   // Pre-cálculo para el gráfico (Sin cambios)
   const cycleChartData = useMemo(() => {
@@ -472,8 +492,9 @@ function Dashboard() {
     const combinedData = [];
     const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60;
     const processStationCycles = (stationId, stationName) => {
+      // Usamos solo los eventos de INICIO para el gráfico
       const starts = registros.filter((reg) =>
-        reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+        reg.tipo === 'EVENTO' && reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
       );
       for (let i = 0; i < starts.length - 1; i++) {
         const currentEvent = starts[i];
@@ -665,27 +686,25 @@ function Dashboard() {
                 minute: "2-digit",
                 second: "2-digit",
               });
-              let durationStr = "---";
-              let slowCycleClass = "";
-              // ¡Esta línea ahora funciona para ambos tipos de fila!
+              
               const cycleData = cycleTimeMap[reg.id];
 
-              if (cycleData) {
-                durationStr = cycleData.durationStr;
+              // --- ¡INICIO DE LÓGICA MODIFICADA! ---
+              let durationStr = "---";
+              let slowCycleClass = "";
 
-                // ¡LÓGICA DE CICLO LENTO ACTUALIZADA!
-                // Ahora podemos chequear 'reg.accion' en ambos tipos de fila
-                if (
-                  (reg.accion.includes("Estacion 1") || // Para EVENTOS
-                    reg.accion.includes("Fin de ciclo E1")) && // Para PRODUCCION
-                  avgMsEstacion1
-                ) {
+              // Solo mostramos la duración y calculamos el ciclo lento
+              // si el registro es de tipo PRODUCCION y encontramos datos de ciclo.
+              if (reg.tipo === "PRODUCCION" && cycleData) {
+                durationStr = cycleData.durationStr;
+                
+                // Calculamos el ciclo lento
+                if (cycleData.accion.includes("Estacion 1") && avgMsEstacion1) {
                   if (cycleData.durationMs > avgMsEstacion1 * 1.5) {
                     slowCycleClass = "text-red-400 font-bold";
                   }
                 } else if (
-                  (reg.accion.includes("Estacion 2") || // Para EVENTOS
-                    reg.accion.includes("Fin de ciclo E2")) && // Para PRODUCCION
+                  cycleData.accion.includes("Estacion 2") &&
                   avgMsEstacion2
                 ) {
                   if (cycleData.durationMs > avgMsEstacion2 * 1.5) {
@@ -693,13 +712,28 @@ function Dashboard() {
                   }
                 }
               }
+              // Si es un EVENTO y cycleData tiene datos (porque no hubo productos),
+              // 'durationStr' permanecerá como "---", que es lo que queremos.
+              // --- FIN DE LÓGICA MODIFICADA! ---
 
               const isAlarma = reg.tipo === "ALARMA";
+              const isProduccion = reg.tipo === "PRODUCCION";
+
               const tipoClass = isAlarma
                 ? "bg-red-600/90 text-red-100"
-                : reg.tipo === "PRODUCCION" // <-- ¡AÑADIDO!
-                ? "bg-green-600/90 text-green-100" // <-- ¡AÑADIDO!
+                : isProduccion
+                ? "bg-green-600/90 text-green-100" // <-- ¡NUEVO ESTILO!
                 : "bg-blue-600/90 text-blue-100";
+              
+              let productosParseados = [];
+              if (isProduccion) {
+                  try {
+                      productosParseados = JSON.parse(reg.productos_json || "[]");
+                  } catch(e) {
+                      console.error("Error parseando productos_json:", e);
+                  }
+              }
+
               return (
                 <tr key={reg.id} className="hover:bg-slate-700/50 text-center">
                   <td className="px-4 py-3 text-sm">{fechaStr}</td>
@@ -711,50 +745,33 @@ function Dashboard() {
                       {reg.tipo}
                     </span>
                   </td>
+                  
+                  {/* --- ¡COLUMNA DE ACCIÓN MODIFICADA! --- */}
                   <td className="px-4 py-3 text-left">
-                    {/* --- ¡NUEVA LÓGICA DE RENDERIZADO! --- */}
-                    {reg.tipo === "PRODUCCION" && reg.productos_json ? (
-                      <div>
-                        <span className="text-sm text-gray-400 block mb-2">
-                          Fin de ciclo (Productos archivados):
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {(() => {
-                            try {
-                              // Parseamos el JSON guardado
-                              const productos = JSON.parse(reg.productos_json);
-                              if (productos.length === 0) {
-                                return (
-                                  <span className="text-gray-500 text-sm italic">
-                                    (Sin productos)
-                                  </span>
-                                );
-                              }
-                              // Mapeamos cada producto a un "tag"
-                              return productos.map((prod, index) => (
-                                <span
-                                  key={index}
-                                  className="bg-gray-700 text-gray-200 text-xs font-semibold px-3 py-1 rounded-full shadow-md"
+                    {isProduccion ? (
+                      // Si es PRODUCCION, mostramos las etiquetas (tags)
+                      <div className="flex flex-wrap gap-2">
+                        <span className="font-semibold text-gray-300">Fin de Ciclo:</span>
+                        {productosParseados.length > 0 ? (
+                            productosParseados.map((prod, idx) => (
+                                <span 
+                                    key={idx} 
+                                    className="px-2 py-0.5 bg-gray-600 text-gray-100 rounded-md text-sm"
                                 >
-                                  {prod}
+                                    {prod}
                                 </span>
-                              ));
-                            } catch (e) {
-                              // Fallback por si el JSON está mal (no debería pasar)
-                              return (
-                                <span className="text-red-400 text-sm italic">
-                                  {reg.accion}
-                                </span>
-                              );
-                            }
-                          })()}
-                        </div>
+                            ))
+                        ) : (
+                            <span className="text-gray-500 italic">Sin productos cargados</span>
+                        )}
                       </div>
                     ) : (
-                      // Si no es 'PRODUCCION', mostrar la acción normal
+                      // Si es EVENTO o ALARMA, mostramos la acción normal
                       reg.accion
                     )}
                   </td>
+                  {/* --- FIN COLUMNA DE ACCIÓN --- */}
+
                   <td
                     className={`px-4 py-3 text-sm font-mono ${slowCycleClass}`}
                   >

@@ -1,13 +1,5 @@
-/* Borramos la tabla 'registros' si es que ya existe,
-  para empezar de cero sin conflictos.
-*/
-DROP TABLE IF EXISTS registros;
+-- Este comando borrará permanentemente los registros con los IDs 679355 y 678632
+-- de tu tabla 'registros'.
 
-/* Creamos la nueva tabla con tu estructura deseada.
-*/
-CREATE TABLE registros (
-  id SERIAL PRIMARY KEY,       -- Un identificador único automático
-  fecha DATE,                  -- El campo para la fecha (ej: 2025-11-06)
-  hora TIME,                   -- El campo para la hora (ej: 14:30:00)
-  accion TEXT                  -- Un texto largo para la acción (ej: "Inicio ciclo 3")
-);
+DELETE FROM registros 
+WHERE id IN (729392);
