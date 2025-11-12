@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion } from "framer-motion";
 
-// Íconos del Dashboard y Panel de Control (importación combinada y corregida)
+// Íconos del Dashboard y Panel de Control
 import {
   FaFire,
   FaSnowflake,
@@ -20,10 +20,11 @@ import {
   FaSpinner,
   FaKey,
   FaSignOutAlt,
-  FaCubes, // <-- ¡NUEVO ICONO!
-} from "react-icons/fa"; // <-- ¡RUTA CORREGIDA!
+  FaCubes,
+  FaChartLine,
+} from "react-icons/fa";
 
-// Gráficos
+// Gráficos (Librería Recharts)
 import {
   LineChart,
   Line,
@@ -33,21 +34,26 @@ import {
   Legend,
   ResponsiveContainer,
   CartesianGrid,
+  BarChart,
+  Bar,
+  Cell,
 } from "recharts";
 
 // --- Constantes ---
-// ¡URL Base de la API actualizada!
 const API_BASE_URL = "https://horno-backend.onrender.com/api";
-//const API_BASE_URL = "http://localhost:4000/api"
+//const API_BASE_URL = "http://localhost:4000/api"; // Descomentar para desarrollo local
+
 const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
+const PEDIDOS_API_URL = `${API_BASE_URL}/pedidos-analisis`;
 
 const POLLING_INTERVAL = 10000;
 const HORAS_TIMEOUT_ENFRIADO = 2;
 const MAX_HORAS_CICLO_PROMEDIO = 4;
 const ALARMA_WINDOW_HOURS = 24;
+const ADMIN_PASSWORD = "admin123"; // Contraseña del panel
 
-// --- FUNCIÓN AUXILIAR 1: Formatear Duración (Sin cambios) ---
+// --- FUNCIÓN AUXILIAR 1: Formatear Duración ---
 function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
@@ -59,29 +65,28 @@ function formatDuration(ms) {
     .padStart(2, "0")}`;
 }
 
-// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación (Sin cambios) ---
+// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 function getStationStatus(stationId, allRecords) {
-  // (Esta función es idéntica a la versión anterior)
-  const lastEvent = allRecords.find((reg) =>
-    reg.accion.includes(`Estacion ${stationId}`)
-    // ¡MODIFICADO! Excluimos 'PRODUCCION' para que no ponga la estación en INACTIVA
-    && reg.tipo !== 'PRODUCCION'
+  const lastEvent = allRecords.find(
+    (reg) =>
+      reg.accion.includes(`Estacion ${stationId}`) && reg.tipo !== "PRODUCCION"
   );
-  
+
   let status = "INACTIVA";
   let lastEventTimestamp = null;
-  
+
   if (lastEvent) {
     lastEventTimestamp = lastEvent.timestamp;
     if (lastEvent.accion.includes("Se inicio ciclo")) status = "COCINANDO";
     else if (lastEvent.accion.includes("Enfriando")) status = "ENFRIANDO";
   }
 
-  // Filtramos solo por EVENTOS de "Inicio ciclo"
-  const cycleStartEvents = allRecords.filter((reg) =>
-    reg.tipo === 'EVENTO' && reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+  const cycleStartEvents = allRecords.filter(
+    (reg) =>
+      reg.tipo === "EVENTO" &&
+      reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
   );
-  
+
   let cycleDuration = "N/A";
   let averageCycleTime = "N/A";
   let averageCycleTimeMs = null;
@@ -111,7 +116,7 @@ function getStationStatus(stationId, allRecords) {
       averageCycleTimeMs = avgMs;
     }
   }
-  
+
   let liveCycleStartTime = null;
   if (status === "COCINANDO" || status === "ENFRIANDO") {
     if (cycleStartEvents[0]) {
@@ -122,7 +127,7 @@ function getStationStatus(stationId, allRecords) {
       }
     }
   }
-  
+
   let cyclesToday = 0;
   try {
     const today = new Date();
@@ -164,7 +169,7 @@ function getStationStatus(stationId, allRecords) {
   };
 }
 
-// --- Componente de la Tarjeta de Estación (¡ACTUALIZADO!) ---
+// --- Componente de la Tarjeta de Estación ---
 function StationCard({ title, data }) {
   const [liveDuration, setLiveDuration] = useState("---");
   const animations = {
@@ -197,6 +202,7 @@ function StationCard({ title, data }) {
   };
   const styles = statusStyles[data.status];
   const IconComponent = styles.icon;
+
   useEffect(() => {
     if (!data.liveCycleStartTime) {
       setLiveDuration("---");
@@ -211,6 +217,7 @@ function StationCard({ title, data }) {
     const timerId = setInterval(updateDuration, 1000);
     return () => clearInterval(timerId);
   }, [data.liveCycleStartTime]);
+
   const formatFullTimestamp = (timestampString) => {
     if (!timestampString) return { fecha: "N/A", hora: "N/A" };
     const date = new Date(timestampString);
@@ -228,6 +235,7 @@ function StationCard({ title, data }) {
   const { fecha: lastEventFecha, hora: lastEventHora } = formatFullTimestamp(
     data.lastEvent?.timestamp
   );
+
   return (
     <div
       className={`rounded-xl shadow-2xl p-6 ${styles.bgColor} transition-all duration-500`}
@@ -270,7 +278,6 @@ function StationCard({ title, data }) {
         </div>
       </div>
 
-      {/* --- ¡NUEVO BLOQUE DE PRODUCCIÓN! --- */}
       {data.status !== "INACTIVA" && (
         <div className="mb-4">
           <h3 className="font-semibold text-lg mb-2 text-gray-200">
@@ -291,7 +298,6 @@ function StationCard({ title, data }) {
           </div>
         </div>
       )}
-      {/* --- FIN NUEVO BLOQUE --- */}
 
       <div className="text-sm text-gray-200 bg-black/20 p-4 rounded-lg">
         <h3 className="font-semibold text-lg mb-2">Último Evento:</h3>
@@ -315,7 +321,7 @@ function StationCard({ title, data }) {
   );
 }
 
-// --- Componente del Menú de Alarmas (Sin cambios) ---
+// --- Componente del Menú de Alarmas ---
 function AlarmMenu({ alarms }) {
   const [isOpen, setIsOpen] = useState(false);
   if (alarms.length === 0) return null;
@@ -381,18 +387,16 @@ function AlarmMenu({ alarms }) {
   );
 }
 
-// --- (NUEVO) Componente de la Página: Dashboard (¡ACTUALIZADO!) ---
+// --- Componente: Dashboard ---
 function Dashboard() {
   const [registros, setRegistros] = useState([]);
-  const [produccion, setProduccion] = useState({ 1: [], 2: [] }); // <-- AÑADIDO
+  const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [cargando, setCargando] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
-  // Polling (¡ACTUALIZADO!)
   useEffect(() => {
     const fetchDatos = () => {
-      // Usamos Promise.all para pedir registros y producción al mismo tiempo
       Promise.all([
         fetch(REGISTROS_API_URL).then((res) => {
           if (!res.ok) throw new Error(`Error HTTP ${res.status} en registros`);
@@ -406,95 +410,74 @@ function Dashboard() {
       ])
         .then(([dataRegistros, dataProduccion]) => {
           setRegistros(dataRegistros);
-          setProduccion(dataProduccion); // <-- AÑADIDO
+          setProduccion(dataProduccion);
           setCargando(false);
         })
         .catch((err) => {
           console.error("Error al cargar datos:", err);
           setCargando(false);
-          // Opcional: mostrar un error en la UI
         });
     };
-    fetchDatos(); // Carga inicial
-    const intervalId = setInterval(fetchDatos, POLLING_INTERVAL); // Polling
+    fetchDatos();
+    const intervalId = setInterval(fetchDatos, POLLING_INTERVAL);
     return () => clearInterval(intervalId);
   }, []);
 
-  // Pre-cálculo para la tabla (¡ACTUALIZADO!)
   const cycleTimeMap = useMemo(() => {
-    // Filtramos los eventos de INICIO de ciclo
-    const station1Starts = registros.filter((reg) =>
-        reg.tipo === "EVENTO" && reg.accion.includes("Se inicio ciclo Estacion 1")
+    const station1Starts = registros.filter(
+      (reg) =>
+        reg.tipo === "EVENTO" &&
+        reg.accion.includes("Se inicio ciclo Estacion 1")
     );
-    const station2Starts = registros.filter((reg) =>
-        reg.tipo === "EVENTO" && reg.accion.includes("Se inicio ciclo Estacion 2")
+    const station2Starts = registros.filter(
+      (reg) =>
+        reg.tipo === "EVENTO" &&
+        reg.accion.includes("Se inicio ciclo Estacion 2")
     );
-    
-    // Filtramos los eventos de FIN de ciclo (los que creamos nosotros)
-    const station1Prods = registros.filter((reg) =>
-        reg.tipo === "PRODUCCION" && reg.accion.includes("Estacion 1")
+    const station1Prods = registros.filter(
+      (reg) => reg.tipo === "PRODUCCION" && reg.accion.includes("Estacion 1")
     );
-    const station2Prods = registros.filter((reg) =>
-        reg.tipo === "PRODUCCION" && reg.accion.includes("Estacion 2")
+    const station2Prods = registros.filter(
+      (reg) => reg.tipo === "PRODUCCION" && reg.accion.includes("Estacion 2")
     );
 
     const newMap = {};
-
     const processStarts = (starts, prods, estacionAccion) => {
-      // Iteramos sobre los eventos de INICIO
       for (let i = 0; i < starts.length - 1; i++) {
-        const currentEvent = starts[i];     // Ej: 10:00 AM (el más nuevo)
-        const previousEvent = starts[i + 1]; // Ej: 08:00 AM (el anterior)
-        
+        const currentEvent = starts[i];
+        const previousEvent = starts[i + 1];
         try {
           const date1 = new Date(currentEvent.timestamp);
           const date2 = new Date(previousEvent.timestamp);
-          const diffMs = date1.getTime() - date2.getTime(); // Duración del ciclo de las 08:00 AM
-          
-          // Este 'diffMs' pertenece al ciclo que TERMINÓ en 'currentEvent' (10:00 AM)
-          // Necesitamos encontrar el registro de PRODUCCION asociado a ESTE evento
-          
-          // Buscamos un registro de PRODUCCION que haya ocurrido (gracias al offset de 5 seg)
-          // *antes* del 'currentEvent' (10:00 AM) pero *después* del 'previousEvent' (08:00 AM)
-          const matchingProd = prods.find(p => {
-              const pDate = new Date(p.timestamp);
-              return pDate < date1 && pDate > date2;
+          const diffMs = date1.getTime() - date2.getTime();
+          const matchingProd = prods.find((p) => {
+            const pDate = new Date(p.timestamp);
+            return pDate < date1 && pDate > date2;
           });
-
-          // ¡LÓGICA ACTUALIZADA!
-          // Usamos el ID del registro de PRODUCCION si existe.
-          // Si no existe (ej. no había productos), usamos el ID del evento de INICIO de ciclo
-          // que *terminó* el ciclo (currentEvent).
           const key = matchingProd ? matchingProd.id : currentEvent.id;
-
           newMap[key] = {
             durationMs: diffMs,
             durationStr: formatDuration(diffMs),
-            accion: estacionAccion // Guardamos la acción (ej. "Estacion 1") para el cálculo de promedio
+            accion: estacionAccion,
           };
-          
         } catch (e) {
           console.error(e);
         }
       }
     };
-    
     processStarts(station1Starts, station1Prods, "Estacion 1");
     processStarts(station2Starts, station2Prods, "Estacion 2");
-    
     return newMap;
   }, [registros]);
 
-
-  // Pre-cálculo para el gráfico (Sin cambios)
   const cycleChartData = useMemo(() => {
-    // (Lógica idéntica)
     const combinedData = [];
     const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60;
     const processStationCycles = (stationId, stationName) => {
-      // Usamos solo los eventos de INICIO para el gráfico
-      const starts = registros.filter((reg) =>
-        reg.tipo === 'EVENTO' && reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+      const starts = registros.filter(
+        (reg) =>
+          reg.tipo === "EVENTO" &&
+          reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
       );
       for (let i = 0; i < starts.length - 1; i++) {
         const currentEvent = starts[i];
@@ -522,7 +505,6 @@ function Dashboard() {
       .slice(-30);
   }, [registros]);
 
-  // Pre-cálculo para el Menú de Alarmas (Sin cambios)
   const recentAlarms = useMemo(() => {
     const now = new Date();
     const windowMs = ALARMA_WINDOW_HOURS * 60 * 60 * 1000;
@@ -533,19 +515,14 @@ function Dashboard() {
     );
   }, [registros]);
 
-  // Derivamos los estados (¡ACTUALIZADO!)
   const statusEstacion1 = getStationStatus(1, registros);
   const statusEstacion2 = getStationStatus(2, registros);
   const avgMsEstacion1 = statusEstacion1.averageCycleTimeMs;
   const avgMsEstacion2 = statusEstacion2.averageCycleTimeMs;
 
-  // --- ¡LÍNEAS AÑADIDAS! ---
-  // Añadimos la lista de productos al objeto de estado
   statusEstacion1.productos = produccion[1] || [];
   statusEstacion2.productos = produccion[2] || [];
-  // --- FIN LÍNEAS AÑADIDAS ---
 
-  // Lógica de Paginación (Sin cambios)
   const calculatedTotalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
   const totalPages = Math.min(calculatedTotalPages, 25);
   useEffect(() => {
@@ -553,6 +530,7 @@ function Dashboard() {
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages]);
+
   const historialPaginado = registros.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
@@ -561,7 +539,6 @@ function Dashboard() {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
 
-  // Formateador de eje X (Sin cambios)
   const formatXAxis = (timestamp) => {
     const date = new Date(timestamp);
     const options = { timeZone: "America/Argentina/Buenos_Aires" };
@@ -572,7 +549,6 @@ function Dashboard() {
     });
   };
 
-  // Carga (Sin cambios)
   if (cargando) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900 text-white text-2xl">
@@ -582,7 +558,6 @@ function Dashboard() {
     );
   }
 
-  // Render (Sin cambios, ya que los datos se pasan vía 'statusEstacion1')
   return (
     <>
       <h1 className="text-4xl md:text-5xl font-bold text-center mb-10">
@@ -686,52 +661,39 @@ function Dashboard() {
                 minute: "2-digit",
                 second: "2-digit",
               });
-              
               const cycleData = cycleTimeMap[reg.id];
-
-              // --- ¡INICIO DE LÓGICA MODIFICADA! ---
               let durationStr = "---";
               let slowCycleClass = "";
 
-              // Solo mostramos la duración y calculamos el ciclo lento
-              // si el registro es de tipo PRODUCCION y encontramos datos de ciclo.
               if (reg.tipo === "PRODUCCION" && cycleData) {
                 durationStr = cycleData.durationStr;
-                
-                // Calculamos el ciclo lento
                 if (cycleData.accion.includes("Estacion 1") && avgMsEstacion1) {
-                  if (cycleData.durationMs > avgMsEstacion1 * 1.5) {
+                  if (cycleData.durationMs > avgMsEstacion1 * 1.5)
                     slowCycleClass = "text-red-400 font-bold";
-                  }
                 } else if (
                   cycleData.accion.includes("Estacion 2") &&
                   avgMsEstacion2
                 ) {
-                  if (cycleData.durationMs > avgMsEstacion2 * 1.5) {
+                  if (cycleData.durationMs > avgMsEstacion2 * 1.5)
                     slowCycleClass = "text-red-400 font-bold";
-                  }
                 }
               }
-              // Si es un EVENTO y cycleData tiene datos (porque no hubo productos),
-              // 'durationStr' permanecerá como "---", que es lo que queremos.
-              // --- FIN DE LÓGICA MODIFICADA! ---
 
               const isAlarma = reg.tipo === "ALARMA";
               const isProduccion = reg.tipo === "PRODUCCION";
-
               const tipoClass = isAlarma
                 ? "bg-red-600/90 text-red-100"
                 : isProduccion
-                ? "bg-green-600/90 text-green-100" // <-- ¡NUEVO ESTILO!
+                ? "bg-green-600/90 text-green-100"
                 : "bg-blue-600/90 text-blue-100";
-              
+
               let productosParseados = [];
               if (isProduccion) {
-                  try {
-                      productosParseados = JSON.parse(reg.productos_json || "[]");
-                  } catch(e) {
-                      console.error("Error parseando productos_json:", e);
-                  }
+                try {
+                  productosParseados = JSON.parse(reg.productos_json || "[]");
+                } catch (e) {
+                  console.error("Error parseando productos_json:", e);
+                }
               }
 
               return (
@@ -745,33 +707,31 @@ function Dashboard() {
                       {reg.tipo}
                     </span>
                   </td>
-                  
-                  {/* --- ¡COLUMNA DE ACCIÓN MODIFICADA! --- */}
                   <td className="px-4 py-3 text-left">
                     {isProduccion ? (
-                      // Si es PRODUCCION, mostramos las etiquetas (tags)
                       <div className="flex flex-wrap gap-2">
-                        <span className="font-semibold text-gray-300">Fin de Ciclo:</span>
+                        <span className="font-semibold text-gray-300">
+                          Fin de Ciclo:
+                        </span>
                         {productosParseados.length > 0 ? (
-                            productosParseados.map((prod, idx) => (
-                                <span 
-                                    key={idx} 
-                                    className="px-2 py-0.5 bg-gray-600 text-gray-100 rounded-md text-sm"
-                                >
-                                    {prod}
-                                </span>
-                            ))
+                          productosParseados.map((prod, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-gray-600 text-gray-100 rounded-md text-sm"
+                            >
+                              {prod}
+                            </span>
+                          ))
                         ) : (
-                            <span className="text-gray-500 italic">Sin productos cargados</span>
+                          <span className="text-gray-500 italic">
+                            Sin productos cargados
+                          </span>
                         )}
                       </div>
                     ) : (
-                      // Si es EVENTO o ALARMA, mostramos la acción normal
                       reg.accion
                     )}
                   </td>
-                  {/* --- FIN COLUMNA DE ACCIÓN --- */}
-
                   <td
                     className={`px-4 py-3 text-sm font-mono ${slowCycleClass}`}
                   >
@@ -806,7 +766,7 @@ function Dashboard() {
   );
 }
 
-// --- ¡NUEVO! Componente de la Página: Panel de Control ---
+// --- Componente: PanelControl (¡MEJORADO CON AUTOCOMPLETADO!) ---
 function PanelControl() {
   const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [input1, setInput1] = useState("");
@@ -814,7 +774,10 @@ function PanelControl() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Carga inicial de productos
+  // --- NUEVO: Estado para sugerencias de productos ---
+  const [sugerencias, setSugerencias] = useState([]);
+
+  // Cargar producción actual
   const fetchProduccion = async () => {
     try {
       setLoading(true);
@@ -831,13 +794,32 @@ function PanelControl() {
     }
   };
 
+  // --- NUEVO: Cargar lista de modelos desde el Excel de pedidos ---
   useEffect(() => {
     fetchProduccion();
+
+    // Fetch silencioso para llenar el autocompletado
+    fetch(PEDIDOS_API_URL)
+      .then((res) => res.json())
+      .then((data) => {
+        const modelosSet = new Set();
+        data.forEach((row) => {
+          // Extraemos todos los modelos únicos
+          const m = row.MODELO || row.Modelo || row.modelo;
+          if (m && typeof m === "string" && m.trim() !== "") {
+            modelosSet.add(m.trim());
+          }
+        });
+        // Ordenamos alfabéticamente
+        setSugerencias(Array.from(modelosSet).sort());
+      })
+      .catch((err) =>
+        console.warn("No se pudieron cargar sugerencias de productos:", err)
+      );
   }, []);
 
-  // Añadir un producto
   const handleAdd = async (estacion_id, producto) => {
-    if (!producto) return; // No añadir si está vacío
+    if (!producto) return;
     try {
       const res = await fetch(PRODUCCION_API_URL, {
         method: "POST",
@@ -845,7 +827,6 @@ function PanelControl() {
         body: JSON.stringify({ estacion_id, producto }),
       });
       if (!res.ok) throw new Error("Error del servidor al añadir");
-      // Limpiar input y recargar
       if (estacion_id === 1) setInput1("");
       if (estacion_id === 2) setInput2("");
       fetchProduccion();
@@ -855,26 +836,19 @@ function PanelControl() {
     }
   };
 
-  // Limpiar lista de productos
   const handleClear = async (estacion_id) => {
-    // Pedir confirmación
-    // NOTA: window.confirm no funciona en todos los entornos,
-    // pero lo dejamos por simplicidad para desarrollo local.
-    // Para producción robusta, se necesitaría un modal custom.
     if (
       !window.confirm(
         `¿Estás seguro de que quieres borrar TODOS los productos de la Estación ${estacion_id}?`
       )
-    ) {
+    )
       return;
-    }
-
     try {
       const res = await fetch(`${PRODUCCION_API_URL}/${estacion_id}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Error del servidor al borrar");
-      fetchProduccion(); // Recargar
+      fetchProduccion();
     } catch (err) {
       console.error(err);
       setError(err.message || "Error al borrar productos");
@@ -895,15 +869,12 @@ function PanelControl() {
       <h1 className="text-4xl md:text-5xl font-bold text-center mb-10">
         Panel de Producción
       </h1>
-
       {error && (
         <div className="bg-red-800 border border-red-600 text-white p-4 rounded-lg text-center mb-6">
           <FaExclamationTriangle className="inline mr-2" /> {error}
         </div>
       )}
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Columna Estación 1 */}
         <EstacionControlPanel
           title="Estación 1 (Izquierda)"
           estacionId={1}
@@ -913,9 +884,8 @@ function PanelControl() {
           onAdd={handleAdd}
           onClear={handleClear}
           color="red"
+          sugerencias={sugerencias} // Pasamos las sugerencias
         />
-
-        {/* Columna Estación 2 */}
         <EstacionControlPanel
           title="Estación 2 (Derecha)"
           estacionId={2}
@@ -925,13 +895,14 @@ function PanelControl() {
           onAdd={handleAdd}
           onClear={handleClear}
           color="blue"
+          sugerencias={sugerencias} // Pasamos las sugerencias
         />
       </div>
     </>
   );
 }
 
-// --- ¡NUEVO! Sub-componente del Panel de Control ---
+// --- Sub-componente del Panel de Control (¡AHORA CON DATALIST!) ---
 function EstacionControlPanel({
   title,
   estacionId,
@@ -941,6 +912,7 @@ function EstacionControlPanel({
   onAdd,
   onClear,
   color,
+  sugerencias,
 }) {
   const colorClasses = {
     red: {
@@ -957,22 +929,32 @@ function EstacionControlPanel({
     },
   };
   const styles = colorClasses[color];
+  const listId = `list-sugerencias-${estacionId}`; // ID único para el datalist
 
   return (
     <div
       className={`rounded-xl shadow-2xl p-6 ${styles.bg} border-2 ${styles.border}`}
     >
       <h2 className="text-3xl font-bold text-white mb-6">{title}</h2>
-
-      {/* Input y Botón de Añadir */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 relative">
+        {/* INPUT CON AUTOCOMPLETADO */}
         <input
           type="text"
           value={inputValue}
           onChange={(e) => onInputChange(e.target.value)}
           placeholder="Nombre del producto (ej: Kayak Rojo)"
           className="flex-grow p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-opacity-50"
+          list={listId} // Conectamos con el datalist
         />
+
+        {/* LISTA DE SUGERENCIAS OCULTA */}
+        <datalist id={listId}>
+          {sugerencias &&
+            sugerencias.map((item, index) => (
+              <option key={index} value={item} />
+            ))}
+        </datalist>
+
         <button
           onClick={() => onAdd(estacionId, inputValue)}
           className={`px-5 py-3 rounded-lg text-white font-semibold transition-colors ${styles.button} disabled:opacity-50`}
@@ -981,8 +963,6 @@ function EstacionControlPanel({
           <FaPlus />
         </button>
       </div>
-
-      {/* Lista de Productos Actuales */}
       <h3 className="text-xl font-semibold text-gray-300 mb-3 mt-8">
         Productos en Horno ({productos.length})
       </h3>
@@ -1007,8 +987,6 @@ function EstacionControlPanel({
           </ul>
         )}
       </div>
-
-      {/* Botón de Limpiar */}
       <button
         onClick={() => onClear(estacionId)}
         disabled={productos.length === 0}
@@ -1020,7 +998,7 @@ function EstacionControlPanel({
   );
 }
 
-// --- ¡NUEVO! Componente de la Página: Login ---
+// --- Componente: Login ---
 function LoginPage({ onLoginSuccess }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
@@ -1029,7 +1007,7 @@ function LoginPage({ onLoginSuccess }) {
     e.preventDefault();
     if (input === ADMIN_PASSWORD) {
       setError("");
-      onLoginSuccess(); // Llama a la función de éxito
+      onLoginSuccess();
     } else {
       setError("Contraseña incorrecta. Intente de nuevo.");
       setInput("");
@@ -1049,7 +1027,7 @@ function LoginPage({ onLoginSuccess }) {
           <div className="mb-4">
             <label
               htmlFor="password"
-              className="block text-sm font-bold text-gray-300 mb-2"
+              class="block text-sm font-bold text-gray-300 mb-2"
             >
               Contraseña
             </label>
@@ -1082,20 +1060,630 @@ function LoginPage({ onLoginSuccess }) {
   );
 }
 
-// --- ¡CONTRASEÑA! ---
-// Cámbiala aquí por la que tú quieras
-const ADMIN_PASSWORD = "admin123";
+// --- ¡COMPONENTE ACTUALIZADO v9! (Con Buscador y Modal de Detalle) ---
+function AnalisisPedidos() {
+  const [datos, setDatos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-// --- ¡NUEVO! Componente Principal 'App' que actúa como Router (¡ACTUALIZADO!) ---
+  // --- ESTADOS PARA EL BUSCADOR Y MODAL ---
+  const [busqueda, setBusqueda] = useState("");
+  const [sugerencias, setSugerencias] = useState([]);
+  const [productoSeleccionado, setProductoSeleccionado] = useState(null); // Si no es null, muestra el Modal
+  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+
+  useEffect(() => {
+    fetch(PEDIDOS_API_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error("Error al cargar el Excel");
+        return res.json();
+      })
+      .then((data) => {
+        setDatos(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        setError(err.message);
+        setLoading(false);
+      });
+  }, []);
+
+  // --- LÓGICA DE PROCESAMIENTO GENERAL (DASHBOARD) ---
+  const analysisData = useMemo(() => {
+    if (datos.length === 0) return null;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const getStartOfWeek = (date) => {
+      const d = new Date(date);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      d.setDate(diff);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    };
+    const startOfWeek = getStartOfWeek(now);
+
+    // Filtrado 2025+
+    const filteredData = datos.filter((row) => {
+      const dateVal = row.FECHA || row.Fecha || row.fecha;
+      if (!dateVal) return false;
+      const rowDate = new Date(dateVal);
+      return !isNaN(rowDate) && rowDate.getFullYear() >= 2025;
+    });
+
+    if (filteredData.length === 0) return null;
+
+    const uniqueOrders = new Set();
+    const uniqueMLOrders = new Set();
+    const productMapYear = {};
+    const productMapMonth = {};
+    const productMapWeek = {};
+    const monthMap = {};
+    const monthNames = [
+      "Ene",
+      "Feb",
+      "Mar",
+      "Abr",
+      "May",
+      "Jun",
+      "Jul",
+      "Ago",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dic",
+    ];
+    monthNames.forEach((m) => (monthMap[m] = 0));
+
+    // Set para la lista de TODOS los productos (para el buscador)
+    const allModelsSet = new Set();
+
+    filteredData.forEach((row) => {
+      const dateVal = row.FECHA || row.Fecha || row.fecha;
+      const rowDate = new Date(dateVal);
+      const oc = row.OC || row.oc || row.Oc;
+      const detalles = row.DETALLES || row.Detalles || row.detalles || "";
+      const prodName = row.MODELO || row.Modelo || "Desconocido";
+      const cantidad = Number(row.CANTIDAD || row.Cantidad || 1);
+
+      // Guardamos modelo para el buscador
+      if (prodName && prodName !== "Desconocido") allModelsSet.add(prodName);
+
+      if (oc !== undefined && oc !== null && oc !== "") {
+        uniqueOrders.add(oc);
+        if (detalles.toString().toLowerCase().includes("mercadolibre")) {
+          uniqueMLOrders.add(oc);
+        }
+      }
+
+      if (prodName && prodName !== "Desconocido") {
+        productMapYear[prodName] = (productMapYear[prodName] || 0) + cantidad;
+        if (
+          rowDate.getMonth() === currentMonth &&
+          rowDate.getFullYear() === currentYear
+        ) {
+          productMapMonth[prodName] =
+            (productMapMonth[prodName] || 0) + cantidad;
+        }
+        if (rowDate >= startOfWeek) {
+          productMapWeek[prodName] = (productMapWeek[prodName] || 0) + cantidad;
+        }
+      }
+
+      const monthIndex = rowDate.getMonth();
+      const monthName = monthNames[monthIndex];
+      if (monthMap[monthName] !== undefined) {
+        monthMap[monthName] += cantidad;
+      }
+    });
+
+    const getTop3Products = (map) =>
+      Object.entries(map)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3);
+
+    const topProductsYear = Object.entries(productMapYear)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    const salesByMonth = monthNames.slice(0, currentMonth + 1).map((name) => ({
+      mes: name,
+      ventas: monthMap[name],
+    }));
+
+    const recordMonth = [...salesByMonth].sort(
+      (a, b) => b.ventas - a.ventas
+    )[0];
+
+    return {
+      topProductsYear,
+      salesByMonth,
+      totalOrders: uniqueOrders.size,
+      mlOrders: uniqueMLOrders.size,
+      top3Month: getTop3Products(productMapMonth),
+      top3Week: getTop3Products(productMapWeek),
+      recordMonthName: recordMonth?.mes || "-",
+      allModels: Array.from(allModelsSet).sort(), // Lista ordenada para el buscador
+      filteredRawData: filteredData, // Guardamos la data cruda filtrada para usarla en el Modal
+    };
+  }, [datos]);
+
+  // --- LÓGICA DEL BUSCADOR ---
+  const handleSearchChange = (e) => {
+    const val = e.target.value;
+    setBusqueda(val);
+    if (val.length > 0 && analysisData) {
+      const coincidencias = analysisData.allModels.filter((m) =>
+        m.toLowerCase().includes(val.toLowerCase())
+      );
+      setSugerencias(coincidencias);
+      setMostrarSugerencias(true);
+    } else {
+      setMostrarSugerencias(false);
+    }
+  };
+
+  const seleccionarProducto = (nombre) => {
+    setBusqueda("");
+    setMostrarSugerencias(false);
+
+    // Calculamos los datos específicos para este producto
+    const rawData = analysisData.filteredRawData;
+    const productRows = rawData.filter(
+      (r) => (r.MODELO || r.Modelo) === nombre
+    );
+
+    // 1. Ventas por Mes del producto
+    const monthNames = [
+      "Ene",
+      "Feb",
+      "Mar",
+      "Abr",
+      "May",
+      "Jun",
+      "Jul",
+      "Ago",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dic",
+    ];
+    const prodMonthMap = {};
+    monthNames.forEach((m) => (prodMonthMap[m] = 0));
+
+    // 2. Top Clientes del producto
+    const clientMap = {};
+    let totalUnits = 0;
+
+    productRows.forEach((row) => {
+      const cant = Number(row.CANTIDAD || row.Cantidad || 1);
+      const dateVal = row.FECHA || row.Fecha || row.fecha;
+      const rowDate = new Date(dateVal);
+      const cliente = row.CLIENTE || row.Cliente || "Desconocido";
+
+      // Mes
+      if (!isNaN(rowDate)) {
+        const mName = monthNames[rowDate.getMonth()];
+        if (prodMonthMap[mName] !== undefined) prodMonthMap[mName] += cant;
+      }
+
+      // Cliente
+      clientMap[cliente] = (clientMap[cliente] || 0) + cant;
+      totalUnits += cant;
+    });
+
+    const now = new Date();
+    const salesChart = monthNames
+      .slice(0, now.getMonth() + 1)
+      .map((m) => ({ mes: m, ventas: prodMonthMap[m] }));
+
+    const topClients = Object.entries(clientMap)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5); // Top 5 clientes
+
+    setProductoSeleccionado({
+      nombre,
+      totalUnits,
+      salesChart,
+      topClients,
+    });
+  };
+
+  if (loading)
+    return (
+      <div className="flex justify-center items-center h-64 text-white text-2xl">
+        <FaSpinner className="animate-spin text-4xl mr-3" /> Cargando
+        análisis...
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-red-400">
+        Error: {error}
+      </div>
+    );
+
+  if (!analysisData)
+    return <div className="text-white text-center p-10">Sin datos 2025.</div>;
+
+  return (
+    <div className="animate-in fade-in duration-500 relative">
+      {/* --- HEADER CON BUSCADOR --- */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+        <div>
+          <h1 className="text-4xl font-bold text-left">
+            Análisis de Pedidos 2025
+          </h1>
+          <p className="text-gray-400 mt-1">Datos en tiempo real</p>
+        </div>
+
+        {/* Buscador */}
+        <div className="relative w-full md:w-96">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar producto..."
+              value={busqueda}
+              onChange={handleSearchChange}
+              className="w-full bg-slate-800 text-white border border-slate-600 rounded-full py-3 px-5 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-lg"
+            />
+            <FaBoxOpen className="absolute right-4 top-3.5 text-gray-400" />
+          </div>
+
+          {/* Lista de Sugerencias */}
+          {mostrarSugerencias && sugerencias.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-slate-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto border border-slate-600">
+              {sugerencias.map((prod, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => seleccionarProducto(prod)}
+                  className="px-4 py-3 hover:bg-blue-600 cursor-pointer text-white border-b border-slate-600 last:border-0 transition-colors flex items-center gap-3"
+                >
+                  <FaCubes className="text-blue-300" />
+                  {prod}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* --- DASHBOARD GENERAL (Igual que antes) --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
+        <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-blue-500 flex flex-col justify-center">
+          <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
+            Total Pedidos
+          </h3>
+          <p className="text-4xl font-bold text-blue-400">
+            {analysisData.totalOrders}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">OCs Únicos (Año)</p>
+        </div>
+
+        <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
+          <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
+            MercadoLibre
+          </h3>
+          <p className="text-4xl font-bold text-yellow-400">
+            {analysisData.mlOrders}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {((analysisData.mlOrders / analysisData.totalOrders) * 100).toFixed(
+              0
+            )}
+            % del total
+          </p>
+        </div>
+
+        <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-green-500">
+          <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
+            Top 3 Mes Actual
+          </h3>
+          {analysisData.top3Month.length > 0 ? (
+            <ul className="space-y-2">
+              {analysisData.top3Month.map((p, i) => (
+                <li
+                  key={i}
+                  className="flex justify-between items-center text-sm border-b border-gray-700 pb-1 last:border-0 last:pb-0"
+                >
+                  <div className="flex items-center truncate pr-2">
+                    <span
+                      className={`font-bold mr-2 ${
+                        i === 0 ? "text-yellow-400" : "text-gray-500"
+                      }`}
+                    >
+                      #{i + 1}
+                    </span>
+                    <span className="text-gray-200 truncate" title={p.name}>
+                      {p.name}
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-green-400 whitespace-nowrap">
+                    {p.value} u
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500 italic text-center text-sm mt-4">
+              Sin datos este mes
+            </p>
+          )}
+        </div>
+
+        <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-teal-400">
+          <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
+            Top 3 Semana
+          </h3>
+          {analysisData.top3Week.length > 0 ? (
+            <ul className="space-y-2">
+              {analysisData.top3Week.map((p, i) => (
+                <li
+                  key={i}
+                  className="flex justify-between items-center text-sm border-b border-gray-700 pb-1 last:border-0 last:pb-0"
+                >
+                  <div className="flex items-center truncate pr-2">
+                    <span
+                      className={`font-bold mr-2 ${
+                        i === 0 ? "text-yellow-400" : "text-gray-500"
+                      }`}
+                    >
+                      #{i + 1}
+                    </span>
+                    <span className="text-gray-200 truncate" title={p.name}>
+                      {p.name}
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-teal-400 whitespace-nowrap">
+                    {p.value} u
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500 italic text-center text-sm mt-4">
+              Sin datos esta semana
+            </p>
+          )}
+        </div>
+
+        <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-purple-500 flex flex-col justify-center">
+          <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
+            Mes Récord
+          </h3>
+          <p className="text-3xl font-bold text-purple-400 mt-2">
+            {analysisData.recordMonthName}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">Mayor volumen</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
+        <div className="bg-slate-800 p-6 rounded-xl shadow-lg min-h-[450px]">
+          <h3 className="text-xl font-bold mb-6 text-gray-200 flex items-center gap-2">
+            <FaBoxOpen className="text-yellow-500" /> Top Modelos 2025 (Global)
+          </h3>
+          <ResponsiveContainer width="100%" height={350}>
+            <BarChart
+              data={analysisData.topProductsYear}
+              layout="vertical"
+              margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                strokeOpacity={0.1}
+                horizontal={true}
+                vertical={false}
+              />
+              <XAxis type="number" stroke="#94a3b8" fontSize={12} />
+              <YAxis
+                dataKey="name"
+                type="category"
+                stroke="#94a3b8"
+                width={120}
+                style={{ fontSize: "11px", fontWeight: "bold" }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#1e293b",
+                  borderColor: "#334155",
+                  color: "#f1f5f9",
+                }}
+                itemStyle={{ color: "#cbd5e1" }}
+                cursor={{ fill: "rgba(255, 255, 255, 0.05)" }}
+              />
+              <Bar
+                dataKey="value"
+                fill="#3b82f6"
+                radius={[0, 4, 4, 0]}
+                barSize={20}
+              >
+                {analysisData.topProductsYear.map((entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={index < 3 ? "#60a5fa" : "#475569"}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="bg-slate-800 p-6 rounded-xl shadow-lg min-h-[450px]">
+          <h3 className="text-xl font-bold mb-6 text-gray-200 flex items-center gap-2">
+            <FaChartLine className="text-green-500" /> Evolución Mensual Global
+          </h3>
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart
+              data={analysisData.salesByMonth}
+              margin={{ top: 20, right: 30, left: 0, bottom: 10 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                strokeOpacity={0.1}
+                vertical={false}
+              />
+              <XAxis
+                dataKey="mes"
+                stroke="#94a3b8"
+                tick={{ fill: "#94a3b8" }}
+                axisLine={{ stroke: "#475569" }}
+                interval={0}
+                type="category"
+                padding={{ left: 20, right: 20 }}
+              />
+              <YAxis
+                stroke="#94a3b8"
+                tick={{ fill: "#94a3b8" }}
+                axisLine={{ stroke: "#475569" }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#1e293b",
+                  borderColor: "#334155",
+                  borderRadius: "8px",
+                }}
+                itemStyle={{ color: "#10b981" }}
+              />
+              <Line
+                type="monotone"
+                dataKey="ventas"
+                stroke="#10b981"
+                strokeWidth={4}
+                dot={{ r: 6, fill: "#10b981", strokeWidth: 2, stroke: "#fff" }}
+                activeDot={{ r: 9, stroke: "#10b981", strokeWidth: 0 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* --- MODAL DE DETALLE DE PRODUCTO --- */}
+      {productoSeleccionado && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[100] p-4">
+          <div className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-slate-600 flex flex-col">
+            {/* Header Modal */}
+            <div className="p-6 border-b border-slate-700 flex justify-between items-start sticky top-0 bg-slate-800 z-10">
+              <div>
+                <h2 className="text-3xl font-bold text-white flex items-center gap-3">
+                  <FaCubes className="text-blue-400" />
+                  {productoSeleccionado.nombre}
+                </h2>
+                <p className="text-gray-400 mt-1">
+                  Detalle exclusivo del producto
+                </p>
+              </div>
+              <button
+                onClick={() => setProductoSeleccionado(null)}
+                className="text-gray-400 hover:text-white text-2xl bg-slate-700 hover:bg-slate-600 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body Modal */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Columna Izquierda: KPIs y Clientes */}
+              <div className="md:col-span-1 space-y-6">
+                <div className="bg-blue-900/30 p-6 rounded-xl border border-blue-800 text-center">
+                  <h3 className="text-blue-300 uppercase text-xs font-bold mb-2">
+                    Unidades Vendidas (2025)
+                  </h3>
+                  <p className="text-5xl font-bold text-white">
+                    {productoSeleccionado.totalUnits}
+                  </p>
+                </div>
+
+                <div className="bg-slate-700/50 p-5 rounded-xl border border-slate-600">
+                  <h3 className="text-gray-300 font-bold mb-4 flex items-center gap-2">
+                    <FaBoxOpen className="text-yellow-400" /> Top Clientes
+                  </h3>
+                  {productoSeleccionado.topClients.length > 0 ? (
+                    <ul className="space-y-3">
+                      {productoSeleccionado.topClients.map((c, i) => (
+                        <li key={i} className="flex justify-between text-sm">
+                          <span
+                            className="text-gray-300 truncate w-32"
+                            title={c.name}
+                          >
+                            {i + 1}. {c.name}
+                          </span>
+                          <span className="font-bold text-white">
+                            {c.value} u
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-gray-500">
+                      Sin datos de clientes
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Columna Derecha: Gráfico */}
+              <div className="md:col-span-2 bg-slate-900/50 p-6 rounded-xl border border-slate-700">
+                <h3 className="text-gray-200 font-bold mb-6">
+                  Evolución de Ventas 2025
+                </h3>
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={productoSeleccionado.salesChart}>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        strokeOpacity={0.1}
+                        vertical={false}
+                      />
+                      <XAxis
+                        dataKey="mes"
+                        stroke="#94a3b8"
+                        interval={0}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis stroke="#94a3b8" allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#0f172a",
+                          borderColor: "#334155",
+                          borderRadius: "8px",
+                        }}
+                        itemStyle={{ color: "#3b82f6" }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="ventas"
+                        stroke="#3b82f6"
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: "#3b82f6", stroke: "#fff" }}
+                        activeDot={{ r: 6 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Componente Principal App (Router) ---
 export default function App() {
-  // Usamos el 'pathname' de la URL para decidir qué página mostrar
   const [page, setPage] = useState(window.location.pathname);
-  // Estado de autenticación, lee desde sessionStorage
   const [isAuthenticated, setIsAuthenticated] = useState(
     sessionStorage.getItem("isAutenticado") === "true"
   );
 
-  // Escuchamos los botones de 'atrás/adelante' del navegador
   useEffect(() => {
     const onLocationChange = () => {
       setPage(window.location.pathname);
@@ -1104,31 +1692,23 @@ export default function App() {
     return () => window.removeEventListener("popstate", onLocationChange);
   }, []);
 
-  // Función para navegar sin recargar la página
   const navigate = (path) => {
     window.history.pushState({}, "", path);
     setPage(path);
   };
 
-  // --- ¡NUEVA FUNCIÓN! ---
-  // Llamada cuando el login es exitoso
   const handleLoginSuccess = () => {
     sessionStorage.setItem("isAutenticado", "true");
     setIsAuthenticated(true);
-    // No es necesario navegar, el componente 'App' se re-renderizará
-    // y 'component' se actualizará a <PanelControl />
   };
 
-  // --- ¡NUEVA FUNCIÓN! ---
-  // Llamada al hacer clic en "Salir"
   const handleLogout = () => {
     sessionStorage.removeItem("isAutenticado");
     setIsAuthenticated(false);
-    navigate("/"); // Vuelve al monitor
+    navigate("/");
   };
 
-  // --- ¡LÓGICA DE RENDERIZADO ACTUALIZADA! ---
-  // Determina qué componente mostrar
+  // --- Lógica de Navegación Actualizada ---
   let component;
   if (page === "/panel-control") {
     component = isAuthenticated ? (
@@ -1136,43 +1716,56 @@ export default function App() {
     ) : (
       <LoginPage onLoginSuccess={handleLoginSuccess} />
     );
+  } else if (page === "/analisis-pedidos") {
+    component = <AnalisisPedidos />;
   } else {
     component = <Dashboard />;
   }
 
-  // Clases para el botón de navegación activo
-  const activeClass = "bg-slate-600 text-white";
-  const inactiveClass = "bg-slate-800 text-gray-400 hover:bg-slate-700";
+  const activeClass = "bg-slate-600 text-white shadow-lg scale-105";
+  const inactiveClass =
+    "bg-slate-800 text-gray-400 hover:bg-slate-700 hover:text-gray-200";
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8">
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8 font-sans selection:bg-blue-500 selection:text-white">
       <div className="max-w-7xl mx-auto">
-        {/* --- ¡MENÚ DE NAVEGACIÓN ACTUALIZADO! --- */}
-        <nav className="flex justify-center items-center gap-4 mb-8">
+        {/* --- MENÚ DE NAVEGACIÓN --- */}
+        <nav className="flex flex-wrap justify-center items-center gap-4 mb-10 bg-black/20 p-4 rounded-2xl backdrop-blur-sm">
           <button
             onClick={() => navigate("/")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-bold transition-colors ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
               page === "/" ? activeClass : inactiveClass
             }`}
           >
-            <FaHome />
+            <FaHome className="text-xl" />
             Monitor
           </button>
+
+          {/* ¡NUEVO BOTÓN! */}
+          <button
+            onClick={() => navigate("/analisis-pedidos")}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
+              page === "/analisis-pedidos" ? activeClass : inactiveClass
+            }`}
+          >
+            <FaChartLine className="text-xl" />
+            Análisis Pedidos
+          </button>
+
           <button
             onClick={() => navigate("/panel-control")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-bold transition-colors ${
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
               page === "/panel-control" ? activeClass : inactiveClass
             }`}
           >
-            <FaTools />
+            <FaTools className="text-xl" />
             Panel de Control
           </button>
 
-          {/* --- ¡NUEVO BOTÓN DE SALIR! --- */}
           {isAuthenticated && (
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 px-6 py-3 rounded-lg font-bold bg-red-800 text-gray-300 hover:bg-red-700 transition-colors"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-red-900/80 text-red-200 hover:bg-red-700 transition-all duration-300 border border-red-800 ml-auto"
             >
               <FaSignOutAlt />
               Salir
@@ -1180,7 +1773,7 @@ export default function App() {
           )}
         </nav>
 
-        {/* Renderiza la página activa */}
+        {/* Renderiza el componente activo */}
         {component}
       </div>
     </div>

@@ -3,6 +3,7 @@ const { google } = require("googleapis");
 
 // --- Leemos todas las claves desde las Variables de Entorno ---
 const FILE_ID = process.env.DRIVE_FILE_ID;
+const PEDIDOS_FILE_ID = process.env.PEDIDOS_FILE_ID; // <--- ¡NUEVO!
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -51,7 +52,29 @@ async function leerArchivoHorno() {
   }
 }
 
+// --- ¡NUEVA FUNCIÓN! ---
+async function leerArchivoPedidos() {
+  if (!drive)
+    throw new Error("El cliente de Google Drive no está inicializado.");
+  if (!PEDIDOS_FILE_ID) throw new Error("Falta PEDIDOS_FILE_ID en .env");
+
+  try {
+    const response = await drive.files.get(
+      {
+        fileId: PEDIDOS_FILE_ID,
+        alt: "media",
+      },
+      { responseType: "arraybuffer" }
+    ); // Importante para Excel
+    return response.data;
+  } catch (err) {
+    console.error("Error al leer el Excel de pedidos:", err.message);
+    throw new Error("No se pudo leer el archivo de Pedidos.");
+  }
+}
+
 module.exports = {
   setupAuth,
   leerArchivoHorno,
+  leerArchivoPedidos, // <--- Exportamos la nueva función
 };
