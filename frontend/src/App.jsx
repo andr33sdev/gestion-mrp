@@ -1062,7 +1062,7 @@ function LoginPage({ onLoginSuccess }) {
   );
 }
 
-// --- COMPONENTE DE ANÁLISIS DE PEDIDOS (Versión Final: Productos + Clientes) ---
+// --- COMPONENTE DE ANÁLISIS DE PEDIDOS (v16: Sin límites en historial) ---
 function AnalisisPedidos() {
   const [datos, setDatos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1137,11 +1137,12 @@ function AnalisisPedidos() {
     const clientMapYear = {};
     const clientMapMonth = {};
     const clientMapWeek = {};
-    const activeClients = new Set(); // Clientes únicos
+
+    const activeClients = new Set(); // Clientes "reales" (al menos una compra NO ML)
+    const allClientsSet = new Set(); // Todos los clientes (para el buscador)
 
     // Listas para el buscador
     const allModelsSet = new Set();
-    const allClientsSet = new Set();
 
     // Mapa Global Mensual
     const monthMap = {};
@@ -1170,6 +1171,12 @@ function AnalisisPedidos() {
       const clientName = row.CLIENTE || row.Cliente || "Desconocido";
       const cantidad = Number(row.CANTIDAD || row.Cantidad || 1);
 
+      // Detectar si es MercadoLibre
+      const isMercadoLibre = detalles
+        .toString()
+        .toLowerCase()
+        .includes("mercadolibre");
+
       // --- PRODUCTOS ---
       if (prodName && prodName !== "Desconocido") {
         allModelsSet.add(prodName);
@@ -1183,8 +1190,13 @@ function AnalisisPedidos() {
 
       // --- CLIENTES ---
       if (clientName && clientName !== "Desconocido") {
-        allClientsSet.add(clientName);
-        activeClients.add(clientName);
+        allClientsSet.add(clientName); // Lo agregamos al buscador siempre
+
+        // LÓGICA KPI "CLIENTES ACTIVOS":
+        if (!isMercadoLibre) {
+          activeClients.add(clientName);
+        }
+
         clientMapYear[clientName] = (clientMapYear[clientName] || 0) + cantidad;
         if (rowDate.getMonth() === currentMonth)
           clientMapMonth[clientName] =
@@ -1197,7 +1209,7 @@ function AnalisisPedidos() {
       // --- PEDIDOS ---
       if (oc !== undefined && oc !== null && oc !== "") {
         uniqueOrders.add(oc);
-        if (detalles.toString().toLowerCase().includes("mercadolibre")) {
+        if (isMercadoLibre) {
           uniqueMLOrders.add(oc);
         }
       }
@@ -1282,7 +1294,7 @@ function AnalisisPedidos() {
 
     const rawData = analysisData.filteredRawData;
 
-    // Filtramos las filas correspondientes al item seleccionado
+    // Filtramos TODAS las filas correspondientes al item seleccionado
     const rows =
       modoVista === "PRODUCTOS"
         ? rawData.filter((r) => (r.MODELO || r.Modelo) === nombre)
@@ -1290,16 +1302,14 @@ function AnalisisPedidos() {
 
     if (rows.length === 0) return;
 
-    // Estadísticas del Modal
+    // Estadísticas del Modal (Se calculan sobre 'rows', o sea, TODO 2025)
     let totalUnits = 0;
-    const pieMap = {}; // Mapa para la torta (Relación Cliente-Producto)
+    const pieMap = {};
 
     rows.forEach((row) => {
       const cant = Number(row.CANTIDAD || row.Cantidad || 1);
       totalUnits += cant;
 
-      // Si veo un cliente, quiero saber qué productos compra.
-      // Si veo un producto, quiero saber qué clientes lo compran.
       const key =
         modoVista === "CLIENTES"
           ? row.MODELO || row.Modelo || "Desconocido"
@@ -1314,15 +1324,14 @@ function AnalisisPedidos() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Historial de pedidos (Bitácora)
+    // Historial de pedidos (Bitácora) - ¡AHORA SIN LÍMITE DE CORTE!
     const lastOrders = [...rows]
       .sort(
         (a, b) => new Date(b.FECHA || b.Fecha) - new Date(a.FECHA || a.Fecha)
-      ) // Más reciente primero
-      .slice(0, 100) // Máximo 100 para paginar
+      )
+      // .slice(0, 100) <--- ELIMINADO EL LÍMITE. MUESTRA TODO.
       .map((row) => ({
         fecha: new Date(row.FECHA || row.Fecha).toLocaleDateString("es-AR"),
-        // La columna variable muestra el dato complementario
         columnaVariable:
           modoVista === "CLIENTES"
             ? row.MODELO || row.Modelo || "-"
@@ -1381,13 +1390,12 @@ function AnalisisPedidos() {
 
   const isClientMode = modoVista === "CLIENTES";
 
-  // Configuración dinámica de las tarjetas según el modo
   const cardTotalTitle = isClientMode ? "Clientes Activos" : "Total Pedidos";
   const cardTotalValue = isClientMode
     ? analysisData.totalActiveClients
     : analysisData.totalOrders;
   const cardTotalSub = isClientMode
-    ? "Han comprado en 2025"
+    ? "Compras directas (No ML)"
     : "OCs Únicos (Año)";
 
   const cardTopList = isClientMode
@@ -1486,7 +1494,7 @@ function AnalisisPedidos() {
 
       {/* TARJETAS DE RESUMEN (KPIs) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
-        {/* Card 1: Total */}
+        {/* Card 1 */}
         <div
           className={`bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 flex flex-col justify-center ${
             isClientMode ? "border-purple-500" : "border-blue-500"
@@ -1505,7 +1513,7 @@ function AnalisisPedidos() {
           <p className="text-xs text-gray-500 mt-1">{cardTotalSub}</p>
         </div>
 
-        {/* Card 2: MercadoLibre o Top Cliente */}
+        {/* Card 2 */}
         {!isClientMode ? (
           <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
             <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
@@ -1536,7 +1544,7 @@ function AnalisisPedidos() {
           </div>
         )}
 
-        {/* Card 3: Top Mes */}
+        {/* Card 3 */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-green-500">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
             Top 3 Mes Actual
@@ -1573,7 +1581,7 @@ function AnalisisPedidos() {
           )}
         </div>
 
-        {/* Card 4: Top Semana */}
+        {/* Card 4 */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-teal-400">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
             Top 3 Semana
@@ -1610,7 +1618,7 @@ function AnalisisPedidos() {
           )}
         </div>
 
-        {/* Card 5: Mes Récord */}
+        {/* Card 5 */}
         <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-purple-500 flex flex-col justify-center">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
             Mes Récord
@@ -1788,9 +1796,6 @@ function AnalisisPedidos() {
                   </h3>
                   <p className="text-5xl font-bold text-white">
                     {selectedItem.totalUnits}{" "}
-                    <span className="text-base font-normal text-gray-400">
-                      u
-                    </span>
                   </p>
                 </div>
 
@@ -1824,7 +1829,9 @@ function AnalisisPedidos() {
                           contentStyle={{
                             backgroundColor: "#1e293b",
                             borderRadius: "8px",
+                            borderColor: "#334155",
                           }}
+                          itemStyle={{ color: "#f1f5f9" }}
                         />
                       </PieChart>
                     </ResponsiveContainer>
