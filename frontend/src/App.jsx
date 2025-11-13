@@ -55,8 +55,8 @@ import {
 } from "@dnd-kit/core"; // <--- AGREGAR DragOverlay
 
 // --- Constantes ---
-const API_BASE_URL = "https://horno-backend.onrender.com/api";
-//const API_BASE_URL = "http://localhost:4000/api"; // Descomentar para desarrollo local
+//const API_BASE_URL = "https://horno-backend.onrender.com/api";
+const API_BASE_URL = "http://localhost:4000/api"; // Descomentar para desarrollo local
 
 const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;

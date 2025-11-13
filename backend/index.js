@@ -212,7 +212,15 @@ app.get("/api/leer-archivo", async (req, res) => {
 
 app.get("/api/pedidos-analisis", async (req, res) => {
   try {
-    res.setHeader("Cache-Control", "no-store");
+    // ADICIONE ESTES HEADERS MAIS AGRESSIVOS
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate"
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+
     const buffer = await leerArchivoPedidos();
     const wb = XLSX.read(Buffer.from(buffer), {
       type: "buffer",
