@@ -887,7 +887,7 @@ function AnalisisPedidos() {
   const MODAL_ITEMS_PER_PAGE = 5;
 
   useEffect(() => {
-    fetch(PEDIDOS_API_URL, { cache: "no-store" })
+    fetch(`${PEDIDOS_API_URL$}?t=${Date.now}`, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error("Error al cargar el Excel");
         return res.json();
@@ -1942,7 +1942,7 @@ function IngenieriaProductos() {
   const [activeDragId, setActiveDragId] = useState(null);
 
   useEffect(() => {
-    fetch(PEDIDOS_API_URL, { cache: "no-store" })
+    fetch(`${PEDIDOS_API_URL$}?t=${Date.now}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
         const s = new Set();
