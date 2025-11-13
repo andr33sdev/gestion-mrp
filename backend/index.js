@@ -1,46 +1,51 @@
 const express = require("express");
 const cors = require("cors");
-const db = require("./db"); // Importa el pool de db
+const db = require("./db");
 const {
   leerArchivoHorno,
-  leerArchivoPedidos,
   setupAuth,
-} = require("./google-drive"); // <--- ¡MODIFICADO!
+  leerArchivoPedidos,
+  leerStockSemielaborados,
+} = require("./google-drive");
 const { parsearLog } = require("./parser");
 const format = require("pg-format");
-const XLSX = require("xlsx"); // <--- ¡NUEVO IMPORT!
+const XLSX = require("xlsx");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
 
-// --- (Función sincronizarBaseDeDatos) ---
+// --- FUNCIÓN HELPER: Normalizar texto (quita acentos y mayúsculas) ---
+function normalizarTexto(txt) {
+  if (!txt) return "";
+  return txt
+    .toString()
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+// --- SINCRONIZACIÓN HORNO (LOGS) ---
 async function sincronizarBaseDeDatos() {
-  console.log("[TIMER] ¡Iniciando sincronización automática!");
+  console.log("[TIMER] Sincronizando Logs Horno...");
   const client = await db.connect();
-  console.log("[TIMER] Cliente de base de datos conectado.");
   try {
-    console.log("[TIMER] Paso 1: Leyendo archivo de Google Drive...");
     const textoCrudo = await leerArchivoHorno();
-    console.log("[TIMER] Paso 2: Parseando el texto...");
     const registrosOriginales = parsearLog(textoCrudo);
 
-    // 2a. Iniciar transacción
     await client.query("BEGIN");
 
-    // 2b. Obtener el estado actual de producción (CON BLOQUEO)
     const { rows: currentProdRows } = await client.query(
       "SELECT * FROM estado_produccion FOR UPDATE"
     );
     const currentProduccion = currentProdRows.reduce((acc, row) => {
       try {
-        const list = JSON.parse(row.producto_actual || "[]");
         acc[row.estacion_id] = {
           json: row.producto_actual || "[]",
-          list: list,
+          list: JSON.parse(row.producto_actual || "[]"),
           accion: `Estacion ${row.estacion_id}`,
         };
       } catch (e) {
@@ -53,64 +58,38 @@ async function sincronizarBaseDeDatos() {
       return acc;
     }, {});
 
-    // 2c. Obtener todos los triggers de EVENTO (SOLO "Inicio ciclo")
     const { rows: dbTriggers } = await client.query(
-      `SELECT fecha, hora, accion 
-       FROM registros 
-       WHERE tipo = 'EVENTO' 
-       AND accion LIKE 'Se inicio ciclo%'`
+      `SELECT fecha, hora, accion FROM registros WHERE tipo = 'EVENTO' AND accion LIKE 'Se inicio ciclo%'`
     );
-
     const dbTriggerSet = new Set(
-      dbTriggers.map((r) => {
-        const fechaDB = r.fecha.toISOString().split("T")[0];
-        return `${fechaDB}T${r.hora}_${r.accion}`;
-      })
-    );
-    console.log(
-      `[TIMER] Encontrados ${dbTriggerSet.size} triggers de "Inicio Ciclo" ya existentes en la DB.`
+      dbTriggers.map(
+        (r) => `${r.fecha.toISOString().split("T")[0]}T${r.hora}_${r.accion}`
+      )
     );
 
     const newArchiveRecords = [];
-
-    // 2d. Iterar sobre los *nuevos* logs
     for (const reg of registrosOriginales) {
-      let stationId = null;
-      let isStartCycle = false;
-
+      let stationId = null,
+        isStartCycle = false;
       if (reg.accion.includes("Estacion 1")) stationId = 1;
       else if (reg.accion.includes("Estacion 2")) stationId = 2;
-
       if (reg.accion.includes("Se inicio ciclo")) isStartCycle = true;
 
-      const triggerEvent = stationId && isStartCycle;
-
-      if (triggerEvent) {
+      if (stationId && isStartCycle) {
         const key = `${reg.fecha}T${reg.hora}_${reg.accion}`;
-
         if (!dbTriggerSet.has(key)) {
-          console.log(`[TIMER] Nuevo trigger "Inicio Ciclo" detectado: ${key}`);
           const products = currentProduccion[stationId];
-
           if (products && products.list.length > 0) {
-            console.log(
-              `[TIMER] Archivando productos para ${key}: ${products.json}`
-            );
-            const archiveAction = products.accion;
             const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`);
             const archiveDateTime = new Date(triggerDateTime.getTime() - 5000);
-
-            const newFecha = archiveDateTime.toISOString().split("T")[0];
-            const newHora = archiveDateTime
-              .toTimeString()
-              .split(" ")[0]
-              .split("(")[0]
-              .trim();
-
             newArchiveRecords.push({
-              fecha: newFecha,
-              hora: newHora,
-              accion: archiveAction,
+              fecha: archiveDateTime.toISOString().split("T")[0],
+              hora: archiveDateTime
+                .toTimeString()
+                .split(" ")[0]
+                .split("(")[0]
+                .trim(),
+              accion: products.accion,
               tipo: "PRODUCCION",
               productos_json: products.json,
             });
@@ -119,21 +98,13 @@ async function sincronizarBaseDeDatos() {
       }
     }
 
-    // 2f. Combinar logs originales + nuevos archivos de producción
     const allRecordsToInsert = [...registrosOriginales, ...newArchiveRecords];
-
     if (allRecordsToInsert.length === 0) {
-      console.log("[TIMER] No se encontraron registros válidos en el archivo.");
       client.release();
-      return { success: false, msg: "No se encontraron registros válidos." };
+      return { success: false, msg: "Sin registros nuevos." };
     }
 
-    console.log(
-      `[TIMER] Paso 3: Sincronizando ${registrosOriginales.length} logs y ${newArchiveRecords.length} archivos de producción.`
-    );
-
     await client.query("DELETE FROM registros WHERE tipo != 'PRODUCCION'");
-
     const valores = allRecordsToInsert.map((r) => [
       r.fecha,
       r.hora,
@@ -141,419 +112,293 @@ async function sincronizarBaseDeDatos() {
       r.tipo,
       r.productos_json || null,
     ]);
-
-    const consulta = format(
-      "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES %L",
-      valores
+    await client.query(
+      format(
+        "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES %L",
+        valores
+      )
     );
-    await client.query(consulta);
     await client.query("COMMIT");
-    console.log("[TIMER] ¡Sincronización completa!");
-    return {
-      success: true,
-      msg: `Sincronización completa. ${allRecordsToInsert.length} registros guardados.`,
-    };
+    return { success: true, msg: "Sincronización completa." };
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("[TIMER] Error durante la sincronización:", err);
-    return {
-      success: false,
-      msg: "Error en el servidor durante la sincronización",
-    };
+    console.error("[TIMER] Error:", err);
+    return { success: false, msg: "Error server." };
   } finally {
     client.release();
-    console.log("[TIMER] Cliente de base de datos liberado.");
   }
 }
 
-// --- RUTAS API ---
+// --- RUTAS API GENERALES ---
+app.get("/", (req, res) => res.send("Backend Horno Funcionando"));
 
-app.get("/", (req, res) => {
-  res.send("¡Mi servidor de backend funciona!");
-});
-
-// Ruta de Logs
 app.get("/api/registros", async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT 
-        id, 
-        accion,
-        tipo,
-        productos_json, 
-        CAST(fecha::TEXT || ' ' || hora::TEXT AS TIMESTAMP) 
-          AT TIME ZONE 'America/Argentina/Buenos_Aires' AS timestamp
-      FROM registros 
-      ORDER BY timestamp DESC
-    `);
+    const { rows } = await db.query(
+      `SELECT id, accion, tipo, productos_json, CAST(fecha::TEXT || ' ' || hora::TEXT AS TIMESTAMP) AT TIME ZONE 'America/Argentina/Buenos_Aires' AS timestamp FROM registros ORDER BY timestamp DESC`
+    );
     res.json(rows);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Error en el servidor");
+    res.status(500).send("Error DB");
   }
 });
 
-// Ruta GET Produccion
 app.get("/api/produccion", async (req, res) => {
   try {
     const { rows } = await db.query("SELECT * FROM estado_produccion");
     const estado = rows.reduce((acc, row) => {
-      try {
-        acc[row.estacion_id] = JSON.parse(row.producto_actual || "[]");
-      } catch (e) {
-        acc[row.estacion_id] = [];
-      }
+      acc[row.estacion_id] = JSON.parse(row.producto_actual || "[]");
       return acc;
     }, {});
     res.json(estado);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Error en el servidor");
+    res.status(500).send("Error DB");
   }
 });
 
-// Ruta POST Produccion
 app.post("/api/produccion", async (req, res) => {
   const { estacion_id, producto } = req.body;
-
-  if (!estacion_id || !producto) {
-    return res.status(400).json({ msg: "Faltan estacion_id o producto" });
-  }
-
+  if (!estacion_id || !producto)
+    return res.status(400).json({ msg: "Datos faltantes" });
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const { rows: currentRows } = await client.query(
+    const { rows } = await client.query(
       "SELECT producto_actual FROM estado_produccion WHERE estacion_id = $1 FOR UPDATE",
       [estacion_id]
     );
-
-    let currentList = [];
-    try {
-      currentList = JSON.parse(currentRows[0].producto_actual || "[]");
-    } catch (e) {
-      currentList = [];
-    }
-
-    currentList.push(producto);
-
-    const newListString = JSON.stringify(currentList);
-    const { rows } = await client.query(
-      `UPDATE estado_produccion 
-       SET producto_actual = $1 
-       WHERE estacion_id = $2
-       RETURNING *`,
-      [newListString, estacion_id]
+    let list = JSON.parse(rows[0]?.producto_actual || "[]");
+    list.push(producto);
+    await client.query(
+      "UPDATE estado_produccion SET producto_actual = $1 WHERE estacion_id = $2",
+      [JSON.stringify(list), estacion_id]
     );
-
     await client.query("COMMIT");
-    res.json(currentList);
+    res.json(list);
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err.message);
-    res.status(500).send("Error en el servidor");
+    res.status(500).send(err.message);
   } finally {
     client.release();
   }
 });
 
-// Ruta DELETE Produccion
 app.delete("/api/produccion/:estacion_id", async (req, res) => {
-  const { estacion_id } = req.params;
-
   try {
-    const { rows } = await db.query(
-      `UPDATE estado_produccion 
-       SET producto_actual = '[]' 
-       WHERE estacion_id = $1
-       RETURNING *`,
-      [estacion_id]
+    await db.query(
+      "UPDATE estado_produccion SET producto_actual = '[]' WHERE estacion_id = $1",
+      [req.params.estacion_id]
     );
-    res.json(rows[0]);
+    res.json({ msg: "Limpiado" });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Error en el servidor");
+    res.status(500).send("Error DB");
   }
 });
 
-// --- ¡NUEVA RUTA PARA PEDIDOS! ---
-app.get("/api/pedidos-analisis", async (req, res) => {
-  try {
-    console.log("Leyendo archivo de pedidos...");
-    const buffer = await leerArchivoPedidos();
-
-    // Leemos el buffer como un libro de Excel
-    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-
-    // Asumimos que los datos están en la primera hoja
-    const firstSheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[firstSheetName];
-
-    // Convertimos a JSON
-    const data = XLSX.utils.sheet_to_json(worksheet);
-
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error al procesar el archivo de pedidos");
-  }
-});
-
-// Ruta Sincronizar
 app.post("/api/sincronizar", async (req, res) => {
-  const resultado = await sincronizarBaseDeDatos();
-  if (resultado.success) {
-    res.json({ msg: resultado.msg });
-  } else {
-    res.status(500).send(resultado.msg);
-  }
+  const r = await sincronizarBaseDeDatos();
+  res.status(r.success ? 200 : 500).json(r);
 });
 
-// Ruta Prueba Drive
 app.get("/api/leer-archivo", async (req, res) => {
   try {
     const contenidoDelArchivo = await leerArchivoHorno();
     res.type("text/plain");
     res.send(contenidoDelArchivo);
   } catch (err) {
-    console.error(err);
-    res.status(500).send("Error al leer el archivo de Drive");
+    res.status(500).send("Error drive");
   }
 });
 
-// --- RUTAS DE PRUEBA (TEST) ---
-app.get("/api/test/forzar-archivado/:estacion_id", async (req, res) => {
-  const { estacion_id } = req.params;
-  if (estacion_id !== "1" && estacion_id !== "2") {
-    return res
-      .status(400)
-      .json({ msg: "ID de estación inválido. Usar 1 o 2." });
-  }
-
-  console.log(`[TEST] Forzando archivado para estación ${estacion_id}...`);
-  const client = await db.connect();
-
+app.get("/api/pedidos-analisis", async (req, res) => {
   try {
-    await client.query("BEGIN");
-    const { rows: currentRows } = await client.query(
-      "SELECT producto_actual FROM estado_produccion WHERE estacion_id = $1 FOR UPDATE",
-      [estacion_id]
+    res.setHeader("Cache-Control", "no-store");
+    const buffer = await leerArchivoPedidos();
+    const wb = XLSX.read(Buffer.from(buffer), {
+      type: "buffer",
+      cellDates: true,
+    });
+    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    res.json(data);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// =====================================================
+// --- RUTAS INGENIERÍA (CORREGIDAS PARA ENCONTRAR HEADER) ---
+// =====================================================
+
+app.post("/api/ingenieria/sincronizar-stock", async (req, res) => {
+  const client = await db.connect();
+  try {
+    console.log("--- INICIO SINCRONIZACIÓN STOCK ---");
+    const buffer = await leerStockSemielaborados();
+    const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
+
+    let sheetName = workbook.SheetNames.find((n) =>
+      n.toUpperCase().includes("STOCK")
     );
+    if (!sheetName) sheetName = workbook.SheetNames[0];
+    console.log(`Leyendo hoja: "${sheetName}"`);
 
-    if (currentRows.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ msg: "Estación no encontrada" });
+    const sheet = workbook.Sheets[sheetName];
+
+    // 1. Convertimos a matriz de Arrays (fila por fila) para buscar el header
+    const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // 2. Buscamos en qué fila está la palabra "CODIGO"
+    let headerRowIndex = -1;
+    for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+      // Escanea las primeras 20 filas
+      const rowString = JSON.stringify(rawMatrix[i]).toUpperCase();
+      // Buscamos palabras clave
+      if (rowString.includes("CODIGO") && rowString.includes("STOCK")) {
+        headerRowIndex = i;
+        console.log(`¡ENCABEZADOS ENCONTRADOS EN LA FILA ${i + 1}!`);
+        console.log("Cabeceras:", rawMatrix[i]);
+        break;
+      }
     }
 
-    const producto_json = currentRows[0].producto_actual || "[]";
-    let producto_list = [];
-    try {
-      producto_list = JSON.parse(producto_json);
-    } catch (e) {
+    if (headerRowIndex === -1) {
       console.error(
-        `[TEST] JSON inválido en estación ${estacion_id}, se tratará como vacío.`
+        "NO SE ENCONTRARON LAS CABECERAS 'CODIGO' Y 'STOCK' EN LAS PRIMERAS 20 FILAS."
       );
-    }
-
-    if (producto_list.length === 0) {
-      await client.query("ROLLBACK");
-      return res.status(200).json({
-        msg: `Estación ${estacion_id} ya estaba vacía. No se archivó nada.`,
+      return res.status(400).json({
+        msg: "No se encontró la tabla de stock (falta columna CODIGO o STOCK)",
       });
     }
 
-    const now = new Date();
-    const archiveDateTime = new Date(now.getTime() - 5000);
+    // 3. Volvemos a leer, pero saltando las filas basura hasta llegar al header
+    const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
 
-    const fecha = archiveDateTime.toISOString().split("T")[0];
-    const hora = archiveDateTime
-      .toTimeString()
-      .split(" ")[0]
-      .split("(")[0]
-      .trim();
+    await client.query("BEGIN");
+    let count = 0;
 
-    const accion = `Estacion ${estacion_id}`;
+    for (const row of data) {
+      // Normalizamos las claves para ser flexibles con mayúsculas/tildes
+      let codigo = null;
+      let nombre = null;
+      let stock = 0;
 
-    await client.query(
-      "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES ($1, $2, $3, $4, $5)",
-      [fecha, hora, accion, "PRODUCCION", producto_json]
-    );
+      // Buscamos las columnas dinámicamente en la fila
+      for (const key of Object.keys(row)) {
+        const k = normalizarTexto(key);
+        if (k === "CODIGO" || k === "CÓDIGO") codigo = row[key];
+        else if (
+          k === "ARTICULO" ||
+          k === "ARTÍCULO" ||
+          k === "NOMBRE" ||
+          k === "DESCRIPCION"
+        )
+          nombre = row[key];
+        else if (k === "STOCK" || k === "CANTIDAD" || k === "TOTAL")
+          stock = row[key];
+      }
 
+      if (codigo) {
+        await client.query(
+          `
+                INSERT INTO semielaborados (codigo, nombre, stock_actual, ultima_actualizacion)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (codigo) 
+                DO UPDATE SET stock_actual = $3, nombre = $2, ultima_actualizacion = NOW()
+            `,
+          [codigo, nombre || "Sin Nombre", Number(stock) || 0]
+        );
+        count++;
+      }
+    }
     await client.query("COMMIT");
-
-    console.log(
-      `[TEST] ¡Archivado exitoso para estación ${estacion_id}! (Sin limpiar la producción actual)`
-    );
-    res.status(200).json({
-      msg: `Archivado exitoso para estación ${estacion_id}. La producción actual NO se limpió.`,
-      productos_archivados: producto_list,
-      timestamp_registro: `${fecha} ${hora}`,
-    });
+    console.log(`--- FIN SINCRONIZACIÓN: ${count} items procesados ---`);
+    res.json({ msg: "Stock sincronizado", count });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("[TEST] Error al forzar archivado:", err.message);
-    res.status(500).send("Error en el servidor durante el archivado de prueba");
+    console.error("Error Sync Stock:", err);
+    res.status(500).send("Error al sincronizar stock");
   } finally {
     client.release();
   }
 });
 
-app.get("/api/test/simular-sync-con-enfriado", async (req, res) => {
-  console.log("[TEST-ENFRIADO] Iniciando simulación de sincronización...");
-  const client = await db.connect();
+app.get("/api/ingenieria/semielaborados", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      "SELECT * FROM semielaborados ORDER BY nombre ASC"
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error DB");
+  }
+});
 
+app.post("/api/ingenieria/recetas", async (req, res) => {
+  const { producto_terminado, items } = req.body;
+  const client = await db.connect();
   try {
     await client.query("BEGIN");
-    const { rows: currentProdRows } = await client.query(
-      "SELECT * FROM estado_produccion FOR UPDATE"
-    );
-    const currentProduccion = currentProdRows.reduce((acc, row) => {
-      try {
-        const list = JSON.parse(row.producto_actual || "[]");
-        acc[row.estacion_id] = {
-          json: row.producto_actual || "[]",
-          list: list,
-          accion: `Estacion ${row.estacion_id}`,
-        };
-      } catch (e) {
-        acc[row.estacion_id] = {
-          json: "[]",
-          list: [],
-          accion: `Estacion ${row.estacion_id}`,
-        };
-      }
-      return acc;
-    }, {});
-    console.log(
-      "[TEST-ENFRIADO] Productos actuales cargados:",
-      currentProduccion
-    );
+    // Borramos la versión anterior
+    await client.query("DELETE FROM recetas WHERE producto_terminado = $1", [
+      producto_terminado,
+    ]);
 
-    const { rows: dbTriggers } = await client.query(
-      `SELECT fecha, hora, accion 
-           FROM registros 
-           WHERE tipo = 'EVENTO' 
-           AND accion LIKE 'Se inicio ciclo%'`
-    );
-    const dbTriggerSet = new Set(
-      dbTriggers.map((r) => {
-        const fechaDB = r.fecha.toISOString().split("T")[0];
-        return `${fechaDB}T${r.hora}_${r.accion}`;
-      })
-    );
-    console.log(
-      `[TEST-ENFRIADO] ${dbTriggerSet.size} triggers existentes encontrados.`
-    );
-
-    const now = new Date();
-    const fechaFalsa = now.toISOString().split("T")[0];
-    const horaEnfriado = new Date(now.getTime() - 10000)
-      .toTimeString()
-      .split(" ")[0];
-    const horaCiclo = now.toTimeString().split(" ")[0];
-
-    const registrosFalsos = [
-      {
-        fecha: fechaFalsa,
-        hora: horaEnfriado,
-        accion: "Enfriando Estacion 1",
-        tipo: "EVENTO",
-      },
-      {
-        fecha: fechaFalsa,
-        hora: horaCiclo,
-        accion: "Se inicio ciclo Estacion 2",
-        tipo: "EVENTO",
-      },
-    ];
-    console.log(
-      "[TEST-ENFRIADO] Logs falsos creados:",
-      registrosFalsos.map((r) => r.accion)
-    );
-
-    const newArchiveRecords = [];
-    for (const reg of registrosFalsos) {
-      let stationId = null;
-      let isStartCycle = false;
-
-      if (reg.accion.includes("Estacion 1")) stationId = 1;
-      else if (reg.accion.includes("Estacion 2")) stationId = 2;
-
-      if (reg.accion.includes("Se inicio ciclo")) isStartCycle = true;
-
-      const triggerEvent = stationId && isStartCycle;
-
-      if (triggerEvent) {
-        const key = `${reg.fecha}T${reg.hora}_${reg.accion}`;
-
-        if (!dbTriggerSet.has(key)) {
-          console.log(
-            `[TEST-ENFRIADO] Trigger "Inicio Ciclo" detectado: ${key}`
-          );
-          const products = currentProduccion[stationId];
-
-          if (products && products.list.length > 0) {
-            console.log(
-              `[TEST-ENFRIADO] Archivando productos para ${key}: ${products.json}`
-            );
-            const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`);
-            const archiveDateTime = new Date(triggerDateTime.getTime() - 5000);
-
-            const newFecha = archiveDateTime.toISOString().split("T")[0];
-            const newHora = archiveDateTime
-              .toTimeString()
-              .split(" ")[0]
-              .split("(")[0]
-              .trim();
-
-            newArchiveRecords.push({
-              fecha: newFecha,
-              hora: newHora,
-              accion: products.accion,
-              tipo: "PRODUCCION",
-              productos_json: products.json,
-            });
-          }
-        }
-      } else if (stationId && reg.accion.includes("Enfriando")) {
-        console.log(
-          `[TEST-ENFRIADO] Evento "Enfriando" detectado y OMITIDO: ${reg.accion}`
+    // Insertamos la nueva versión con la fecha de HOY (NOW())
+    if (items && items.length > 0) {
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO recetas 
+                    (producto_terminado, semielaborado_id, cantidad, ultima_actualizacion) 
+                    VALUES ($1, $2, $3, NOW())`,
+          [producto_terminado, item.id, item.cantidad || 1]
         );
       }
     }
-
-    await client.query("ROLLBACK");
-    console.log(
-      "[TEST-ENFRIADO] ROLLBACK ejecutado. La base de datos no fue modificada."
-    );
-
-    res.status(200).json({
-      msg: "Simulación completada. La base de datos no fue modificada.",
-      logs_simulados: registrosFalsos,
-      registros_produccion_que_se_hubieran_creado: newArchiveRecords,
-    });
+    await client.query("COMMIT");
+    res.json({ success: true });
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("[TEST-ENFRIADO] Error durante la simulación:", err.message);
-    res.status(500).send("Error en el servidor durante la simulación");
+    res.status(500).send(err.message);
   } finally {
     client.release();
   }
 });
 
-// --- Iniciar Servidor ---
+// --- 5. Leer Receta (CORREGIDO CON ZONA HORARIA ARGENTINA) ---
+app.get("/api/ingenieria/recetas/:producto", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      `
+            SELECT r.*, s.codigo, s.nombre, s.stock_actual,
+            (
+                SELECT TO_CHAR(
+                    MAX(ultima_actualizacion) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires',
+                    'DD/MM/YYYY HH24:MI'
+                ) 
+                FROM recetas 
+                WHERE producto_terminado = $1
+            ) as fecha_receta
+            FROM recetas r
+            JOIN semielaborados s ON r.semielaborado_id = s.id
+            WHERE r.producto_terminado = $1
+        `,
+      [req.params.producto]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
 async function iniciarServidor() {
   await setupAuth();
-  app.listen(PORT, () => {
-    console.log(
-      `Servidor corriendo en http://localhost:${PORT} o en el puerto ${process.env.PORT}`
-    );
-  });
-  console.log("Ejecutando sincronización inicial...");
+  app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
   await sincronizarBaseDeDatos();
-  const DOS_MINUTOS = 2 * 60 * 1000;
-  setInterval(sincronizarBaseDeDatos, DOS_MINUTOS);
-  console.log(`La sincronización automática se ejecutará cada 2 minutos.`);
+  setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
 }
 
 iniciarServidor();

@@ -22,6 +22,11 @@ import {
   FaCubes,
   FaChartLine,
   FaUsers,
+  FaCogs,
+  FaSave,
+  FaDatabase,
+  FaArrowLeft,
+  FaLock,
   FaUserTie, // <--- Asegurate de tener estos dos nuevos
 } from "react-icons/fa";
 
@@ -41,6 +46,14 @@ import {
   Pie, // <--- Asegurate de tener estos nuevos gráficos
 } from "recharts";
 
+// Arriba de todo en App.jsx
+import {
+  DndContext,
+  useDraggable,
+  useDroppable,
+  DragOverlay,
+} from "@dnd-kit/core"; // <--- AGREGAR DragOverlay
+
 // --- Constantes ---
 const API_BASE_URL = "https://horno-backend.onrender.com/api";
 //const API_BASE_URL = "http://localhost:4000/api"; // Descomentar para desarrollo local
@@ -53,9 +66,15 @@ const POLLING_INTERVAL = 10000;
 const HORAS_TIMEOUT_ENFRIADO = 2;
 const MAX_HORAS_CICLO_PROMEDIO = 4;
 const ALARMA_WINDOW_HOURS = 24;
-const ADMIN_PASSWORD = "admin123"; // Contraseña del panel
 
-// --- FUNCIÓN AUXILIAR 1: Formatear Duración ---
+// --- 🔐 CONTRASEÑAS DIFERENCIADAS ---
+const PASS_PANEL = "accesohorno"; // Para operarios
+const PASS_GERENCIA = "accesodata"; // Para análisis e ingeniería
+
+// ==============================================================================
+// 1. FUNCIONES AUXILIARES
+// ==============================================================================
+
 function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
@@ -67,42 +86,32 @@ function formatDuration(ms) {
     .padStart(2, "0")}`;
 }
 
-// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 function getStationStatus(stationId, allRecords) {
   const lastEvent = allRecords.find(
     (reg) =>
       reg.accion.includes(`Estacion ${stationId}`) && reg.tipo !== "PRODUCCION"
   );
-
   let status = "INACTIVA";
-  let lastEventTimestamp = null;
-
   if (lastEvent) {
-    lastEventTimestamp = lastEvent.timestamp;
     if (lastEvent.accion.includes("Se inicio ciclo")) status = "COCINANDO";
     else if (lastEvent.accion.includes("Enfriando")) status = "ENFRIANDO";
   }
-
   const cycleStartEvents = allRecords.filter(
     (reg) =>
       reg.tipo === "EVENTO" &&
       reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
   );
-
   let cycleDuration = "N/A";
   let averageCycleTime = "N/A";
   let averageCycleTimeMs = null;
   const allCycleDurationsMs = [];
-
   if (cycleStartEvents.length >= 2) {
     for (let i = 0; i < cycleStartEvents.length - 1; i++) {
       try {
         const date1 = new Date(cycleStartEvents[i].timestamp);
         const date2 = new Date(cycleStartEvents[i + 1].timestamp);
         const diffMs = date1.getTime() - date2.getTime();
-        if (i === 0) {
-          cycleDuration = formatDuration(diffMs);
-        }
+        if (i === 0) cycleDuration = formatDuration(diffMs);
         allCycleDurationsMs.push(diffMs);
       } catch (e) {
         console.error(e);
@@ -118,7 +127,6 @@ function getStationStatus(stationId, allRecords) {
       averageCycleTimeMs = avgMs;
     }
   }
-
   let liveCycleStartTime = null;
   if (status === "COCINANDO" || status === "ENFRIANDO") {
     if (cycleStartEvents[0]) {
@@ -129,12 +137,9 @@ function getStationStatus(stationId, allRecords) {
       }
     }
   }
-
   let cyclesToday = 0;
   try {
-    const today = new Date();
-    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-    const todayStr = today.toISOString().substring(0, 10);
+    const todayStr = new Date().toISOString().substring(0, 10);
     cyclesToday = cycleStartEvents.filter((reg) => {
       const eventDate = new Date(reg.timestamp);
       eventDate.setMinutes(
@@ -145,13 +150,10 @@ function getStationStatus(stationId, allRecords) {
   } catch (e) {
     console.error(e);
   }
-
-  if (status === "ENFRIANDO") {
+  if (status === "ENFRIANDO" && lastEvent) {
     try {
-      const enfriandoStartTime = new Date(lastEventTimestamp);
-      const now = new Date();
-      const diffMs = now.getTime() - enfriandoStartTime.getTime();
-      const diffHours = diffMs / (1000 * 60 * 60);
+      const enfriandoStartTime = new Date(lastEvent.timestamp);
+      const diffHours = (new Date() - enfriandoStartTime) / (1000 * 60 * 60);
       if (diffHours > HORAS_TIMEOUT_ENFRIADO) {
         status = "INACTIVA";
         liveCycleStartTime = null;
@@ -171,7 +173,10 @@ function getStationStatus(stationId, allRecords) {
   };
 }
 
-// --- Componente de la Tarjeta de Estación ---
+// ==============================================================================
+// 2. DASHBOARD (HORNOS EN VIVO)
+// ==============================================================================
+
 function StationCard({ title, data }) {
   const [liveDuration, setLiveDuration] = useState("---");
   const animations = {
@@ -210,24 +215,18 @@ function StationCard({ title, data }) {
       setLiveDuration("---");
       return;
     }
-    const updateDuration = () => {
-      const now = new Date();
-      const diffMs = now.getTime() - data.liveCycleStartTime.getTime();
-      setLiveDuration(formatDuration(diffMs));
-    };
-    updateDuration();
-    const timerId = setInterval(updateDuration, 1000);
+    const timerId = setInterval(() => {
+      setLiveDuration(formatDuration(new Date() - data.liveCycleStartTime));
+    }, 1000);
     return () => clearInterval(timerId);
   }, [data.liveCycleStartTime]);
 
   const formatFullTimestamp = (timestampString) => {
     if (!timestampString) return { fecha: "N/A", hora: "N/A" };
     const date = new Date(timestampString);
-    const options = { timeZone: "America/Argentina/Buenos_Aires" };
     return {
-      fecha: date.toLocaleDateString("es-AR", options),
+      fecha: date.toLocaleDateString("es-AR"),
       hora: date.toLocaleTimeString("es-AR", {
-        ...options,
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
@@ -253,24 +252,20 @@ function StationCard({ title, data }) {
       </div>
       <div className="grid grid-cols-2 gap-4 mb-6 text-white text-center">
         <div className="bg-green-800/80 p-3 rounded-lg shadow-inner">
-          <FaHourglassHalf className="text-2xl text-green-300 mx-auto mb-1" />
           <div className="text-xs text-green-300 uppercase">En Vivo</div>
           <div className="text-2xl font-bold font-mono">{liveDuration}</div>
         </div>
         <div className="bg-blue-900/80 p-3 rounded-lg shadow-inner">
-          <FaChartPie className="text-2xl text-blue-300 mx-auto mb-1" />
           <div className="text-xs text-blue-300 uppercase">Ciclos Hoy</div>
           <div className="text-2xl font-bold font-mono">{data.cyclesToday}</div>
         </div>
         <div className="bg-black/20 p-3 rounded-lg shadow-inner">
-          <FaHistory className="text-2xl text-gray-300 mx-auto mb-1" />
           <div className="text-xs text-gray-300 uppercase">Ciclo Ant.</div>
           <div className="text-2xl font-bold font-mono">
             {data.cycleDuration}
           </div>
         </div>
         <div className="bg-purple-900/80 p-3 rounded-lg shadow-inner">
-          <FaTachometerAlt className="text-2xl text-purple-300 mx-auto mb-1" />
           <div className="text-xs text-purple-300 uppercase">
             Prom. (Últ. 10)
           </div>
@@ -279,118 +274,72 @@ function StationCard({ title, data }) {
           </div>
         </div>
       </div>
-
       {data.status !== "INACTIVA" && (
-        <div className="mb-4">
-          <h3 className="font-semibold text-lg mb-2 text-gray-200">
-            Producción Actual:
+        <div className="mb-4 bg-black/20 p-3 rounded-lg max-h-32 overflow-y-auto">
+          <h3 className="font-semibold text-sm mb-1 text-gray-200">
+            Producción:
           </h3>
-          <div className="bg-black/20 p-3 rounded-lg max-h-32 overflow-y-auto">
-            {data.productos && data.productos.length > 0 ? (
-              <ul className="list-disc list-inside text-gray-200 space-y-1">
-                {data.productos.map((prod, index) => (
-                  <li key={index}>{prod}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-400 italic text-sm text-center">
-                No hay productos cargados.
-              </p>
-            )}
-          </div>
+          {data.productos && data.productos.length > 0 ? (
+            <ul className="list-disc list-inside text-gray-200 text-sm">
+              {data.productos.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-400 italic text-xs">Sin carga</p>
+          )}
         </div>
       )}
-
       <div className="text-sm text-gray-200 bg-black/20 p-4 rounded-lg">
-        <h3 className="font-semibold text-lg mb-2">Último Evento:</h3>
-        {data.lastEvent ? (
-          <>
-            <p>
-              <strong>Acción:</strong> {data.lastEvent.accion}
-            </p>
-            <p>
-              <strong>Fecha:</strong> {lastEventFecha}
-            </p>
-            <p>
-              <strong>Hora:</strong> {lastEventHora}
-            </p>
-          </>
-        ) : (
-          <p>No hay eventos registrados.</p>
-        )}
+        <p>
+          <strong>Último:</strong>{" "}
+          {data.lastEvent
+            ? `${data.lastEvent.accion} (${lastEventHora})`
+            : "N/A"}
+        </p>
       </div>
     </div>
   );
 }
 
-// --- Componente del Menú de Alarmas ---
 function AlarmMenu({ alarms }) {
   const [isOpen, setIsOpen] = useState(false);
   if (alarms.length === 0) return null;
-  const formatTime = (timestamp) => {
-    const date = new Date(timestamp);
-    const options = { timeZone: "America/Argentina/Buenos_Aires" };
-    return date.toLocaleTimeString("es-AR", {
-      ...options,
+  const formatTime = (ts) =>
+    new Date(ts).toLocaleTimeString("es-AR", {
       hour: "2-digit",
       minute: "2-digit",
     });
-  };
-  const dropdownVariants = {
-    closed: {
-      opacity: 0,
-      scaleY: 0,
-      transition: { duration: 0.2, ease: "easeOut" },
-    },
-    open: {
-      opacity: 1,
-      scaleY: 1,
-      transition: { duration: 0.3, ease: "easeIn" },
-    },
-  };
   return (
     <div className="relative mb-8 w-full md:w-1/2 mx-auto z-10">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-red-700 text-white p-3 rounded-lg shadow-lg flex items-center justify-center font-bold text-lg hover:bg-red-600 transition-colors"
+        className="w-full bg-red-700 text-white p-3 rounded-lg shadow-lg flex items-center justify-center font-bold text-lg hover:bg-red-600"
       >
-        <motion.div
-          animate={{ scale: [1, 1.2, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <FaExclamationTriangle className="mr-3" />
-        </motion.div>
-        {alarms.length} Alarma(s) en las últimas {ALARMA_WINDOW_HOURS}hs
+        <FaExclamationTriangle className="mr-3" /> {alarms.length} Alarma(s)
+        (24hs)
       </button>
-      <motion.div
-        initial="closed"
-        animate={isOpen ? "open" : "closed"}
-        variants={dropdownVariants}
-        className="absolute w-full bg-slate-700 rounded-b-lg shadow-xl overflow-hidden transform-origin-top"
-      >
-        <div className="p-4 max-h-60 overflow-y-auto">
-          {alarms.map((alarm) => (
+      {isOpen && (
+        <div className="absolute w-full bg-slate-700 rounded-b-lg shadow-xl overflow-hidden p-4 max-h-60 overflow-y-auto">
+          {alarms.map((a) => (
             <div
-              key={alarm.id}
-              className="flex items-start p-2 border-b border-slate-600 last:border-b-0"
+              key={a.id}
+              className="flex items-start p-2 border-b border-slate-600"
             >
               <FaExclamationTriangle className="text-yellow-300 mr-3 mt-1" />
               <div>
-                <span className="font-semibold text-gray-200">
-                  ({formatTime(alarm.timestamp)})
-                </span>
-                <p className="text-gray-300">{alarm.accion}</p>
+                <span className="font-bold">({formatTime(a.timestamp)})</span>{" "}
+                <span className="text-gray-300">{a.accion}</span>
               </div>
             </div>
           ))}
         </div>
-      </motion.div>
+      )}
     </div>
   );
 }
 
-// --- Componente: Dashboard ---
-function Dashboard() {
+function Dashboard({ onNavigate }) {
   const [registros, setRegistros] = useState([]);
   const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [cargando, setCargando] = useState(true);
@@ -400,25 +349,15 @@ function Dashboard() {
   useEffect(() => {
     const fetchDatos = () => {
       Promise.all([
-        fetch(REGISTROS_API_URL).then((res) => {
-          if (!res.ok) throw new Error(`Error HTTP ${res.status} en registros`);
-          return res.json();
-        }),
-        fetch(PRODUCCION_API_URL).then((res) => {
-          if (!res.ok)
-            throw new Error(`Error HTTP ${res.status} en produccion`);
-          return res.json();
-        }),
+        fetch(REGISTROS_API_URL).then((r) => r.json()),
+        fetch(PRODUCCION_API_URL).then((r) => r.json()),
       ])
-        .then(([dataRegistros, dataProduccion]) => {
-          setRegistros(dataRegistros);
-          setProduccion(dataProduccion);
+        .then(([regs, prod]) => {
+          setRegistros(regs);
+          setProduccion(prod);
           setCargando(false);
         })
-        .catch((err) => {
-          console.error("Error al cargar datos:", err);
-          setCargando(false);
-        });
+        .catch(console.error);
     };
     fetchDatos();
     const intervalId = setInterval(fetchDatos, POLLING_INTERVAL);
@@ -475,45 +414,31 @@ function Dashboard() {
   const cycleChartData = useMemo(() => {
     const combinedData = [];
     const maxMinutes = MAX_HORAS_CICLO_PROMEDIO * 60;
-    const processStationCycles = (stationId, stationName) => {
+    const processCycles = (stationId, name) => {
       const starts = registros.filter(
-        (reg) =>
-          reg.tipo === "EVENTO" &&
-          reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+        (r) =>
+          r.tipo === "EVENTO" &&
+          r.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
       );
       for (let i = 0; i < starts.length - 1; i++) {
-        const currentEvent = starts[i];
-        const previousEvent = starts[i + 1];
-        try {
-          const date1 = new Date(currentEvent.timestamp);
-          const date2 = new Date(previousEvent.timestamp);
-          const diffMs = date1.getTime() - date2.getTime();
-          const durationMinutes = diffMs / (1000 * 60);
-          if (durationMinutes > 0 && durationMinutes <= maxMinutes) {
-            combinedData.push({
-              timestamp: currentEvent.timestamp,
-              [stationName]: durationMinutes,
-            });
-          }
-        } catch (e) {
-          console.error(e);
-        }
+        const diffMs =
+          new Date(starts[i].timestamp) - new Date(starts[i + 1].timestamp);
+        const mins = diffMs / 60000;
+        if (mins > 0 && mins <= maxMinutes)
+          combinedData.push({ timestamp: starts[i].timestamp, [name]: mins });
       }
     };
-    processStationCycles(1, "Estación 1");
-    processStationCycles(2, "Estación 2");
+    processCycles(1, "Estación 1");
+    processCycles(2, "Estación 2");
     return combinedData
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
       .slice(-30);
   }, [registros]);
 
   const recentAlarms = useMemo(() => {
-    const now = new Date();
-    const windowMs = ALARMA_WINDOW_HOURS * 60 * 60 * 1000;
-    const pastLimit = now.getTime() - windowMs;
+    const limit = new Date().getTime() - ALARMA_WINDOW_HOURS * 3600000;
     return registros.filter(
-      (reg) =>
-        reg.tipo === "ALARMA" && new Date(reg.timestamp).getTime() > pastLimit
+      (r) => r.tipo === "ALARMA" && new Date(r.timestamp).getTime() > limit
     );
   }, [registros]);
 
@@ -527,12 +452,6 @@ function Dashboard() {
 
   const calculatedTotalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
   const totalPages = Math.min(calculatedTotalPages, 25);
-  useEffect(() => {
-    if (currentPage > totalPages && totalPages > 0) {
-      setCurrentPage(totalPages);
-    }
-  }, [currentPage, totalPages]);
-
   const historialPaginado = registros.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
@@ -541,39 +460,39 @@ function Dashboard() {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
 
-  const formatXAxis = (timestamp) => {
-    const date = new Date(timestamp);
-    const options = { timeZone: "America/Argentina/Buenos_Aires" };
-    return date.toLocaleDateString("es-AR", {
-      ...options,
-      day: "2-digit",
-      month: "2-digit",
-    });
-  };
-
-  if (cargando) {
+  if (cargando)
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900 text-white text-2xl">
-        <FaSpinner className="animate-spin mr-4" />
-        Cargando datos del horno...
+      <div className="flex justify-center items-center h-screen text-white text-2xl">
+        <FaSpinner className="animate-spin mr-4" /> Cargando...
       </div>
     );
-  }
 
   return (
-    <>
-      <h1 className="text-4xl md:text-5xl font-bold text-center mb-10">
-        Monitor en Vivo - Horno de Rotomoldeo
-      </h1>
+    <div className="animate-in fade-in duration-500 relative">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+        <h1 className="text-4xl md:text-4xl font-bold text-center md:text-left flex items-center gap-3 text-white">
+          <FaFire className="text-orange-500" /> Hornos en Vivo
+        </h1>
+        <button
+          onClick={() => onNavigate("/panel-control")}
+          className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg border border-slate-600 flex items-center gap-2 transition-all active:scale-95 group"
+        >
+          <FaTools className="text-gray-400 group-hover:text-white transition-colors" />{" "}
+          Panel de Control
+        </button>
+      </div>
+
       <AlarmMenu alarms={recentAlarms} />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 mb-12">
         <StationCard title="Estación 1 (Izquierda)" data={statusEstacion1} />
         <StationCard title="Estación 2 (Derecha)" data={statusEstacion2} />
       </div>
-      <h2 className="text-3xl font-semibold mb-6">
-        Evolución de Tiempos de Ciclo (Últimos 30)
-      </h2>
+
       <div className="bg-slate-800 rounded-lg shadow-xl p-6 h-[400px] mb-12">
+        <h3 className="text-xl font-bold mb-4">
+          Tiempos de Ciclo (Últimos 30)
+        </h3>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={cycleChartData}
@@ -583,59 +502,50 @@ function Dashboard() {
             <XAxis
               dataKey="timestamp"
               stroke="#94a3b8"
-              tickFormatter={formatXAxis}
-              padding={{ left: 20, right: 20 }}
-            />
-            <YAxis
-              stroke="#94a3b8"
-              allowDecimals={false}
-              label={{
-                value: "Duración (Minutos)",
-                angle: -90,
-                position: "insideLeft",
-                fill: "#94a3b8",
-                dy: 40,
-              }}
-              domain={[25, "dataMax + 10"]}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "rgba(30, 41, 59, 0.9)",
-                borderColor: "#334155",
-                borderRadius: "8px",
-              }}
-              labelStyle={{ color: "#cbd5e1" }}
-              formatter={(value) => [`${value.toFixed(0)} minutos`, null]}
-              labelFormatter={(label) =>
-                new Date(label).toLocaleString("es-AR", {
-                  timeZone: "America/Argentina/Buenos_Aires",
-                  dateStyle: "short",
-                  timeStyle: "short",
+              tickFormatter={(ts) =>
+                new Date(ts).toLocaleDateString("es-AR", {
+                  day: "2-digit",
+                  month: "2-digit",
                 })
               }
             />
-            <Legend wrapperStyle={{ color: "#cbd5e1" }} />
+            <YAxis
+              stroke="#94a3b8"
+              label={{
+                value: "Minutos",
+                angle: -90,
+                position: "insideLeft",
+                fill: "#94a3b8",
+              }}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "#1e293b",
+                borderColor: "#334155",
+              }}
+            />
+            <Legend />
             <Line
               type="monotone"
               dataKey="Estación 1"
               stroke="#c0392b"
               strokeWidth={2}
-              connectNulls
               dot={{ r: 4 }}
-              activeDot={{ r: 8 }}
+              connectNulls
             />
             <Line
               type="monotone"
               dataKey="Estación 2"
               stroke="#2980b9"
               strokeWidth={2}
-              connectNulls
               dot={{ r: 4 }}
-              activeDot={{ r: 8 }}
+              connectNulls
             />
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {/* TABLA DE HISTORIAL RESTAURADA */}
       <h2 className="text-3xl font-semibold mb-6">
         Historial Reciente (Global)
       </h2>
@@ -647,9 +557,7 @@ function Dashboard() {
               <th className="px-4 py-3 text-center">Hora</th>
               <th className="px-4 py-3 text-center">Tipo</th>
               <th className="px-4 py-3 text-center">Acción</th>
-              <th className="px-4 py-3 text-center">
-                Tiempo de Ciclo (HH:MM:SS)
-              </th>
+              <th className="px-4 py-3 text-center">Tiempo Ciclo</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700">
@@ -681,21 +589,17 @@ function Dashboard() {
                 }
               }
 
-              const isAlarma = reg.tipo === "ALARMA";
-              const isProduccion = reg.tipo === "PRODUCCION";
-              const tipoClass = isAlarma
-                ? "bg-red-600/90 text-red-100"
-                : isProduccion
-                ? "bg-green-600/90 text-green-100"
-                : "bg-blue-600/90 text-blue-100";
-
+              const tipoClass =
+                reg.tipo === "ALARMA"
+                  ? "bg-red-600/90 text-red-100"
+                  : reg.tipo === "PRODUCCION"
+                  ? "bg-green-600/90 text-green-100"
+                  : "bg-blue-600/90 text-blue-100";
               let productosParseados = [];
-              if (isProduccion) {
+              if (reg.tipo === "PRODUCCION") {
                 try {
                   productosParseados = JSON.parse(reg.productos_json || "[]");
-                } catch (e) {
-                  console.error("Error parseando productos_json:", e);
-                }
+                } catch (e) {}
               }
 
               return (
@@ -710,7 +614,7 @@ function Dashboard() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-left">
-                    {isProduccion ? (
+                    {reg.tipo === "PRODUCCION" ? (
                       <div className="flex flex-wrap gap-2">
                         <span className="font-semibold text-gray-300">
                           Fin de Ciclo:
@@ -726,7 +630,7 @@ function Dashboard() {
                           ))
                         ) : (
                           <span className="text-gray-500 italic">
-                            Sin productos cargados
+                            Sin productos
                           </span>
                         )}
                       </div>
@@ -749,7 +653,7 @@ function Dashboard() {
         <button
           onClick={handlePrevPage}
           disabled={currentPage === 1}
-          className="px-5 py-2 bg-slate-600 text-white rounded-md shadow disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-500 transition-colors"
+          className="px-5 py-2 bg-slate-600 text-white rounded-md shadow disabled:opacity-50 hover:bg-slate-500 transition-colors"
         >
           Anterior
         </button>
@@ -759,152 +663,101 @@ function Dashboard() {
         <button
           onClick={handleNextPage}
           disabled={currentPage === totalPages}
-          className="px-5 py-2 bg-slate-600 text-white rounded-md shadow disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-500 transition-colors"
+          className="px-5 py-2 bg-slate-600 text-white rounded-md shadow disabled:opacity-50 hover:bg-slate-500 transition-colors"
         >
           Siguiente
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
-// --- Componente: PanelControl (¡MEJORADO CON AUTOCOMPLETADO!) ---
-function PanelControl() {
+// ==============================================================================
+// 3. PANEL DE CONTROL (MODERNO Y ESTILIZADO)
+// ==============================================================================
+
+function PanelControl({ onNavigate }) {
   const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [input1, setInput1] = useState("");
   const [input2, setInput2] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // --- NUEVO: Estado para sugerencias de productos ---
   const [sugerencias, setSugerencias] = useState([]);
 
-  // Cargar producción actual
   const fetchProduccion = async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(PRODUCCION_API_URL);
-      if (!res.ok) throw new Error("Error al cargar productos");
-      const data = await res.json();
-      setProduccion(data);
-      setError(null);
-    } catch (err) {
-      console.error(err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(PRODUCCION_API_URL);
+    setProduccion(await res.json());
   };
 
-  // --- NUEVO: Cargar lista de modelos desde el Excel de pedidos ---
   useEffect(() => {
     fetchProduccion();
-
-    // Fetch silencioso para llenar el autocompletado
-    fetch(PEDIDOS_API_URL)
-      .then((res) => res.json())
-      .then((data) => {
-        const modelosSet = new Set();
-        data.forEach((row) => {
-          // Extraemos todos los modelos únicos
-          const m = row.MODELO || row.Modelo || row.modelo;
-          if (m && typeof m === "string" && m.trim() !== "") {
-            modelosSet.add(m.trim());
-          }
-        });
-        // Ordenamos alfabéticamente
-        setSugerencias(Array.from(modelosSet).sort());
-      })
-      .catch((err) =>
-        console.warn("No se pudieron cargar sugerencias de productos:", err)
-      );
   }, []);
 
   const handleAdd = async (estacion_id, producto) => {
     if (!producto) return;
-    try {
-      const res = await fetch(PRODUCCION_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ estacion_id, producto }),
-      });
-      if (!res.ok) throw new Error("Error del servidor al añadir");
-      if (estacion_id === 1) setInput1("");
-      if (estacion_id === 2) setInput2("");
-      fetchProduccion();
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "Error al añadir producto");
-    }
+    await fetch(PRODUCCION_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estacion_id, producto }),
+    });
+    if (estacion_id === 1) setInput1("");
+    else setInput2("");
+    fetchProduccion();
   };
 
-  const handleClear = async (estacion_id) => {
-    if (
-      !window.confirm(
-        `¿Estás seguro de que quieres borrar TODOS los productos de la Estación ${estacion_id}?`
-      )
-    )
-      return;
-    try {
-      const res = await fetch(`${PRODUCCION_API_URL}/${estacion_id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Error del servidor al borrar");
+  const handleClear = async (id) => {
+    if (window.confirm("¿Borrar lista?")) {
+      await fetch(`${PRODUCCION_API_URL}/${id}`, { method: "DELETE" });
       fetchProduccion();
-    } catch (err) {
-      console.error(err);
-      setError(err.message || "Error al borrar productos");
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-900 text-white text-2xl">
-        <FaSpinner className="animate-spin mr-4" />
-        Cargando productos...
-      </div>
-    );
-  }
 
   return (
-    <>
-      <h1 className="text-4xl md:text-5xl font-bold text-center mb-10">
-        Panel de Producción
-      </h1>
-      {error && (
-        <div className="bg-red-800 border border-red-600 text-white p-4 rounded-lg text-center mb-6">
-          <FaExclamationTriangle className="inline mr-2" /> {error}
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center justify-between mb-8 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => onNavigate("/")}
+            className="bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg shadow transition-all active:scale-95 border border-slate-600"
+          >
+            <FaArrowLeft />
+          </button>
+          <div>
+            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+              <FaTools className="text-gray-500" /> Panel de Control
+            </h1>
+            <p className="text-gray-400 text-sm mt-1">
+              Gestión operativa de carga de hornos
+            </p>
+          </div>
         </div>
-      )}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <EstacionControlPanel
-          title="Estación 1 (Izquierda)"
           estacionId={1}
+          title="Estación 1 (Izquierda)"
+          color="red"
           productos={produccion[1] || []}
           inputValue={input1}
           onInputChange={setInput1}
           onAdd={handleAdd}
           onClear={handleClear}
-          color="red"
-          sugerencias={sugerencias} // Pasamos las sugerencias
+          sugerencias={sugerencias}
         />
         <EstacionControlPanel
-          title="Estación 2 (Derecha)"
           estacionId={2}
+          title="Estación 2 (Derecha)"
+          color="blue"
           productos={produccion[2] || []}
           inputValue={input2}
           onInputChange={setInput2}
           onAdd={handleAdd}
           onClear={handleClear}
-          color="blue"
-          sugerencias={sugerencias} // Pasamos las sugerencias
+          sugerencias={sugerencias}
         />
       </div>
-    </>
+    </div>
   );
 }
 
-// --- Sub-componente del Panel de Control (¡AHORA CON DATALIST!) ---
 function EstacionControlPanel({
   title,
   estacionId,
@@ -916,153 +769,105 @@ function EstacionControlPanel({
   color,
   sugerencias,
 }) {
-  const colorClasses = {
+  const styles = {
     red: {
-      bg: "bg-red-900/50",
-      border: "border-red-700",
-      button: "bg-red-600 hover:bg-red-500",
-      list: "border-red-800",
+      borderTop: "border-t-red-500",
+      iconColor: "text-red-500",
+      badge: "bg-red-500/20 text-red-200 border-red-500/30",
+      btn: "bg-red-600 hover:bg-red-500 ring-red-500",
     },
     blue: {
-      bg: "bg-blue-900/50",
-      border: "border-blue-700",
-      button: "bg-blue-600 hover:bg-blue-500",
-      list: "border-blue-800",
+      borderTop: "border-t-blue-500",
+      iconColor: "text-blue-500",
+      badge: "bg-blue-500/20 text-blue-200 border-blue-500/30",
+      btn: "bg-blue-600 hover:bg-blue-500 ring-blue-500",
     },
-  };
-  const styles = colorClasses[color];
-  const listId = `list-sugerencias-${estacionId}`; // ID único para el datalist
+  }[color];
+  const listId = `list-sugerencias-${estacionId}`;
 
   return (
     <div
-      className={`rounded-xl shadow-2xl p-6 ${styles.bg} border-2 ${styles.border}`}
+      className={`bg-slate-800 rounded-xl shadow-2xl border border-slate-700 border-t-4 ${styles.borderTop} flex flex-col overflow-hidden`}
     >
-      <h2 className="text-3xl font-bold text-white mb-6">{title}</h2>
-      <div className="flex gap-2 mb-4 relative">
-        {/* INPUT CON AUTOCOMPLETADO */}
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder="Nombre del producto"
-          className="p-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-opacity-50"
-          list={listId} // Conectamos con el datalist
-        />
-
-        {/* LISTA DE SUGERENCIAS OCULTA */}
-        <datalist id={listId}>
-          {sugerencias &&
-            sugerencias.map((item, index) => (
-              <option key={index} value={item} />
+      <div className="p-6 border-b border-slate-700 bg-slate-800/50">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+            <FaFire className={styles.iconColor} /> {title}
+          </h2>
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-bold border ${styles.badge}`}
+          >
+            {productos.length} ítems
+          </span>
+        </div>
+        <div className="flex gap-2 relative">
+          <input
+            type="text"
+            list={listId}
+            value={inputValue}
+            onChange={(e) => onInputChange(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-600 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-all placeholder-gray-500"
+            placeholder="Producto..."
+            style={{
+              "--tw-ring-color": color === "red" ? "#ef4444" : "#3b82f6",
+            }}
+          />
+          <datalist id={listId}>
+            {sugerencias.map((s, i) => (
+              <option key={i} value={s} />
             ))}
-        </datalist>
-
+          </datalist>
+          <button
+            onClick={() => onAdd(estacionId, inputValue)}
+            disabled={!inputValue}
+            className={`px-6 rounded-lg font-bold text-white shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${styles.btn}`}
+          >
+            <FaPlus />
+          </button>
+        </div>
+      </div>
+      <div className="flex-grow p-4 bg-slate-900/30 min-h-[300px]">
+        <div className="bg-slate-900 rounded-xl border border-slate-700 h-full overflow-hidden flex flex-col">
+          <div className="overflow-y-auto p-2 space-y-2 flex-grow custom-scrollbar">
+            {productos.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-500 opacity-60 py-10">
+                <FaBoxOpen className="text-5xl mb-3" />
+                <span className="text-sm">Horno vacío</span>
+              </div>
+            ) : (
+              productos.map((prod, index) => (
+                <div
+                  key={index}
+                  className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex items-center gap-3 shadow-sm animate-in fade-in slide-in-from-left-2"
+                >
+                  <div
+                    className={`w-2 h-8 rounded-full ${
+                      color === "red" ? "bg-red-500" : "bg-blue-500"
+                    }`}
+                  ></div>
+                  <span className="text-gray-200 font-medium text-sm">
+                    {prod}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="p-4 border-t border-slate-700 bg-slate-800">
         <button
-          onClick={() => onAdd(estacionId, inputValue)}
-          className={`px-5 py-3 rounded-lg text-white font-semibold transition-colors ${styles.button} disabled:opacity-50`}
-          disabled={!inputValue}
+          onClick={() => onClear(estacionId)}
+          disabled={productos.length === 0}
+          className="w-full py-3 text-sm font-bold text-gray-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-400"
         >
-          <FaPlus />
+          <FaTrash /> Vaciar Estación
         </button>
       </div>
-      <h3 className="text-xl font-semibold text-gray-300 mb-3 mt-8">
-        Productos en Horno ({productos.length})
-      </h3>
-      <div
-        className={`bg-gray-900/70 rounded-lg p-4 h-64 overflow-y-auto border ${styles.list}`}
-      >
-        {productos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <FaBoxOpen className="text-4xl mb-2" />
-            <span>No hay productos cargados</span>
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {productos.map((prod, index) => (
-              <li
-                key={index}
-                className="text-white bg-gray-800 p-3 rounded shadow-md text-lg"
-              >
-                {prod}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <button
-        onClick={() => onClear(estacionId)}
-        disabled={productos.length === 0}
-        className="w-full mt-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <FaTrash /> Limpiar Lista de Estación
-      </button>
     </div>
   );
 }
 
-// --- Componente: Login ---
-function LoginPage({ onLoginSuccess }) {
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (input === ADMIN_PASSWORD) {
-      setError("");
-      onLoginSuccess();
-    } else {
-      setError("Contraseña incorrecta. Intente de nuevo.");
-      setInput("");
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-center justify-center pt-10">
-      <div className="w-full max-w-md bg-slate-800 rounded-xl shadow-2xl p-8">
-        <h2 className="text-3xl font-bold text-white text-center mb-6">
-          Acceso Restringido
-        </h2>
-        <p className="text-center text-gray-400 mb-6">
-          Por favor, ingrese la contraseña para acceder al Panel de Control.
-        </p>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label
-              htmlFor="password"
-              class="block text-sm font-bold text-gray-300 mb-2"
-            >
-              Contraseña
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                <FaKey className="text-gray-500" />
-              </span>
-              <input
-                type="password"
-                id="password"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                className="w-full p-3 pl-10 bg-gray-900 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-            </div>
-          </div>
-          {error && (
-            <p className="text-red-400 text-center text-sm mb-4">{error}</p>
-          )}
-          <button
-            type="submit"
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg transition-colors"
-          >
-            Entrar
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// --- COMPONENTE DE ANÁLISIS DE PEDIDOS (v16: Sin límites en historial) ---
+// --- COMPONENTE DE ANÁLISIS DE PEDIDOS (v19: Historial con Filtros y Tags ML) ---
 function AnalisisPedidos() {
   const [datos, setDatos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1077,10 +882,12 @@ function AnalisisPedidos() {
   // Estado del Modal
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalPage, setModalPage] = useState(1);
+  const [historialFilter, setHistorialFilter] = useState("TODOS"); // NUEVO: "TODOS", "SIN_ML", "SOLO_ML"
+
   const MODAL_ITEMS_PER_PAGE = 5;
 
   useEffect(() => {
-    fetch(PEDIDOS_API_URL)
+    fetch(PEDIDOS_API_URL, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error("Error al cargar el Excel");
         return res.json();
@@ -1114,10 +921,14 @@ function AnalisisPedidos() {
     };
     const startOfWeek = getStartOfWeek(now);
 
-    // 1. Filtrar por año 2025
+    // 1. Filtrar por año 2025 y excluir cancelados
     const filteredData = datos.filter((row) => {
       const dateVal = row.FECHA || row.Fecha || row.fecha;
       if (!dateVal) return false;
+
+      const estado = row.ESTADO || row.Estado || "";
+      if (estado.toString().toUpperCase().includes("CANCELADO")) return false;
+
       const rowDate = new Date(dateVal);
       return !isNaN(rowDate) && rowDate.getFullYear() >= 2025;
     });
@@ -1128,23 +939,18 @@ function AnalisisPedidos() {
     const uniqueOrders = new Set();
     const uniqueMLOrders = new Set();
 
-    // Mapas Productos
     const productMapYear = {};
     const productMapMonth = {};
     const productMapWeek = {};
 
-    // Mapas Clientes
     const clientMapYear = {};
     const clientMapMonth = {};
     const clientMapWeek = {};
 
-    const activeClients = new Set(); // Clientes "reales" (al menos una compra NO ML)
-    const allClientsSet = new Set(); // Todos los clientes (para el buscador)
-
-    // Listas para el buscador
+    const activeClients = new Set();
+    const allClientsSet = new Set();
     const allModelsSet = new Set();
 
-    // Mapa Global Mensual
     const monthMap = {};
     const monthNames = [
       "Ene",
@@ -1171,7 +977,6 @@ function AnalisisPedidos() {
       const clientName = row.CLIENTE || row.Cliente || "Desconocido";
       const cantidad = Number(row.CANTIDAD || row.Cantidad || 1);
 
-      // Detectar si es MercadoLibre
       const isMercadoLibre = detalles
         .toString()
         .toLowerCase()
@@ -1190,12 +995,8 @@ function AnalisisPedidos() {
 
       // --- CLIENTES ---
       if (clientName && clientName !== "Desconocido") {
-        allClientsSet.add(clientName); // Lo agregamos al buscador siempre
-
-        // LÓGICA KPI "CLIENTES ACTIVOS":
-        if (!isMercadoLibre) {
-          activeClients.add(clientName);
-        }
+        allClientsSet.add(clientName);
+        if (!isMercadoLibre) activeClients.add(clientName);
 
         clientMapYear[clientName] = (clientMapYear[clientName] || 0) + cantidad;
         if (rowDate.getMonth() === currentMonth)
@@ -1209,9 +1010,7 @@ function AnalisisPedidos() {
       // --- PEDIDOS ---
       if (oc !== undefined && oc !== null && oc !== "") {
         uniqueOrders.add(oc);
-        if (isMercadoLibre) {
-          uniqueMLOrders.add(oc);
-        }
+        if (isMercadoLibre) uniqueMLOrders.add(oc);
       }
 
       // --- MENSUAL GLOBAL ---
@@ -1223,11 +1022,11 @@ function AnalisisPedidos() {
     });
 
     // Helpers de ordenamiento
-    const getTop3 = (map) =>
+    const getTop5 = (map) =>
       Object.entries(map)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
-        .slice(0, 3);
+        .slice(0, 5);
 
     const getTop10 = (map) =>
       Object.entries(map)
@@ -1235,7 +1034,7 @@ function AnalisisPedidos() {
         .sort((a, b) => b.value - a.value)
         .slice(0, 10);
 
-    // Data procesada para retornar
+    // Data procesada
     const salesByMonth = monthNames.slice(0, currentMonth + 1).map((name) => ({
       mes: name,
       ventas: monthMap[name],
@@ -1245,24 +1044,21 @@ function AnalisisPedidos() {
     )[0];
 
     return {
-      // Globales
       salesByMonth,
       totalOrders: uniqueOrders.size,
       mlOrders: uniqueMLOrders.size,
       recordMonthName: recordMonth?.mes || "-",
       filteredRawData: filteredData,
 
-      // Datos Productos
       topProductsYear: getTop10(productMapYear),
-      top3ProdMonth: getTop3(productMapMonth),
-      top3ProdWeek: getTop3(productMapWeek),
+      top5ProdMonth: getTop5(productMapMonth),
+      top5ProdWeek: getTop5(productMapWeek),
       allModels: Array.from(allModelsSet).sort(),
 
-      // Datos Clientes
       topClientsYear: getTop10(clientMapYear),
       totalActiveClients: activeClients.size,
-      top3ClientMonth: getTop3(clientMapMonth),
-      top3ClientWeek: getTop3(clientMapWeek),
+      top5ClientMonth: getTop5(clientMapMonth),
+      top5ClientWeek: getTop5(clientMapWeek),
       allClients: Array.from(allClientsSet).sort(),
     };
   }, [datos]);
@@ -1291,10 +1087,10 @@ function AnalisisPedidos() {
     setBusqueda("");
     setMostrarSugerencias(false);
     setModalPage(1);
+    setHistorialFilter("TODOS"); // Reset del filtro al abrir nuevo modal
 
     const rawData = analysisData.filteredRawData;
 
-    // Filtramos TODAS las filas correspondientes al item seleccionado
     const rows =
       modoVista === "PRODUCTOS"
         ? rawData.filter((r) => (r.MODELO || r.Modelo) === nombre)
@@ -1302,7 +1098,6 @@ function AnalisisPedidos() {
 
     if (rows.length === 0) return;
 
-    // Estadísticas del Modal (Se calculan sobre 'rows', o sea, TODO 2025)
     let totalUnits = 0;
     const pieMap = {};
 
@@ -1318,27 +1113,31 @@ function AnalisisPedidos() {
       pieMap[key] = (pieMap[key] || 0) + cant;
     });
 
-    // Top 5 para gráfico de torta
     const topPie = Object.entries(pieMap)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Historial de pedidos (Bitácora) - ¡AHORA SIN LÍMITE DE CORTE!
+    // Historial de pedidos (Bitácora) - CON DETECCIÓN ML
     const lastOrders = [...rows]
       .sort(
         (a, b) => new Date(b.FECHA || b.Fecha) - new Date(a.FECHA || a.Fecha)
       )
-      // .slice(0, 100) <--- ELIMINADO EL LÍMITE. MUESTRA TODO.
-      .map((row) => ({
-        fecha: new Date(row.FECHA || row.Fecha).toLocaleDateString("es-AR"),
-        columnaVariable:
-          modoVista === "CLIENTES"
-            ? row.MODELO || row.Modelo || "-"
-            : row.CLIENTE || row.Cliente || "-",
-        cantidad: row.CANTIDAD || row.Cantidad || 1,
-        oc: row.OC || row.oc || "-",
-      }));
+      .map((row) => {
+        const detalles = row.DETALLES || row.Detalles || row.detalles || "";
+        const isML = detalles.toString().toLowerCase().includes("mercadolibre");
+
+        return {
+          fecha: new Date(row.FECHA || row.Fecha).toLocaleDateString("es-AR"),
+          columnaVariable:
+            modoVista === "CLIENTES"
+              ? row.MODELO || row.Modelo || "-"
+              : row.CLIENTE || row.Cliente || "-",
+          cantidad: row.CANTIDAD || row.Cantidad || 1,
+          oc: row.OC || row.oc || "-",
+          isML: isML, // NUEVO: Marca si es ML
+        };
+      });
 
     const lastDate = lastOrders.length > 0 ? lastOrders[0].fecha : "-";
 
@@ -1352,21 +1151,33 @@ function AnalisisPedidos() {
     });
   };
 
-  // Paginación del Modal en tiempo de render
+  // --- LÓGICA DE FILTRADO Y PAGINACIÓN DEL MODAL ---
   let modalPaginationData = [];
   let totalModalPages = 0;
+  let filteredHistory = [];
+
   if (selectedItem) {
-    totalModalPages = Math.ceil(
-      selectedItem.lastOrders.length / MODAL_ITEMS_PER_PAGE
-    );
-    const startIndex = (modalPage - 1) * MODAL_ITEMS_PER_PAGE;
-    modalPaginationData = selectedItem.lastOrders.slice(
+    // 1. Aplicar Filtro
+    filteredHistory = selectedItem.lastOrders.filter((order) => {
+      if (historialFilter === "SIN_ML") return !order.isML;
+      if (historialFilter === "SOLO_ML") return order.isML;
+      return true; // "TODOS"
+    });
+
+    // 2. Calcular Paginación sobre los filtrados
+    totalModalPages = Math.ceil(filteredHistory.length / MODAL_ITEMS_PER_PAGE);
+    // Ajuste de seguridad por si filtramos y quedamos en una página vacía
+    const safePage = Math.min(modalPage, Math.max(1, totalModalPages));
+    if (safePage !== modalPage && totalModalPages > 0) setModalPage(safePage);
+
+    const startIndex = (safePage - 1) * MODAL_ITEMS_PER_PAGE;
+    // Si no hay datos, slice devuelve vacío, está bien
+    modalPaginationData = filteredHistory.slice(
       startIndex,
       startIndex + MODAL_ITEMS_PER_PAGE
     );
   }
 
-  // Colores para gráfico de torta
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A28DFF"];
 
   // --- RENDERIZADO ---
@@ -1401,12 +1212,12 @@ function AnalisisPedidos() {
   const cardTopList = isClientMode
     ? analysisData.topClientsYear
     : analysisData.topProductsYear;
-  const cardTop3Month = isClientMode
-    ? analysisData.top3ClientMonth
-    : analysisData.top3ProdMonth;
-  const cardTop3Week = isClientMode
-    ? analysisData.top3ClientWeek
-    : analysisData.top3ProdWeek;
+  const cardTop5Month = isClientMode
+    ? analysisData.top5ClientMonth
+    : analysisData.top5ProdMonth;
+  const cardTop5Week = isClientMode
+    ? analysisData.top5ClientWeek
+    : analysisData.top5ProdWeek;
 
   return (
     <div className="animate-in fade-in duration-500 relative">
@@ -1427,7 +1238,6 @@ function AnalisisPedidos() {
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 items-center w-full md:w-auto">
-          {/* SWITCH */}
           <div className="bg-slate-800 p-1 rounded-lg flex border border-slate-600">
             <button
               onClick={() => {
@@ -1457,7 +1267,6 @@ function AnalisisPedidos() {
             </button>
           </div>
 
-          {/* BUSCADOR */}
           <div className="relative w-full md:w-80">
             <input
               type="text"
@@ -1469,7 +1278,6 @@ function AnalisisPedidos() {
               className="w-full bg-slate-800 text-white border border-slate-600 rounded-full py-3 px-5 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-lg"
             />
             <FaBoxOpen className="absolute right-4 top-3.5 text-gray-400" />
-
             {mostrarSugerencias && sugerencias.length > 0 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-slate-700 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto border border-slate-600">
                 {sugerencias.map((item, idx) => (
@@ -1492,9 +1300,8 @@ function AnalisisPedidos() {
         </div>
       </div>
 
-      {/* TARJETAS DE RESUMEN (KPIs) */}
+      {/* KPIS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-12">
-        {/* Card 1 */}
         <div
           className={`bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 flex flex-col justify-center ${
             isClientMode ? "border-purple-500" : "border-blue-500"
@@ -1513,7 +1320,6 @@ function AnalisisPedidos() {
           <p className="text-xs text-gray-500 mt-1">{cardTotalSub}</p>
         </div>
 
-        {/* Card 2 */}
         {!isClientMode ? (
           <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
             <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
@@ -1544,14 +1350,13 @@ function AnalisisPedidos() {
           </div>
         )}
 
-        {/* Card 3 */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-green-500">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
-            Top 3 Mes Actual
+            Top 5 Mes Actual
           </h3>
-          {cardTop3Month.length > 0 ? (
+          {cardTop5Month.length > 0 ? (
             <ul className="space-y-2">
-              {cardTop3Month.map((p, i) => (
+              {cardTop5Month.map((p, i) => (
                 <li
                   key={i}
                   className="flex justify-between items-center text-sm border-b border-gray-700 pb-1 last:border-0 last:pb-0"
@@ -1581,14 +1386,13 @@ function AnalisisPedidos() {
           )}
         </div>
 
-        {/* Card 4 */}
         <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-teal-400">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-3 text-center">
-            Top 3 Semana
+            Top 5 Semana
           </h3>
-          {cardTop3Week.length > 0 ? (
+          {cardTop5Week.length > 0 ? (
             <ul className="space-y-2">
-              {cardTop3Week.map((p, i) => (
+              {cardTop5Week.map((p, i) => (
                 <li
                   key={i}
                   className="flex justify-between items-center text-sm border-b border-gray-700 pb-1 last:border-0 last:pb-0"
@@ -1618,7 +1422,6 @@ function AnalisisPedidos() {
           )}
         </div>
 
-        {/* Card 5 */}
         <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-purple-500 flex flex-col justify-center">
           <h3 className="text-gray-400 uppercase text-xs font-bold mb-2">
             Mes Récord
@@ -1630,7 +1433,7 @@ function AnalisisPedidos() {
         </div>
       </div>
 
-      {/* GRÁFICOS PRINCIPALES */}
+      {/* GRÁFICOS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
         <div className="bg-slate-800 p-6 rounded-xl shadow-lg min-h-[450px]">
           <h3 className="text-xl font-bold mb-6 text-gray-200 flex items-center gap-2">
@@ -1796,10 +1599,12 @@ function AnalisisPedidos() {
                   </h3>
                   <p className="text-5xl font-bold text-white">
                     {selectedItem.totalUnits}{" "}
+                    <span className="text-base font-normal text-gray-400">
+                      u
+                    </span>
                   </p>
                 </div>
 
-                {/* Gráfico de Torta */}
                 <div className="bg-slate-700/50 p-5 rounded-xl border border-slate-600">
                   <h3 className="text-gray-300 font-bold mb-4 text-sm uppercase text-center">
                     {selectedItem.type === "PRODUCTOS"
@@ -1854,17 +1659,60 @@ function AnalisisPedidos() {
 
               {/* COLUMNA DERECHA */}
               <div className="md:col-span-2 space-y-6">
-                {/* Bitácora Historial */}
+                {/* HISTORIAL CON FILTROS */}
                 <div className="bg-slate-700/30 p-5 rounded-xl border border-slate-600">
-                  <h3 className="text-gray-200 font-bold mb-4 flex items-center justify-between text-sm uppercase">
-                    <div className="flex items-center gap-2">
-                      <FaHistory className="text-green-400" /> Historial de
-                      Pedidos
+                  {/* Encabezado + Filtros */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                    <h3 className="text-gray-200 font-bold flex items-center gap-2 text-sm uppercase">
+                      <FaHistory className="text-green-400" /> Historial
+                      <span className="text-gray-500 text-xs normal-case font-normal">
+                        ({filteredHistory.length} pedidos)
+                      </span>
+                    </h3>
+
+                    {/* BOTONERA FILTRO */}
+                    <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-600">
+                      <button
+                        onClick={() => {
+                          setHistorialFilter("TODOS");
+                          setModalPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${
+                          historialFilter === "TODOS"
+                            ? "bg-blue-600 text-white"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        onClick={() => {
+                          setHistorialFilter("SIN_ML");
+                          setModalPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${
+                          historialFilter === "SIN_ML"
+                            ? "bg-blue-600 text-white"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Sin ML
+                      </button>
+                      <button
+                        onClick={() => {
+                          setHistorialFilter("SOLO_ML");
+                          setModalPage(1);
+                        }}
+                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${
+                          historialFilter === "SOLO_ML"
+                            ? "bg-yellow-600 text-white"
+                            : "text-gray-400 hover:text-white"
+                        }`}
+                      >
+                        Solo ML
+                      </button>
                     </div>
-                    <span className="text-xs text-gray-500 normal-case">
-                      Página {modalPage} de {totalModalPages}
-                    </span>
-                  </h3>
+                  </div>
 
                   <div className="overflow-x-auto min-h-[200px]">
                     <table className="w-full text-sm text-left text-gray-300">
@@ -1886,8 +1734,14 @@ function AnalisisPedidos() {
                             key={idx}
                             className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors"
                           >
-                            <td className="px-3 py-2 font-mono text-xs">
+                            <td className="px-3 py-2 font-mono text-xs flex items-center gap-2">
                               {order.fecha}
+                              {/* TAG MELI */}
+                              {order.isML && (
+                                <span className="bg-yellow-500 text-black text-[10px] font-bold px-1.5 rounded">
+                                  MELI
+                                </span>
+                              )}
                             </td>
                             <td
                               className="px-3 py-2 font-medium text-white truncate max-w-[150px]"
@@ -1909,7 +1763,7 @@ function AnalisisPedidos() {
                               colSpan="4"
                               className="text-center py-4 italic text-gray-500"
                             >
-                              No hay registros recientes
+                              No hay registros con este filtro
                             </td>
                           </tr>
                         )}
@@ -1928,13 +1782,18 @@ function AnalisisPedidos() {
                     >
                       Anterior
                     </button>
+                    <span className="text-xs text-gray-500">
+                      Página {modalPage} de {totalModalPages || 1}
+                    </span>
                     <button
                       onClick={() =>
                         setModalPage((prev) =>
                           Math.min(prev + 1, totalModalPages)
                         )
                       }
-                      disabled={modalPage === totalModalPages}
+                      disabled={
+                        modalPage === totalModalPages || totalModalPages === 0
+                      }
                       className="px-3 py-1 bg-slate-600 text-xs rounded hover:bg-slate-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       Siguiente
@@ -1959,17 +1818,461 @@ function AnalisisPedidos() {
   );
 }
 
-// --- Componente Principal App (Router) ---
+// ==============================================================================
+// 4. INGENIERÍA DE PRODUCTOS (V3: Búsqueda Obligatoria en Productos)
+// ==============================================================================
+
+// 1. ÍTEM ARRASTRABLE (Semielaborado)
+function DraggableItem({ item, isOverlay }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: `source-${item.id}`,
+      data: item,
+      disabled: isOverlay,
+    });
+
+  // Interpolación manual para evitar error de librería
+  const style = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        opacity: isDragging ? 0 : 1,
+      }
+    : undefined;
+
+  const baseClasses =
+    "p-3 mb-2 rounded border flex justify-between items-center touch-none transition-colors select-none";
+  const overlayClasses =
+    "bg-slate-600 border-blue-400 shadow-2xl scale-105 cursor-grabbing z-[9999]";
+  const normalClasses =
+    "bg-slate-700 border-slate-600 hover:bg-slate-600 cursor-grab hover:border-blue-400/50";
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`${baseClasses} ${isOverlay ? overlayClasses : normalClasses}`}
+    >
+      <div className="flex flex-col">
+        <p className="font-bold text-sm text-white font-mono">{item.codigo}</p>
+        <p className="text-xs text-gray-300 truncate w-40">{item.nombre}</p>
+      </div>
+      <span
+        className={`text-xs px-2 py-1 rounded font-bold ${
+          item.stock_actual > 0
+            ? "bg-blue-900/50 text-blue-200"
+            : "bg-red-900/50 text-red-200"
+        }`}
+      >
+        {item.stock_actual}
+      </span>
+    </div>
+  );
+}
+
+// 2. ÁREA DE RECETA (Donde soltamos)
+function DroppableArea({ items, onRemove }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "receta-droppable" });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex-grow border-2 border-dashed rounded-xl p-4 transition-all duration-200 overflow-y-auto min-h-[300px] ${
+        isOver
+          ? "border-green-500 bg-green-900/10"
+          : "border-slate-600 bg-slate-800/30"
+      }`}
+    >
+      {items.length === 0 ? (
+        <div className="h-full flex flex-col items-center justify-center text-gray-500 select-none">
+          <FaCubes
+            className={`text-5xl mb-4 transition-transform ${
+              isOver ? "scale-110 text-green-500" : "opacity-20"
+            }`}
+          />
+          <p className="font-medium">Arrastra semielaborados aquí</p>
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {items.map((ing, idx) => (
+            <li
+              key={idx}
+              className="bg-slate-700 p-3 rounded-lg flex justify-between items-center group border border-slate-600 animate-in fade-in slide-in-from-bottom-2"
+            >
+              <div className="flex items-center gap-3">
+                <div className="bg-slate-800 h-8 w-8 flex items-center justify-center rounded font-bold text-green-400 border border-slate-600 text-sm">
+                  {ing.cantidad}x
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-white font-medium text-sm">
+                    {ing.nombre}
+                  </span>
+                  <span className="text-xs text-gray-400 font-mono">
+                    {ing.codigo}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => onRemove(idx)}
+                className="text-gray-500 hover:text-red-400 p-2 transition-colors"
+              >
+                <FaTrash />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// 3. COMPONENTE PRINCIPAL DE INGENIERÍA
+function IngenieriaProductos() {
+  const [productos, setProductos] = useState([]);
+  const [semielaborados, setSemielaborados] = useState([]);
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [ultimaModificacion, setUltimaModificacion] = useState(null);
+  const [receta, setReceta] = useState([]);
+
+  const [filtroSemi, setFiltroSemi] = useState("");
+  const [filtroProd, setFiltroProd] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [activeDragId, setActiveDragId] = useState(null);
+
+  useEffect(() => {
+    fetch(PEDIDOS_API_URL, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        const s = new Set();
+        data.forEach((r) => {
+          if (r.MODELO || r.Modelo) s.add(r.MODELO || r.Modelo);
+        });
+        setProductos(Array.from(s).sort());
+      });
+    fetch(`${API_BASE_URL}/ingenieria/semielaborados`)
+      .then((r) => r.json())
+      .then(setSemielaborados);
+  }, []);
+
+  const cargarReceta = async (prod) => {
+    setSeleccionado(prod);
+    setReceta([]);
+    setUltimaModificacion(null);
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/ingenieria/recetas/${encodeURIComponent(prod)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setReceta(data.map((d) => ({ ...d, id: d.semielaborado_id })));
+
+        // --- CAMBIO AQUÍ ---
+        // Ya viene formateada desde el servidor, la usamos directo
+        if (data.length > 0 && data[0].fecha_receta) {
+          setUltimaModificacion(data[0].fecha_receta);
+        }
+        // -------------------
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const guardar = async () => {
+    if (!seleccionado) return;
+    await fetch(`${API_BASE_URL}/ingenieria/recetas`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        producto_terminado: seleccionado,
+        items: receta.map((r) => ({ id: r.id, cantidad: 1 })),
+      }),
+    });
+    setUltimaModificacion(new Date().toLocaleString("es-AR"));
+    alert("Receta guardada exitosamente");
+  };
+
+  const syncStock = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/ingenieria/sincronizar-stock`, {
+        method: "POST",
+      });
+      if (!r.ok) throw new Error("Error del servidor");
+
+      const res = await fetch(`${API_BASE_URL}/ingenieria/semielaborados`);
+      setSemielaborados(await res.json());
+      alert("Stock sincronizado correctamente");
+    } catch (e) {
+      alert("Error al sincronizar stock");
+    }
+    setLoading(false);
+  };
+
+  const handleDragStart = (e) => setActiveDragId(e.active.id);
+
+  const handleDragEnd = (e) => {
+    setActiveDragId(null);
+    if (e.over && e.over.id === "receta-droppable") {
+      const itemId = e.active.id.replace("source-", "");
+      // eslint-disable-next-line eqeqeq
+      const itemData = semielaborados.find((s) => s.id == itemId);
+      if (itemData)
+        setReceta((prev) => [...prev, { ...itemData, cantidad: 1 }]);
+    }
+  };
+
+  // --- LÓGICA DE FILTRADO ACTUALIZADA ---
+  // Ahora AMBAS listas requieren que escribas para mostrar resultados
+
+  const productosFiltrados =
+    filtroProd.length > 0
+      ? productos.filter((p) =>
+          p.toLowerCase().includes(filtroProd.toLowerCase())
+        )
+      : [];
+
+  const semielaboradosVisibles =
+    filtroSemi.length > 0
+      ? semielaborados.filter(
+          (s) =>
+            s.nombre.toLowerCase().includes(filtroSemi.toLowerCase()) ||
+            s.codigo.toLowerCase().includes(filtroSemi.toLowerCase())
+        )
+      : [];
+
+  // eslint-disable-next-line eqeqeq
+  const activeItemData = activeDragId
+    ? semielaborados.find((s) => `source-${s.id}` === activeDragId)
+    : null;
+
+  return (
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div className="grid grid-cols-12 gap-6 h-[calc(100vh-140px)] min-h-[600px]">
+        {/* COLUMNA 1: PRODUCTOS TERMINADOS (Ahora oculta hasta buscar) */}
+        <div className="col-span-3 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
+          <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
+            <h3 className="text-blue-400 font-bold mb-2 flex items-center gap-2 text-sm uppercase">
+              <FaBoxOpen /> Productos ({productos.length})
+            </h3>
+            <input
+              type="text"
+              placeholder="Buscar producto..."
+              value={filtroProd}
+              onChange={(e) => setFiltroProd(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex-grow overflow-y-auto p-2 space-y-1 custom-scrollbar">
+            {filtroProd.length === 0 ? (
+              <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic">
+                Escribe para buscar...
+              </div>
+            ) : productosFiltrados.length === 0 ? (
+              <div className="text-center text-gray-500 text-xs mt-4">
+                No hay coincidencias
+              </div>
+            ) : (
+              productosFiltrados.map((prod, i) => (
+                <div
+                  key={i}
+                  onClick={() => cargarReceta(prod)}
+                  className={`px-3 py-2 rounded-lg cursor-pointer text-sm truncate transition-all ${
+                    seleccionado === prod
+                      ? "bg-blue-600 text-white font-bold shadow"
+                      : "text-gray-400 hover:bg-slate-700 hover:text-gray-200"
+                  }`}
+                >
+                  {prod}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* COLUMNA 2: MESA DE TRABAJO */}
+        <div className="col-span-5 flex flex-col bg-slate-900/50 rounded-xl border border-slate-700 overflow-hidden shadow-lg relative">
+          <div className="p-5 bg-slate-800 border-b border-slate-700 flex justify-between items-start">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <FaTools className="text-gray-500" />{" "}
+                {seleccionado || "Selecciona un producto"}
+              </h2>
+              {seleccionado && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Última mod:{" "}
+                  <span className="text-yellow-400">
+                    {ultimaModificacion || "Nunca"}
+                  </span>
+                </p>
+              )}
+            </div>
+            {seleccionado && (
+              <button
+                onClick={guardar}
+                className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-lg font-bold shadow-lg flex items-center gap-2 text-sm transition-transform active:scale-95"
+              >
+                <FaSave /> Guardar
+              </button>
+            )}
+          </div>
+          <div className="flex-grow p-4 flex flex-col overflow-hidden">
+            {seleccionado ? (
+              <>
+                <DroppableArea
+                  items={receta}
+                  onRemove={(idx) =>
+                    setReceta((prev) => prev.filter((_, i) => i !== idx))
+                  }
+                />
+                <div className="mt-2 text-center">
+                  <span className="text-xs text-gray-500 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                    {receta.length} componentes
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-600 text-sm italic">
+                ← Selecciona un producto de la izquierda
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* COLUMNA 3: ALMACÉN SEMIELABORADOS */}
+        <div className="col-span-4 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
+          <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-purple-400 font-bold flex items-center gap-2 text-sm uppercase">
+                <FaCubes /> Semielaborados
+              </h3>
+              <button
+                onClick={syncStock}
+                disabled={loading}
+                className="text-[10px] uppercase font-bold tracking-wider bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded border border-slate-600 transition-colors flex items-center gap-1"
+              >
+                {loading ? (
+                  <FaSpinner className="animate-spin" />
+                ) : (
+                  <>
+                    <FaDatabase /> Sync
+                  </>
+                )}
+              </button>
+            </div>
+            <input
+              type="text"
+              placeholder="Buscar componente..."
+              value={filtroSemi}
+              onChange={(e) => setFiltroSemi(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-purple-500"
+              autoFocus
+            />
+          </div>
+          <div className="flex-grow overflow-y-auto p-2 bg-slate-800/50 custom-scrollbar">
+            {filtroSemi.length === 0 ? (
+              <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic">
+                Escribe para buscar...
+              </div>
+            ) : semielaboradosVisibles.length === 0 ? (
+              <div className="text-center text-gray-500 text-xs mt-4">
+                No hay coincidencias
+              </div>
+            ) : (
+              semielaboradosVisibles.map((s) => (
+                <DraggableItem key={s.id} item={s} isOverlay={false} />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+      <DragOverlay>
+        {activeItemData ? (
+          <DraggableItem item={activeItemData} isOverlay={true} />
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  );
+}
+
+// ==============================================================================
+// 6. COMPONENTE PRINCIPAL APP (ROUTER & AUTH)
+// ==============================================================================
+
+function LoginPage({
+  onLoginSuccess,
+  expectedPassword,
+  title = "Acceso Restringido",
+}) {
+  const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (input === expectedPassword) {
+      setError("");
+      onLoginSuccess();
+    } else {
+      setError("Contraseña incorrecta. Intente de nuevo.");
+      setInput("");
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center pt-10">
+      <div className="bg-slate-800 rounded-xl shadow-2xl p-8 w-full max-w-md">
+        <h2 className="text-3xl font-bold text-white mb-2 text-center flex justify-center gap-2 items-center">
+          <FaLock className="text-blue-500" /> {title}
+        </h2>
+        <p className="text-gray-400 text-center text-sm mb-6">
+          Ingrese su clave de seguridad
+        </p>
+        <form onSubmit={handleSubmit}>
+          <div className="relative mb-6">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
+              <FaKey />
+            </span>
+            <input
+              type="password"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="w-full p-3 pl-10 bg-slate-900 text-white rounded-lg border border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              placeholder="********"
+              autoFocus
+            />
+          </div>
+          {error && (
+            <p className="text-red-400 text-center text-xs mb-4 bg-red-900/20 p-2 rounded border border-red-900">
+              {error}
+            </p>
+          )}
+          <button
+            type="submit"
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95"
+          >
+            Entrar
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState(window.location.pathname);
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    sessionStorage.getItem("isAutenticado") === "true"
+
+  // --- DOBLE ESTADO DE AUTENTICACIÓN ---
+  const [isAuthPanel, setIsAuthPanel] = useState(
+    sessionStorage.getItem("auth_panel") === "true"
+  );
+  const [isAuthGerencia, setIsAuthGerencia] = useState(
+    sessionStorage.getItem("auth_gerencia") === "true"
   );
 
   useEffect(() => {
-    const onLocationChange = () => {
-      setPage(window.location.pathname);
-    };
+    const onLocationChange = () => setPage(window.location.pathname);
     window.addEventListener("popstate", onLocationChange);
     return () => window.removeEventListener("popstate", onLocationChange);
   }, []);
@@ -1979,83 +2282,96 @@ export default function App() {
     setPage(path);
   };
 
-  const handleLoginSuccess = () => {
-    sessionStorage.setItem("isAutenticado", "true");
-    setIsAuthenticated(true);
+  // Login Handlers Específicos
+  const loginPanel = () => {
+    sessionStorage.setItem("auth_panel", "true");
+    setIsAuthPanel(true);
+  };
+  const loginGerencia = () => {
+    sessionStorage.setItem("auth_gerencia", "true");
+    setIsAuthGerencia(true);
   };
 
+  // Logout Global (Limpia todo)
   const handleLogout = () => {
-    sessionStorage.removeItem("isAutenticado");
-    setIsAuthenticated(false);
+    sessionStorage.removeItem("auth_panel");
+    sessionStorage.removeItem("auth_gerencia");
+    setIsAuthPanel(false);
+    setIsAuthGerencia(false);
     navigate("/");
   };
 
-  // --- Lógica de Navegación Actualizada ---
   let component;
   if (page === "/panel-control") {
-    component = isAuthenticated ? (
-      <PanelControl />
+    component = isAuthPanel ? (
+      <PanelControl onNavigate={navigate} />
     ) : (
-      <LoginPage onLoginSuccess={handleLoginSuccess} />
+      <LoginPage
+        onLoginSuccess={loginPanel}
+        expectedPassword={PASS_PANEL}
+        title="Acceso Horno"
+      />
     );
   } else if (page === "/analisis-pedidos") {
-    component = <AnalisisPedidos />;
+    component = isAuthGerencia ? (
+      <AnalisisPedidos />
+    ) : (
+      <LoginPage
+        onLoginSuccess={loginGerencia}
+        expectedPassword={PASS_GERENCIA}
+        title="Acceso Datos"
+      />
+    );
+  } else if (page === "/ingenieria") {
+    component = isAuthGerencia ? (
+      <IngenieriaProductos />
+    ) : (
+      <LoginPage
+        onLoginSuccess={loginGerencia}
+        expectedPassword={PASS_GERENCIA}
+        title="Acceso Datos"
+      />
+    );
   } else {
-    component = <Dashboard />;
+    component = <Dashboard onNavigate={navigate} />;
   }
 
-  const activeClass = "bg-slate-600 text-white shadow-lg scale-105";
-  const inactiveClass =
-    "bg-slate-800 text-gray-400 hover:bg-slate-700 hover:text-gray-200";
+  const btnClass = (path) =>
+    `flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-all ${
+      page === path
+        ? "bg-slate-600 text-white scale-105 shadow-lg ring-1 ring-slate-500"
+        : "text-gray-400 hover:text-white hover:bg-slate-800"
+    }`;
+  const isLoggedAny = isAuthPanel || isAuthGerencia;
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 p-4 md:p-8 font-sans selection:bg-blue-500 selection:text-white">
       <div className="max-w-7xl mx-auto">
-        {/* --- MENÚ DE NAVEGACIÓN --- */}
-        <nav className="flex flex-wrap justify-center items-center gap-4 mb-10 bg-black/20 p-4 rounded-2xl backdrop-blur-sm">
-          <button
-            onClick={() => navigate("/")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
-              page === "/" ? activeClass : inactiveClass
-            }`}
-          >
-            <FaHome className="text-xl" />
-            Monitor
+        <nav className="flex flex-wrap justify-center items-center gap-3 mb-8 bg-slate-900/80 p-2 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-md sticky top-4 z-50">
+          <button onClick={() => navigate("/")} className={btnClass("/")}>
+            <FaHome /> Hornos
           </button>
-
-          {/* ¡NUEVO BOTÓN! */}
           <button
             onClick={() => navigate("/analisis-pedidos")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
-              page === "/analisis-pedidos" ? activeClass : inactiveClass
-            }`}
+            className={btnClass("/analisis-pedidos")}
           >
-            <FaChartLine className="text-xl" />
-            Análisis Pedidos
+            <FaChartLine /> Análisis
           </button>
-
           <button
-            onClick={() => navigate("/panel-control")}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all duration-300 ${
-              page === "/panel-control" ? activeClass : inactiveClass
-            }`}
+            onClick={() => navigate("/ingenieria")}
+            className={btnClass("/ingenieria")}
           >
-            <FaTools className="text-xl" />
-            Panel de Control
+            <FaCogs /> Ingeniería
           </button>
-
-          {isAuthenticated && (
+          {isLoggedAny && (
             <button
               onClick={handleLogout}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-red-900/80 text-red-200 hover:bg-red-700 transition-all duration-300 border border-red-800 ml-auto"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-red-400 hover:text-red-200 hover:bg-red-900/20 transition-all border border-red-900/30 ml-auto"
             >
-              <FaSignOutAlt />
-              Salir
+              <FaSignOutAlt /> Salir
             </button>
           )}
         </nav>
-
-        {/* Renderiza el componente activo */}
         {component}
       </div>
     </div>
