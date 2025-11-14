@@ -27,6 +27,7 @@ export function formatDuration(ms) {
     .padStart(2, "0")}`;
 }
 
+
 // --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 export function getStationStatus(stationId, allRecords) {
   const lastEvent = allRecords.find(
