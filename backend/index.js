@@ -6,6 +6,7 @@ const {
   setupAuth,
   leerArchivoPedidos,
   leerStockSemielaborados,
+  leerMateriasPrimas,
 } = require("./google-drive");
 const { parsearLog } = require("./parser");
 const format = require("pg-format");
@@ -16,6 +17,45 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+
+// --- NUEVO: FUNCIÓN PARA ASEGURAR QUE EXISTAN LAS TABLAS ---
+async function inicializarTablas() {
+  const client = await db.connect();
+  try {
+    console.log("Verificando tablas de base de datos...");
+
+    // ... (Aquí van tus CREATE TABLE existentes para productos_ingenieria, recetas, etc.) ...
+    // ... MANTÉN LAS TABLAS QUE YA TENÍAS ...
+
+    // --- AÑADIR ESTAS DOS NUEVAS TABLAS ---
+
+    // 1. Tabla "Maestra" o "Encabezado" del Plan
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS planes_produccion (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        fecha_creacion TIMESTAMP DEFAULT NOW(),
+        estado VARCHAR(50) DEFAULT 'ABIERTO'
+      );
+    `);
+
+    // 2. Tabla "Detalle" o "Items" del Plan
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS planes_items (
+        id SERIAL PRIMARY KEY,
+        plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE,
+        semielaborado_id INTEGER REFERENCES semielaborados(id),
+        cantidad NUMERIC NOT NULL
+      );
+    `);
+
+    console.log("✔ Tablas verificadas (incluyendo Planificación).");
+  } catch (err) {
+    console.error("❌ Error inicializando tablas:", err);
+  } finally {
+    client.release();
+  }
+}
 
 // --- FUNCIÓN HELPER: Normalizar texto (quita acentos y mayúsculas) ---
 function normalizarTexto(txt) {
@@ -345,15 +385,26 @@ app.get("/api/ingenieria/semielaborados", async (req, res) => {
 
 app.post("/api/ingenieria/recetas", async (req, res) => {
   const { producto_terminado, items } = req.body;
+  // Validación básica
+  if (!producto_terminado) return res.status(400).json({ msg: "Falta nombre" });
+
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    // Borramos la versión anterior
+
+    // 1. ¡NUEVO! Aseguramos que el producto exista en el catálogo maestro
+    // Usamos ON CONFLICT DO NOTHING para que no falle si ya existe
+    await client.query(
+      "INSERT INTO productos_ingenieria (nombre) VALUES ($1) ON CONFLICT (nombre) DO NOTHING",
+      [producto_terminado]
+    );
+
+    // 2. Borramos la versión anterior de la receta (igual que antes)
     await client.query("DELETE FROM recetas WHERE producto_terminado = $1", [
       producto_terminado,
     ]);
 
-    // Insertamos la nueva versión con la fecha de HOY (NOW())
+    // 3. Insertamos la nueva versión (solo si hay items)
     if (items && items.length > 0) {
       for (const item of items) {
         await client.query(
@@ -368,6 +419,7 @@ app.post("/api/ingenieria/recetas", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     await client.query("ROLLBACK");
+    console.error("Error guardando receta:", err);
     res.status(500).send(err.message);
   } finally {
     client.release();
@@ -402,48 +454,429 @@ app.get("/api/ingenieria/recetas/:producto", async (req, res) => {
   }
 });
 
-// --- RUTA NUEVA: Obtener TODAS las recetas para explosión de materiales ---
 app.get("/api/ingenieria/recetas/all", async (req, res) => {
-    try {
-        res.setHeader('Cache-Control', 'no-store');
-        const { rows } = await db.query(`
-            SELECT 
-                r.producto_terminado, 
-                r.cantidad, 
-                s.id as semielaborado_id, 
-                s.codigo, 
-                s.nombre
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    // 1. Obtenemos TODOS los nombres del catálogo maestro
+    const { rows: manualProds } = await db.query(
+      "SELECT nombre FROM productos_ingenieria"
+    );
+
+    // 2. Obtenemos los ingredientes de las recetas existentes
+    const { rows: recipes } = await db.query(`
+            SELECT r.producto_terminado, r.cantidad, s.id as semielaborado_id, s.codigo, s.nombre
             FROM recetas r
             JOIN semielaborados s ON r.semielaborado_id = s.id
         `);
-        
-        // Agrupamos por producto_terminado
-        const recetasAgrupadas = rows.reduce((acc, row) => {
-            const prod = row.producto_terminado;
-            if (!acc[prod]) {
-                acc[prod] = [];
-            }
-            acc[prod].push({
-                semielaborado_id: row.semielaborado_id,
-                codigo: row.codigo,
-                nombre: row.nombre,
-                cantidad: row.cantidad
-            });
-            return acc;
-        }, {});
-        
-        res.json(recetasAgrupadas);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send(err.message);
-    }
+
+    const recetasAgrupadas = {};
+
+    // A. Inicializamos TODOS los productos (incluso los vacíos)
+    manualProds.forEach((p) => {
+      recetasAgrupadas[p.nombre] = [];
+    });
+
+    // B. Rellenamos con los datos de recetas si existen
+    recipes.forEach((row) => {
+      const prod = row.producto_terminado;
+      if (!recetasAgrupadas[prod]) recetasAgrupadas[prod] = [];
+      recetasAgrupadas[prod].push({
+        semielaborado_id: row.semielaborado_id,
+        codigo: row.codigo,
+        nombre: row.nombre,
+        cantidad: row.cantidad,
+      });
+    });
+
+    res.json(recetasAgrupadas);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
 });
 
 async function iniciarServidor() {
+  // 1. Configurar Auth Google
   await setupAuth();
-  app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
+
+  // 2. Inicializar Base de Datos (Crear tablas si faltan)
+  await inicializarTablas();
+
+  // 3. Arrancar Servidor
+  app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+
+  // 4. Iniciar bucle de sincronización
   await sincronizarBaseDeDatos();
   setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
 }
+
+// --- GESTIÓN DE MATERIAS PRIMAS ---
+
+// --- 1. Sincronizar Materias Primas desde Drive (CORREGIDO) ---
+app.post("/api/ingenieria/sincronizar-mp", async (req, res) => {
+  const client = await db.connect();
+  try {
+    console.log("--- INICIO SINCRONIZACIÓN MATERIAS PRIMAS ---");
+    const buffer = await leerMateriasPrimas();
+    const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
+
+    // Usamos la primera hoja
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    // 1. Convertimos a matriz para buscar la fila de encabezados
+    const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    // 2. Buscamos la fila que tenga "CODIGO" y "NOMBRE"
+    let headerRowIndex = -1;
+    for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+      const rowString = JSON.stringify(rawMatrix[i]).toUpperCase();
+      // Buscamos tus columnas clave
+      if (rowString.includes("CODIGO") && rowString.includes("NOMBRE")) {
+        headerRowIndex = i;
+        console.log(`¡ENCABEZADOS MP ENCONTRADOS EN LA FILA ${i + 1}!`);
+        break;
+      }
+    }
+
+    if (headerRowIndex === -1) {
+      throw new Error(
+        "No se encontraron los encabezados (CODIGO, NOMBRE) en las primeras 20 filas."
+      );
+    }
+
+    // 3. Leemos de nuevo saltando hasta los encabezados
+    const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
+
+    await client.query("BEGIN");
+    let count = 0;
+    for (const row of data) {
+      // Mapeo exacto según tus columnas:
+      // CODIGO | NOMBRE | STOCKS | TOCK MIN | ACTUALIZACION | AGUARDANDO
+
+      // Normalizamos claves (quitamos espacios extra y mayúsculas)
+      let codigo = null;
+      let nombre = null;
+      let stock = 0;
+
+      // Recorremos las claves de la fila para encontrar las columnas aunque tengan espacios
+      for (const key of Object.keys(row)) {
+        const k = key.trim().toUpperCase();
+        if (k === "CODIGO") codigo = row[key];
+        else if (k === "NOMBRE") nombre = row[key];
+        else if (k === "STOCKS" || k === "STOCK") stock = row[key]; // <--- Aquí capturamos "STOCKS"
+      }
+
+      if (codigo) {
+        await client.query(
+          `INSERT INTO materias_primas (codigo, nombre, stock_actual, ultima_actualizacion)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (codigo) DO UPDATE SET stock_actual = $3, nombre = $2, ultima_actualizacion = NOW()`,
+          [codigo, nombre || "Sin Nombre", Number(stock) || 0]
+        );
+        count++;
+      }
+    }
+    await client.query("COMMIT");
+    console.log(`--- FIN SYNC MP: ${count} items procesados ---`);
+    res.json({ msg: `Sincronizadas ${count} materias primas` });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error Sync MP:", err);
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// 2. Obtener todas las MPs
+app.get("/api/ingenieria/materias-primas", async (req, res) => {
+  const { rows } = await db.query(
+    "SELECT * FROM materias_primas ORDER BY nombre ASC"
+  );
+  res.json(rows);
+});
+
+// --- GESTIÓN DE RECETAS DE SEMIELABORADOS ---
+
+// 3. Guardar Receta (Semielaborado -> MPs)
+app.post("/api/ingenieria/recetas-semielaborados", async (req, res) => {
+  const { semielaborado_id, items } = req.body; // items = [{ id: mp_id, cantidad: 1 }, ...]
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    // Borrar anterior
+    await client.query(
+      "DELETE FROM recetas_semielaborados WHERE semielaborado_id = $1",
+      [semielaborado_id]
+    );
+
+    // Insertar nueva
+    for (const item of items) {
+      await client.query(
+        "INSERT INTO recetas_semielaborados (semielaborado_id, materia_prima_id, cantidad) VALUES ($1, $2, $3)",
+        [semielaborado_id, item.id, item.cantidad || 1]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// --- RUTA NUEVA: Obtener TODAS las recetas de semielaborados ---
+app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    // Obtenemos todas las relaciones y las unimos con los datos de la MP
+    const { rows } = await db.query(`
+            SELECT 
+                r.semielaborado_id, 
+                r.cantidad, 
+                mp.id as materia_prima_id, 
+                mp.codigo, 
+                mp.nombre
+            FROM recetas_semielaborados r
+            JOIN materias_primas mp ON r.materia_prima_id = mp.id
+        `);
+
+    // Agrupamos por semielaborado_id
+    const recetasAgrupadas = rows.reduce((acc, row) => {
+      const semi_id = row.semielaborado_id;
+      if (!acc[semi_id]) {
+        acc[semi_id] = [];
+      }
+      acc[semi_id].push({
+        materia_prima_id: row.materia_prima_id,
+        codigo: row.codigo,
+        nombre: row.nombre,
+        cantidad: Number(row.cantidad), // Aseguramos que sea número
+      });
+      return acc;
+    }, {});
+
+    res.json(recetasAgrupadas);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 4. Leer Receta de un Semielaborado
+app.get("/api/ingenieria/recetas-semielaborados/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT r.*, mp.codigo, mp.nombre, mp.stock_actual
+       FROM recetas_semielaborados r
+       JOIN materias_primas mp ON r.materia_prima_id = mp.id
+       WHERE r.semielaborado_id = $1`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// =====================================================
+// --- RUTAS DE PLANIFICACIÓN (NUEVAS) ---
+// =====================================================
+
+// 1. OBTENER TODOS los planes guardados (para la vista "Maestro")
+app.get("/api/planificacion", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      "SELECT * FROM planes_produccion ORDER BY fecha_creacion DESC"
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 2. OBTENER UN PLAN Específico (para la vista "Detalle")
+app.get("/api/planificacion/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    // A. Obtener el plan (encabezado)
+    const planRes = await db.query(
+      "SELECT * FROM planes_produccion WHERE id = $1",
+      [id]
+    );
+    if (planRes.rows.length === 0) {
+      return res.status(404).json({ msg: "Plan no encontrado" });
+    }
+    const plan = planRes.rows[0];
+
+    // B. Obtener los items (detalle)
+    const itemsRes = await db.query(
+      `SELECT 
+         pi.cantidad,
+         s.id,
+         s.nombre,
+         s.codigo
+       FROM planes_items pi
+       JOIN semielaborados s ON pi.semielaborado_id = s.id
+       WHERE pi.plan_id = $1`,
+      [id]
+    );
+
+    // C. Re-formateamos los items para que coincidan con la estructura del frontend
+    // (Esto es clave para reutilizar tu página de Planificación)
+    plan.items = itemsRes.rows.map((row) => ({
+      semielaborado: {
+        id: row.id,
+        nombre: row.nombre,
+        codigo: row.codigo,
+      },
+      cantidad: Number(row.cantidad),
+    }));
+
+    res.json(plan);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 3. GUARDAR UN NUEVO plan de producción
+app.post("/api/planificacion", async (req, res) => {
+  // El frontend nos enviará: { nombre: "Mi Plan", items: [...] }
+  // Donde 'items' es el array 'plan' que ya tienes en el estado de React
+  const { nombre, items } = req.body;
+
+  if (!nombre || !items || items.length === 0) {
+    return res.status(400).json({ msg: "Faltan datos (nombre o items)" });
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Insertar el "encabezado" del plan
+    const planRes = await client.query(
+      "INSERT INTO planes_produccion (nombre, estado) VALUES ($1, 'ABIERTO') RETURNING id",
+      [nombre]
+    );
+    const planId = planRes.rows[0].id;
+
+    // 2. Insertar los "items" del plan, uno por uno
+    for (const item of items) {
+      await client.query(
+        "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad) VALUES ($1, $2, $3)",
+        [planId, item.semielaborado.id, item.cantidad]
+      );
+    }
+
+    await client.query("COMMIT");
+    // Devolvemos el ID del plan recién creado
+    res.status(201).json({ success: true, planId: planId });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error guardando plan:", err);
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// 4. ACTUALIZAR EL ESTADO de un plan (Ej: "CERRADO")
+app.put("/api/planificacion/:id/estado", async (req, res) => {
+  const { id } = req.params;
+  const { estado } = req.body; // Ej: "CERRADO" o "ABIERTO"
+
+  if (!estado) {
+    return res.status(400).json({ msg: "Falta el nuevo estado" });
+  }
+
+  try {
+    const result = await db.query(
+      "UPDATE planes_produccion SET estado = $1 WHERE id = $2 RETURNING *",
+      [estado, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "Plan no encontrado" });
+    }
+
+    res.json(result.rows[0]); // Devuelve el plan actualizado
+  } catch (err) {
+    console.error("Error actualizando estado:", err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 5. ACTUALIZAR UN PLAN COMPLETO (Nombre y/o Items)
+app.put("/api/planificacion/:id", async (req, res) => {
+  const { id } = req.params;
+  const { nombre, items } = req.body; // El plan completo
+
+  if (!nombre || !items) {
+    return res.status(400).json({ msg: "Faltan datos (nombre o items)" });
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Actualizar el encabezado (nombre)
+    await client.query(
+      "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
+      [nombre, id]
+    );
+
+    // 2. Borrar los items *antiguos* de ese plan
+    await client.query("DELETE FROM planes_items WHERE plan_id = $1", [id]);
+
+    // 3. Insertar todos los items *nuevos*
+    for (const item of items) {
+      await client.query(
+        "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad) VALUES ($1, $2, $3)",
+        [id, item.semielaborado.id, item.cantidad]
+      );
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true, planId: id });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error actualizando plan:", err);
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// 6. ELIMINAR UN PLAN
+app.delete("/api/planificacion/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Gracias a "ON DELETE CASCADE" en la base de datos,
+    // al borrar el plan, se borrarán sus items automáticamente.
+    const result = await db.query(
+      "DELETE FROM planes_produccion WHERE id = $1 RETURNING *",
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "Plan no encontrado" });
+    }
+
+    res.json({ success: true, msg: `Plan ${id} eliminado.` });
+  } catch (err) {
+    console.error("Error eliminando plan:", err);
+    res.status(500).send(err.message);
+  }
+});
 
 iniciarServidor();

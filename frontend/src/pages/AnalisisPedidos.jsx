@@ -327,7 +327,10 @@ export default function AnalisisPedidos() {
 
   let modalHistory = [];
   let totalPages = 0;
+  let dynamicChartData = []; // <--- NUEVA VARIABLE PARA EL GRÁFICO
+
   if (selectedItem) {
+    // 1. Aplicamos el filtro (igual que antes)
     const filtered = selectedItem.history.filter((h) =>
       historialFilter === "TODOS"
         ? true
@@ -335,11 +338,53 @@ export default function AnalisisPedidos() {
         ? !h.isML
         : h.isML
     );
+
+    // 2. Paginación para la tabla
     totalPages = Math.ceil(filtered.length / MODAL_ITEMS_PER_PAGE);
     modalHistory = filtered.slice(
       (modalPage - 1) * MODAL_ITEMS_PER_PAGE,
       modalPage * MODAL_ITEMS_PER_PAGE
     );
+
+    // 3. --- NUEVO: Recalcular Gráfico basado en 'filtered' ---
+    const monthNames = [
+      "Ene",
+      "Feb",
+      "Mar",
+      "Abr",
+      "May",
+      "Jun",
+      "Jul",
+      "Ago",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dic",
+    ];
+    const currentMonth = new Date().getMonth();
+
+    // Inicializamos el mapa de meses en 0 hasta el mes actual
+    const salesMap = {};
+    monthNames.slice(0, currentMonth + 1).forEach((m) => (salesMap[m] = 0));
+
+    // Sumamos las ventas filtradas
+    filtered.forEach((row) => {
+      // row.fecha viene como "DD/MM/YYYY" por el toLocaleDateString("es-AR")
+      const parts = row.fecha.split("/");
+      if (parts.length === 3) {
+        const monthIndex = parseInt(parts[1], 10) - 1;
+        const mName = monthNames[monthIndex];
+        if (salesMap[mName] !== undefined) {
+          salesMap[mName] += row.cant;
+        }
+      }
+    });
+
+    // Convertimos al formato que usa Recharts
+    dynamicChartData = Object.keys(salesMap).map((key) => ({
+      mes: key,
+      ventas: salesMap[key],
+    }));
   }
 
   // --- RENDER COMPLETO ---
@@ -738,7 +783,7 @@ export default function AnalisisPedidos() {
                   </h3>
                   <div className="h-48 w-full">
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={selectedItem.salesChart}>
+                      <LineChart data={dynamicChartData}>
                         <CartesianGrid
                           strokeDasharray="3 3"
                           strokeOpacity={0.1}

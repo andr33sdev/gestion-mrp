@@ -5,7 +5,7 @@ const { google } = require("googleapis");
 const FILE_ID = process.env.DRIVE_FILE_ID; // Log del Horno (txt)
 const PEDIDOS_FILE_ID = process.env.PEDIDOS_FILE_ID; // Excel de Pedidos
 const STOCK_FILE_ID = process.env.STOCK_SEMIELABORADOS_FILE_ID; // Excel de Stock
-
+const MP_FILE_ID = process.env.MATERIAS_PRIMAS_FILE_ID;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -132,9 +132,16 @@ async function descargarCualquierExcel(fileId, label) {
   }
 }
 
+async function leerMateriasPrimas() {
+  if (!drive) throw new Error("Drive no inicializado.");
+  if (!MP_FILE_ID) throw new Error("Falta MATERIAS_PRIMAS_FILE_ID en .env");
+  return await descargarCualquierExcel(MP_FILE_ID, "Materias Primas");
+}
+
 module.exports = {
   setupAuth,
   leerArchivoHorno,
   leerArchivoPedidos,
   leerStockSemielaborados,
+  leerMateriasPrimas,
 };

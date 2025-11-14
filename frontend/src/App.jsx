@@ -6,14 +6,16 @@ import {
   FaSignOutAlt,
   FaLock,
   FaKey,
+  FaClipboardList, // 1. Importar el nuevo ícono
 } from "react-icons/fa";
 
-// Importa las nuevas páginas que creaste
+// Importa las páginas
 import Dashboard from "./pages/Dashboard.jsx";
 import PanelControl from "./pages/PanelControl.jsx";
 import IngenieriaProductos from "./pages/IngenieriaProductos.jsx";
 import AnalisisPedidos from "./pages/AnalisisPedidos.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import PlanificacionPage from "./pages/PlanificacionPage.jsx"; // 2. Importar la nueva página
 
 // Importa las contraseñas
 import { PASS_PANEL, PASS_GERENCIA } from "./utils.js";
@@ -59,6 +61,7 @@ export default function App() {
     navigate("/");
   };
 
+  // --- Lógica de Ruteo ---
   let component;
   if (page === "/panel-control") {
     component = isAuthPanel ? (
@@ -73,6 +76,17 @@ export default function App() {
   } else if (page === "/analisis-pedidos") {
     component = isAuthGerencia ? (
       <AnalisisPedidos />
+    ) : (
+      <LoginPage
+        onLoginSuccess={loginGerencia}
+        expectedPassword={PASS_GERENCIA}
+        title="Acceso Gerencia"
+      />
+    );
+    // 3. Añadir la nueva ruta
+  } else if (page === "/planificacion") {
+    component = isAuthGerencia ? ( // <--- Protegida con la misma clave de Gerencia
+      <PlanificacionPage />
     ) : (
       <LoginPage
         onLoginSuccess={loginGerencia}
@@ -95,17 +109,14 @@ export default function App() {
     component = <Dashboard onNavigate={navigate} />;
   }
 
-  // Lógica para resaltar el botón de "Hornos"
+  // Lógica para resaltar el botón
   const isHornos = page === "/" || page === "/panel-control";
 
   const getBtnClass = (path) => {
-    // Si el path es "/" (Hornos) y estamos en "/" O "/panel-control", marcar como activo
     if (path === "/" && isHornos)
       return "bg-slate-600 text-white scale-105 shadow-lg ring-1 ring-slate-500";
-    // Para el resto, coincidencia exacta
     if (page === path)
       return "bg-slate-600 text-white scale-105 shadow-lg ring-1 ring-slate-500";
-    // Inactivo
     return "text-gray-400 hover:text-white hover:bg-slate-800";
   };
   const btnBase =
@@ -128,12 +139,22 @@ export default function App() {
           >
             <FaChartLine /> Análisis
           </button>
+
+          {/* 4. Añadir el nuevo botón en la barra */}
+          <button
+            onClick={() => navigate("/planificacion")}
+            className={`${btnBase} ${getBtnClass("/planificacion")}`}
+          >
+            <FaClipboardList /> Planificación
+          </button>
+
           <button
             onClick={() => navigate("/ingenieria")}
             className={`${btnBase} ${getBtnClass("/ingenieria")}`}
           >
             <FaCogs /> Ingeniería
           </button>
+
           {isLoggedAny && (
             <button
               onClick={handleLogout}
