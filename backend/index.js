@@ -68,7 +68,7 @@ function normalizarTexto(txt) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
-// --- SINCRONIZACIÓN HORNO (LOGS) ---
+// --- SINCRONIZACIÓN HORNO (LOGS) ----
 async function sincronizarBaseDeDatos() {
   console.log("[TIMER] Sincronizando Logs Horno...");
   const client = await db.connect();
