@@ -97,14 +97,23 @@ export default function PlanificacionPage() {
           fetch(`${API_BASE_URL}/ingenieria/semielaborados`),
           fetch(`${API_BASE_URL}/ingenieria/materias-primas`),
           fetch(`${API_BASE_URL}/ingenieria/recetas-semielaborados/all`),
-          fetch(`${API_BASE_URL}/planificacion`), // Carga los planes guardados
+          fetch(`${API_BASE_URL}/planificacion`),
         ]);
-        setAllSemis(await resSemis.json());
-        setAllMPs(await resMPs.json());
-        setRecetasMap(await resRecetas.json());
-        setMasterPlanList(await resPlanes.json());
+
+        // Manejar respuestas no-OK y evitar json() directo
+        const checkJson = async (res) => {
+          if (res.ok) return res.json();
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status}: ${text}`);
+        };
+
+        setAllSemis(await checkJson(resSemis));
+        setAllMPs(await checkJson(resMPs));
+        setRecetasMap(await checkJson(resRecetas));
+        setMasterPlanList(await checkJson(resPlanes));
       } catch (err) {
-        console.error(err);
+        console.error("Error cargando datos maestros:", err.message || err);
+        // mostrar mensaje al usuario si corresponde
       } finally {
         setLoading(false);
       }

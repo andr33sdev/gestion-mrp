@@ -7,7 +7,7 @@ const {
   setupAuth,
   leerArchivoPedidos,
   leerStockSemielaborados,
-  leerMateriasPrimas, // Importamos la nueva función
+  leerMateriasPrimas,
 } = require("./google-drive");
 const { parsearLog } = require("./parser");
 const format = require("pg-format");
@@ -96,14 +96,13 @@ async function inicializarTablas() {
       );
     `);
 
-    // 1. Crear la tabla 'planes_items' (si no existe) con el nombre 'cantidad' original (por si acaso)
+    // 1. Crear la tabla 'planes_items' (si no existe)
     await client.query(`
       CREATE TABLE IF NOT EXISTS planes_items (
         id SERIAL PRIMARY KEY,
         plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE,
         semielaborado_id INTEGER REFERENCES semielaborados(id),
         cantidad NUMERIC NOT NULL DEFAULT 0 
-        -- (Si la tabla ya existe, este comando no hace nada)
       );
     `);
 
@@ -116,15 +115,13 @@ async function inicializarTablas() {
       console.log("✔ Columna 'cantidad' renombrada a 'cantidad_requerida'.");
     } catch (e) {
       if (e.code === "42701") {
-        // 42701 = column 'cantidad_requerida' already exists
         console.log("i Columna 'cantidad_requerida' ya existía.");
       } else if (e.code === "42703") {
-        // 42703 = column 'cantidad' does not exist
         console.log(
           "i Columna 'cantidad' no existía, saltando renombrado (ya estaba ok)."
         );
       } else {
-        throw e; // Lanzar otros errores
+        throw e;
       }
     }
 
@@ -137,10 +134,9 @@ async function inicializarTablas() {
       console.log("✔ Columna 'cantidad_producida' añadida a planes_items.");
     } catch (e) {
       if (e.code === "42701") {
-        // 42701 = column 'cantidad_producida' already exists
         console.log("i Columna 'cantidad_producida' ya existía.");
       } else {
-        throw e; // Lanzar otros errores
+        throw e;
       }
     }
 
@@ -598,6 +594,64 @@ app.get("/api/ingenieria/materias-primas", async (req, res) => {
 });
 
 // --- RECETAS DE SEMIELABORADOS (Nivel 2) ---
+
+// =========================================================
+// --- INICIO DE LA SECCIÓN CORREGIDA ---
+// =========================================================
+
+// ORDEN CORREGIDO: La ruta '/all' DEBE IR PRIMERO.
+app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    const { rows } = await db.query(`
+            SELECT 
+                r.semielaborado_id, 
+                r.cantidad, 
+                mp.id as materia_prima_id, 
+                mp.codigo, 
+                mp.nombre
+            FROM recetas_semielaborados r
+            JOIN materias_primas mp ON r.materia_prima_id = mp.id
+        `);
+
+    const recetasAgrupadas = rows.reduce((acc, row) => {
+      const semi_id = row.semielaborado_id;
+      if (!acc[semi_id]) {
+        acc[semi_id] = [];
+      }
+      acc[semi_id].push({
+        materia_prima_id: row.materia_prima_id,
+        codigo: row.codigo,
+        nombre: row.nombre,
+        cantidad: Number(row.cantidad),
+      });
+      return acc;
+    }, {});
+
+    res.json(recetasAgrupadas);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// ORDEN CORREGIDO: La ruta '/:id' DEBE IR DESPUÉS.
+app.get("/api/ingenieria/recetas-semielaborados/:id", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT r.*, mp.codigo, mp.nombre, mp.stock_actual
+       FROM recetas_semielaborados r
+       JOIN materias_primas mp ON r.materia_prima_id = mp.id
+       WHERE r.semielaborado_id = $1`,
+      [req.params.id] // Aquí es donde antes recibía "all"
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
 app.post("/api/ingenieria/recetas-semielaborados", async (req, res) => {
   const { semielaborado_id, items } = req.body;
   const client = await db.connect();
@@ -623,49 +677,12 @@ app.post("/api/ingenieria/recetas-semielaborados", async (req, res) => {
   }
 });
 
-app.get("/api/ingenieria/recetas-semielaborados/:id", async (req, res) => {
-  try {
-    const { rows } = await db.query(
-      `SELECT r.*, mp.codigo, mp.nombre, mp.stock_actual
-       FROM recetas_semielaborados r
-       JOIN materias_primas mp ON r.materia_prima_id = mp.id
-       WHERE r.semielaborado_id = $1`,
-      [req.params.id]
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).send(err.message);
-  }
-});
-
-app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
-  try {
-    res.setHeader("Cache-Control", "no-store");
-    const { rows } = await db.query(
-      `SELECT r.semielaborado_id, r.cantidad, mp.id as materia_prima_id, mp.codigo, mp.nombre
-       FROM recetas_semielaborados r
-       JOIN materias_primas mp ON r.materia_prima_id = mp.id`
-    );
-    const recetasAgrupadas = rows.reduce((acc, row) => {
-      const semi_id = row.semielaborado_id;
-      if (!acc[semi_id]) acc[semi_id] = [];
-      acc[semi_id].push({
-        materia_prima_id: row.materia_prima_id,
-        codigo: row.codigo,
-        nombre: row.nombre,
-        cantidad: Number(row.cantidad),
-      });
-      return acc;
-    }, {});
-    res.json(recetasAgrupadas);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send(err.message);
-  }
-});
+// =========================================================
+// --- FIN DE LA SECCIÓN CORREGIDA ---
+// =========================================================
 
 // =====================================================
-// --- RUTAS DE PLANIFICACIÓN (NUEVAS) ---
+// --- RUTAS DE PLANIFICACIÓN (USANDO 'cantidad_requerida') ---
 // =====================================================
 
 // 1. OBTENER TODOS los planes guardados
