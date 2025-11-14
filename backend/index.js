@@ -402,6 +402,43 @@ app.get("/api/ingenieria/recetas/:producto", async (req, res) => {
   }
 });
 
+// --- RUTA NUEVA: Obtener TODAS las recetas para explosión de materiales ---
+app.get("/api/ingenieria/recetas/all", async (req, res) => {
+    try {
+        res.setHeader('Cache-Control', 'no-store');
+        const { rows } = await db.query(`
+            SELECT 
+                r.producto_terminado, 
+                r.cantidad, 
+                s.id as semielaborado_id, 
+                s.codigo, 
+                s.nombre
+            FROM recetas r
+            JOIN semielaborados s ON r.semielaborado_id = s.id
+        `);
+        
+        // Agrupamos por producto_terminado
+        const recetasAgrupadas = rows.reduce((acc, row) => {
+            const prod = row.producto_terminado;
+            if (!acc[prod]) {
+                acc[prod] = [];
+            }
+            acc[prod].push({
+                semielaborado_id: row.semielaborado_id,
+                codigo: row.codigo,
+                nombre: row.nombre,
+                cantidad: row.cantidad
+            });
+            return acc;
+        }, {});
+        
+        res.json(recetasAgrupadas);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send(err.message);
+    }
+});
+
 async function iniciarServidor() {
   await setupAuth();
   app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
