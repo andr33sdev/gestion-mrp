@@ -140,6 +140,35 @@ async function inicializarTablas() {
       }
     }
 
+    // 1. Tabla de Operarios
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS operarios (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(255) UNIQUE NOT NULL,
+        activo BOOLEAN DEFAULT true
+      );
+    `);
+
+    // 2. Tabla de Registros de Producción (EL "QUIÉN" "QUÉ" "CUÁNDO")
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS registros_produccion (
+        id SERIAL PRIMARY KEY,
+        plan_item_id INTEGER REFERENCES planes_items(id) ON DELETE SET NULL,
+        semielaborado_id INTEGER REFERENCES semielaborados(id) NOT NULL,
+        operario_id INTEGER REFERENCES operarios(id) NOT NULL,
+        cantidad NUMERIC NOT NULL,
+        fecha_produccion TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Añadimos un índice para acelerar futuras consultas de métricas
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_produccion_operario ON registros_produccion (operario_id);
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_produccion_semi ON registros_produccion (semielaborado_id);
+    `);
+
     console.log("✔ Todas las tablas fueron verificadas y corregidas.");
   } catch (err) {
     console.error("❌ Error fatal inicializando tablas:", err.message);
@@ -383,11 +412,9 @@ app.post("/api/ingenieria/sincronizar-stock", async (req, res) => {
       }
     }
     if (headerRowIndex === -1) {
-      return res
-        .status(400)
-        .json({
-          msg: "No se encontró la tabla de stock (falta CODIGO o STOCK)",
-        });
+      return res.status(400).json({
+        msg: "No se encontró la tabla de stock (falta CODIGO o STOCK)",
+      });
     }
     const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
     await client.query("BEGIN");
@@ -699,6 +726,20 @@ app.get("/api/planificacion", async (req, res) => {
   }
 });
 
+// 1b. OBTENER SÓLO los planes ABIERTOS (para el nuevo panel de carga)
+app.get("/api/planificacion/abiertos", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      "SELECT id, nombre FROM planes_produccion WHERE estado = 'ABIERTO' ORDER BY fecha_creacion DESC"
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
 // 2. OBTENER UN PLAN Específico (con progreso)
 app.get("/api/planificacion/:id", async (req, res) => {
   const { id } = req.params;
@@ -732,6 +773,28 @@ app.get("/api/planificacion/:id", async (req, res) => {
       producido: Number(row.cantidad_producida),
     }));
     res.json(plan);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 2b. OBTENER STATS DE OPERARIOS PARA UN PLAN (¡NUEVO!)
+app.get("/api/planificacion/:id/operarios", async (req, res) => {
+  const { id } = req.params;
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      `SELECT o.nombre, SUM(r.cantidad) as total_producido
+       FROM registros_produccion r
+       JOIN operarios o ON r.operario_id = o.id
+       JOIN planes_items pi ON r.plan_item_id = pi.id
+       WHERE pi.plan_id = $1
+       GROUP BY o.nombre
+       ORDER BY total_producido DESC`,
+      [id]
+    );
+    res.json(rows);
   } catch (err) {
     console.error(err);
     res.status(500).send(err.message);
@@ -837,6 +900,201 @@ app.delete("/api/planificacion/:id", async (req, res) => {
     res.json({ success: true, msg: `Plan ${id} eliminado.` });
   } catch (err) {
     console.error("Error eliminando plan:", err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 7. REGISTRAR PRODUCCIÓN (Carga Rápida) - MODIFICADA
+app.post("/api/produccion/registrar-a-plan", async (req, res) => {
+  // AHORA ACEPTA operario_id
+  const { plan_id, semielaborado_id, cantidad, operario_id } = req.body;
+
+  if (
+    !plan_id ||
+    !semielaborado_id ||
+    !cantidad ||
+    cantidad <= 0 ||
+    !operario_id
+  ) {
+    return res
+      .status(400)
+      .json({ msg: "Faltan datos (plan, semielaborado, cantidad u operario)" });
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // --- PASO 1: Encontrar el plan_item_id ---
+    const itemRes = await client.query(
+      `SELECT id, (SELECT nombre FROM planes_produccion WHERE id = $1) as plan_nombre 
+       FROM planes_items 
+       WHERE plan_id = $1 AND semielaborado_id = $2`,
+      [plan_id, semielaborado_id]
+    );
+
+    if (itemRes.rowCount === 0) {
+      return res.status(404).json({
+        msg: "Error: El producto no existe en el plan seleccionado. No se pudo registrar.",
+      });
+    }
+
+    const plan_item_id = itemRes.rows[0].id;
+    const plan_nombre = itemRes.rows[0].plan_nombre;
+
+    // --- PASO 2: Actualizar el progreso en planes_items ---
+    const updateRes = await client.query(
+      `UPDATE planes_items 
+        SET cantidad_producida = cantidad_producida + $1 
+        WHERE id = $2
+        RETURNING cantidad_producida`,
+      [cantidad, plan_item_id]
+    );
+
+    // --- PASO 3: Insertar el registro granular en registros_produccion ---
+    await client.query(
+      `INSERT INTO registros_produccion (plan_item_id, semielaborado_id, operario_id, cantidad)
+       VALUES ($1, $2, $3, $4)`,
+      [plan_item_id, semielaborado_id, operario_id, cantidad]
+    );
+
+    // Si todo salió bien, confirmamos la transacción
+    await client.query("COMMIT");
+
+    res.json({
+      success: true,
+      msg: `Producción registrada en el plan '${plan_nombre}'.`,
+      nuevo_total: updateRes.rows[0].cantidad_producida,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error registrando producción:", err);
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// =====================================================
+// --- NUEVAS RUTAS DE OPERARIOS (CRUD) ---
+// =====================================================
+
+// 1. OBTENER TODOS los operarios
+app.get("/api/operarios", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      "SELECT * FROM operarios WHERE activo = true ORDER BY nombre ASC"
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 2. AÑADIR UN NUEVO operario
+app.post("/api/operarios", async (req, res) => {
+  const { nombre } = req.body;
+  if (!nombre) {
+    return res.status(400).json({ msg: "El nombre es obligatorio." });
+  }
+  try {
+    const { rows } = await db.query(
+      "INSERT INTO operarios (nombre) VALUES ($1) RETURNING *",
+      [nombre]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    if (err.code === "23505") {
+      // Unique violation
+      return res
+        .status(409)
+        .json({ msg: "Ya existe un operario con ese nombre." });
+    }
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 3. ELIMINAR (desactivar) UN operario
+app.delete("/api/operarios/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Implementamos borrado lógico (desactivar) para no perder métricas
+    const result = await db.query(
+      "UPDATE operarios SET activo = false WHERE id = $1 RETURNING *",
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ msg: "Operario no encontrado" });
+    }
+    res.json({
+      success: true,
+      msg: `Operario ${result.rows[0].nombre} desactivado.`,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 4. OBTENER ESTADÍSTICAS de un operario (¡NUEVO!)
+app.get("/api/operarios/:id/stats", async (req, res) => {
+  const { id } = req.params;
+  try {
+    res.setHeader("Cache-Control", "no-store");
+
+    // Consultas en paralelo
+    const operarioRes = db.query("SELECT nombre FROM operarios WHERE id = $1", [
+      id,
+    ]);
+
+    const totalRes = db.query(
+      "SELECT SUM(cantidad) as total_unidades FROM registros_produccion WHERE operario_id = $1",
+      [id]
+    );
+
+    const topProductoRes = db.query(
+      `SELECT s.nombre, SUM(r.cantidad) as total
+       FROM registros_produccion r
+       JOIN semielaborados s ON r.semielaborado_id = s.id
+       WHERE r.operario_id = $1
+       GROUP BY s.nombre
+       ORDER BY total DESC
+       LIMIT 1`,
+      [id]
+    );
+
+    const recienteRes = db.query(
+      `SELECT s.nombre, r.cantidad, r.fecha_produccion
+       FROM registros_produccion r
+       JOIN semielaborados s ON r.semielaborado_id = s.id
+       WHERE r.operario_id = $1
+       ORDER BY r.fecha_produccion DESC
+       LIMIT 5`,
+      [id]
+    );
+
+    const [op, total, top, reciente] = await Promise.all([
+      operarioRes,
+      totalRes,
+      topProductoRes,
+      recienteRes,
+    ]);
+
+    if (op.rows.length === 0) {
+      return res.status(404).json({ msg: "Operario no encontrado" });
+    }
+
+    res.json({
+      nombre: op.rows[0].nombre,
+      totalUnidades: total.rows[0].total_unidades || 0,
+      topProducto: top.rows[0] || null,
+      actividadReciente: reciente.rows,
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).send(err.message);
   }
 });
