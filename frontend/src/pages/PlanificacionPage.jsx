@@ -4,7 +4,8 @@ import { API_BASE_URL } from "../utils.js";
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 import PlanCard from "../components/planificacion/PlanCard";
 import PlanItemCard from "../components/planificacion/PlanItemCard";
-import PlanStats from "../components/planificacion/PlanStats";
+// --- MODIFICACIÓN 1: Importar el nuevo Modal ---
+import PlanStats from "../components/planificacion/PlanStats"; // Importamos el modal
 import TabButton from "../components/planificacion/TabButton";
 import {
   FaClipboardList,
@@ -33,11 +34,14 @@ export default function PlanificacionPage() {
   const [currentPlanNombre, setCurrentPlanNombre] = useState("Nuevo Plan");
   const [currentPlanItems, setCurrentPlanItems] = useState([]);
   const [currentPlanEstado, setCurrentPlanEstado] = useState("ABIERTO");
+  const [currentPlanOperarios, setCurrentPlanOperarios] = useState([]); // (Esto ya lo teníamos)
 
   // === ESTADOS DE UI ===
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("items");
+  // --- MODIFICACIÓN 2: Nuevo estado para controlar el modal ---
+  const [showStatsModal, setShowStatsModal] = useState(false);
 
   // --- LÓGICA DE DATOS (Sin cambios) ---
   useEffect(() => {
@@ -68,13 +72,24 @@ export default function PlanificacionPage() {
     setLoading(true);
     setSelectedPlanId(planId);
     setActiveTab("items");
+    setCurrentPlanOperarios([]); // Limpiar estado anterior
     try {
-      const res = await fetch(`${API_BASE_URL}/planificacion/${planId}`);
-      if (!res.ok) throw new Error("No se pudo cargar el plan");
-      const planDetalle = await res.json();
+      // Usamos Promise.all para cargar ambas cosas a la vez
+      const [resPlan, resOperarios] = await Promise.all([
+        fetch(`${API_BASE_URL}/planificacion/${planId}`),
+        fetch(`${API_BASE_URL}/planificacion/${planId}/operarios`), // <-- Petición de operarios
+      ]);
+
+      if (!resPlan.ok) throw new Error("No se pudo cargar el plan");
+      const planDetalle = await resPlan.json();
       setCurrentPlanNombre(planDetalle.nombre);
       setCurrentPlanItems(planDetalle.items);
       setCurrentPlanEstado(planDetalle.estado);
+
+      // Guardamos los datos de los operarios si la petición fue exitosa
+      if (resOperarios.ok) {
+        setCurrentPlanOperarios(await resOperarios.json());
+      }
     } catch (err) {
       console.error(err);
       alert(err.message);
@@ -91,6 +106,7 @@ export default function PlanificacionPage() {
     );
     setCurrentPlanItems([]);
     setCurrentPlanEstado("ABIERTO");
+    setCurrentPlanOperarios([]); // <-- Limpiamos operarios
     setActiveTab("items");
   };
 
@@ -268,280 +284,286 @@ export default function PlanificacionPage() {
 
   // --- RENDERIZADO ---
   return (
-    <motion.div
-      layout
-      className="animate-in fade-in duration-500 flex flex-col h-[calc(100vh-140px)] min-h-[700px] gap-6"
-    >
-      {/* --- SECCIÓN 1: KARDEX DE PLANES (ARRIBA) --- */}
+    // --- MODIFICACIÓN 3: Envolvemos todo en un <> para poner el modal al mismo nivel ---
+    <>
       <motion.div
         layout
-        className="bg-slate-800 rounded-xl flex flex-col border border-slate-700 shadow-lg overflow-hidden"
+        className="animate-in fade-in duration-500 flex flex-col h-[calc(100vh-140px)] min-h-[700px] gap-6"
       >
-        <div className="p-4 bg-slate-800/50 border-b border-slate-700 z-10 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-white flex items-center gap-3">
-            <FaClipboardList className="text-blue-400" /> Planes de Producción
-          </h2>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleCreateNew}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg"
-          >
-            <FaPlus /> Crear Plan
-          </motion.button>
-        </div>
-        <div className="overflow-x-auto custom-scrollbar">
-          {loading && masterPlanList.length === 0 ? (
-            <div className="p-6 text-center text-gray-400">
-              <FaSpinner className="animate-spin inline mr-2" /> Cargando...
-            </div>
-          ) : (
-            <div className="flex p-4 space-x-4 min-w-max">
-              <AnimatePresence>
-                {masterPlanList.length === 0 && (
-                  <p className="p-4 text-center text-gray-500 text-sm">
-                    No hay planes guardados. ¡Crea uno!
-                  </p>
-                )}
-                {masterPlanList.map((plan) => (
-                  <PlanCard
-                    key={plan.id}
-                    plan={plan}
-                    onSelect={() => handleSelectPlan(plan.id)}
-                    isSelected={selectedPlanId === plan.id}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-      </motion.div>
-
-      {/* --- SECCIÓN 2: DETALLE DEL PLAN (ABAJO) --- */}
-      <AnimatePresence>
-        {!selectedPlanId ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex-1 bg-slate-800/50 rounded-xl border-2 border-dashed border-slate-700 flex justify-center items-center"
-          >
-            <p className="text-gray-500 text-lg font-medium">
-              ← Selecciona un plan o crea uno nuevo para ver el detalle
-            </p>
-          </motion.div>
-        ) : (
-          <motion.div
-            layout
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg flex flex-col overflow-hidden"
-          >
-            {/* Toolbar del Plan Activo */}
-            <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row justify-between items-center gap-3">
-              <input
-                type="text"
-                value={currentPlanNombre}
-                onChange={(e) => setCurrentPlanNombre(e.target.value)}
-                className="w-full md:w-1/3 bg-transparent border-0 border-b-2 border-slate-700 focus:border-blue-500 px-1 py-2 text-xl font-bold text-white focus:outline-none focus:ring-0 transition-all"
-                disabled={isPlanCerrado || isSaving}
-              />
-              <div className="flex gap-2 flex-wrap justify-end">
-                <button
-                  onClick={handleToggleEstado}
-                  disabled={isSaving || isPlanNuevo}
-                  className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${
-                    isPlanCerrado
-                      ? "bg-gray-600 hover:bg-gray-500 text-white"
-                      : "bg-green-600 hover:bg-green-500 text-white"
-                  } disabled:opacity-50`}
-                >
-                  {isPlanCerrado ? <FaLock /> : <FaLockOpen />}{" "}
-                  {isPlanCerrado ? "Cerrado" : "Abierto"}
-                </button>
-                <button
-                  onClick={handleDeletePlan}
-                  disabled={isSaving || isPlanNuevo}
-                  className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-red-800 hover:bg-red-700 text-white transition-all disabled:opacity-50"
-                >
-                  <FaTrash />
-                </button>
-                <button
-                  onClick={handleSavePlan}
-                  disabled={isPlanCerrado || isSaving}
-                  className="px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50"
-                >
-                  {isSaving ? (
-                    <FaSpinner className="animate-spin" />
-                  ) : (
-                    <FaSave />
-                  )}{" "}
-                  Guardar
-                </button>
+        {/* --- SECCIÓN 1: KARDEX DE PLANES (ARRIBA) --- */}
+        <motion.div
+          layout
+          className="bg-slate-800 rounded-xl flex flex-col border border-slate-700 shadow-lg overflow-hidden"
+        >
+          <div className="p-4 bg-slate-800/50 border-b border-slate-700 z-10 flex justify-between items-center">
+            <h2 className="text-xl font-bold text-white flex items-center gap-3">
+              <FaClipboardList className="text-blue-400" /> Planes de Producción
+            </h2>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleCreateNew}
+              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg"
+            >
+              <FaPlus /> Crear Plan
+            </motion.button>
+          </div>
+          <div className="overflow-x-auto custom-scrollbar">
+            {loading && masterPlanList.length === 0 ? (
+              <div className="p-6 text-center text-gray-400">
+                <FaSpinner className="animate-spin inline mr-2" /> Cargando...
               </div>
-            </div>
-
-            {/* Contenedor de Pestañas */}
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex border-b border-slate-700 bg-slate-800/50">
-                <TabButton
-                  icon={<FaTasks />}
-                  label="Items del Plan"
-                  active={activeTab === "items"}
-                  onClick={() => setActiveTab("items")}
-                />
-                <TabButton
-                  icon={<FaChartPie />}
-                  label="Estadísticas"
-                  active={activeTab === "stats"}
-                  onClick={() => setActiveTab("stats")}
-                />
-                <TabButton
-                  icon={<FaFileInvoice />}
-                  label="Explosión (MRP)"
-                  active={activeTab === "mrp"}
-                  onClick={() => setActiveTab("mrp")}
-                />
-              </div>
-
-              {/* Contenido de Pestañas (con scroll) */}
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                <AnimatePresence mode="wait">
-                  {/* Pestaña 1: Items del Plan */}
-                  {activeTab === "items" && (
-                    <motion.div
-                      key="items"
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                    >
-                      <AutoCompleteInput
-                        items={allSemis}
-                        onSelect={handleAddItem}
-                        placeholder="Buscar semielaborado para añadir..."
-                        disabled={isPlanCerrado || isSaving}
-                      />
-                      <div className="mt-6">
-                        <AnimatePresence>
-                          {currentPlanItems.length === 0 ? (
-                            <p className="text-gray-500 text-center py-4">
-                              Agrega semielaborados al plan.
-                            </p>
-                          ) : (
-                            <ul className="space-y-3">
-                              {currentPlanItems.map((item, index) => (
-                                <PlanItemCard
-                                  key={item.semielaborado.id + index} // Clave más robusta
-                                  item={item}
-                                  onRemove={() => handleRemoveItem(index)}
-                                  isPlanCerrado={isPlanCerrado}
-                                />
-                              ))}
-                            </ul>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </motion.div>
+            ) : (
+              <div className="flex p-4 space-x-4 min-w-max">
+                <AnimatePresence>
+                  {masterPlanList.length === 0 && (
+                    <p className="p-4 text-center text-gray-500 text-sm">
+                      No hay planes guardados. ¡Crea uno!
+                    </p>
                   )}
-
-                  {/* Pestaña 2: Estadísticas */}
-                  {activeTab === "stats" && (
-                    <motion.div
-                      key="stats"
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                    >
-                      <PlanStats items={currentPlanItems} />
-                    </motion.div>
-                  )}
-
-                  {/* Pestaña 3: Explosión (MRP) */}
-                  {activeTab === "mrp" && (
-                    <motion.div
-                      key="mrp"
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                    >
-                      <h3 className="text-gray-300 font-bold text-sm mb-4">
-                        Materiales necesarios para completar lo{" "}
-                        <span className="text-yellow-400">PENDIENTE</span> del
-                        plan:
-                      </h3>
-                      <div className="overflow-hidden border border-slate-700 rounded-lg">
-                        <table className="w-full text-sm text-left">
-                          <thead className="text-xs text-gray-400 uppercase bg-slate-700">
-                            <tr>
-                              <th className="px-4 py-3">Materia Prima</th>
-                              <th className="px-4 py-3 text-right">
-                                Necesario
-                              </th>
-                              <th className="px-4 py-3 text-right">Stock</th>
-                              <th className="px-4 py-3 text-right">Balance</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-700">
-                            {explosion.length === 0 ? (
-                              <tr>
-                                <td
-                                  colSpan="4"
-                                  className="p-8 text-center text-gray-500"
-                                >
-                                  {currentPlanItems.length > 0
-                                    ? "¡Plan completado o sin recetas!"
-                                    : "El plan está vacío."}
-                                </td>
-                              </tr>
-                            ) : (
-                              explosion.map((mp) => (
-                                <tr
-                                  key={mp.id}
-                                  className="hover:bg-slate-700/50"
-                                >
-                                  <td className="px-4 py-3">
-                                    <p className="font-medium text-white">
-                                      {mp.nombre}
-                                    </p>
-                                    <p className="text-xs text-gray-400 font-mono">
-                                      {mp.codigo}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-3 text-right font-mono text-yellow-300">
-                                    {mp.necesario}
-                                  </td>
-                                  <td className="px-4 py-3 text-right font-mono text-blue-300">
-                                    {mp.stock}
-                                  </td>
-                                  <td
-                                    className={`px-4 py-3 text-right font-mono font-bold ${
-                                      mp.balance < 0
-                                        ? "text-red-400"
-                                        : "text-green-400"
-                                    }`}
-                                  >
-                                    {mp.balance}
-                                    {mp.balance < 0 && (
-                                      <FaShoppingCart
-                                        title="Necesita compra"
-                                        className="inline ml-2 text-red-500"
-                                      />
-                                    )}
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    </motion.div>
-                  )}
+                  {masterPlanList.map((plan) => (
+                    <PlanCard
+                      key={plan.id}
+                      plan={plan}
+                      onSelect={() => handleSelectPlan(plan.id)}
+                      isSelected={selectedPlanId === plan.id}
+                    />
+                  ))}
                 </AnimatePresence>
               </div>
-            </div>
-          </motion.div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* --- SECCIÓN 2: DETALLE DEL PLAN (ABAJO) --- */}
+        <AnimatePresence>
+          {!selectedPlanId ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex-1 bg-slate-800/50 rounded-xl border-2 border-dashed border-slate-700 flex justify-center items-center"
+            >
+              <p className="text-gray-500 text-lg font-medium">
+                ← Selecciona un plan o crea uno nuevo para ver el detalle
+              </p>
+            </motion.div>
+          ) : (
+            <motion.div
+              layout
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg flex flex-col overflow-hidden"
+            >
+              {/* Toolbar del Plan Activo */}
+              <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row justify-between items-center gap-3">
+                <input
+                  type="text"
+                  value={currentPlanNombre}
+                  onChange={(e) => setCurrentPlanNombre(e.target.value)}
+                  className="w-full md:w-1/3 bg-transparent border-0 border-b-2 border-slate-700 focus:border-blue-500 px-1 py-2 text-xl font-bold text-white focus:outline-none focus:ring-0 transition-all"
+                  disabled={isPlanCerrado || isSaving}
+                />
+                <div className="flex gap-2 flex-wrap justify-end">
+                  <button
+                    onClick={handleToggleEstado}
+                    disabled={isSaving || isPlanNuevo}
+                    className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${
+                      isPlanCerrado
+                        ? "bg-gray-600 hover:bg-gray-500 text-white"
+                        : "bg-green-600 hover:bg-green-500 text-white"
+                    } disabled:opacity-50`}
+                  >
+                    {isPlanCerrado ? <FaLock /> : <FaLockOpen />}{" "}
+                    {isPlanCerrado ? "Cerrado" : "Abierto"}
+                  </button>
+                  <button
+                    onClick={handleDeletePlan}
+                    disabled={isSaving || isPlanNuevo}
+                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-red-800 hover:bg-red-700 text-white transition-all disabled:opacity-50"
+                  >
+                    <FaTrash />
+                  </button>
+                  <button
+                    onClick={handleSavePlan}
+                    disabled={isPlanCerrado || isSaving}
+                    className="px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <FaSpinner className="animate-spin" />
+                    ) : (
+                      <FaSave />
+                    )}{" "}
+                    Guardar
+                  </button>
+                </div>
+              </div>
+
+              {/* Contenedor de Pestañas */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex border-b border-slate-700 bg-slate-800/50">
+                  <TabButton
+                    icon={<FaTasks />}
+                    label="Items del Plan"
+                    active={activeTab === "items"}
+                    onClick={() => setActiveTab("items")}
+                  />
+                  {/* --- MODIFICACIÓN 4: El botón de Stats ahora abre el modal --- */}
+                  <TabButton
+                    icon={<FaChartPie />}
+                    label="Estadísticas"
+                    active={showStatsModal} // Se resalta si el modal está abierto
+                    onClick={() => setShowStatsModal(true)} // <-- Abre el modal
+                  />
+                  <TabButton
+                    icon={<FaFileInvoice />}
+                    label="Explosión (MRP)"
+                    active={activeTab === "mrp"}
+                    onClick={() => setActiveTab("mrp")}
+                  />
+                </div>
+
+                {/* Contenido de Pestañas (con scroll) */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                  <AnimatePresence mode="wait">
+                    {/* Pestaña 1: Items del Plan */}
+                    {activeTab === "items" && (
+                      <motion.div
+                        key="items"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                      >
+                        <AutoCompleteInput
+                          items={allSemis}
+                          onSelect={handleAddItem}
+                          placeholder="Buscar semielaborado para añadir..."
+                          disabled={isPlanCerrado || isSaving}
+                        />
+                        <div className="mt-6">
+                          <AnimatePresence>
+                            {currentPlanItems.length === 0 ? (
+                              <p className="text-gray-500 text-center py-4">
+                                Agrega semielaborados al plan.
+                              </p>
+                            ) : (
+                              <ul className="space-y-3">
+                                {currentPlanItems.map((item, index) => (
+                                  <PlanItemCard
+                                    key={item.semielaborado.id + index} // Clave más robusta
+                                    item={item}
+                                    onRemove={() => handleRemoveItem(index)}
+                                    isPlanCerrado={isPlanCerrado}
+                                  />
+                                ))}
+                              </ul>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* Pestaña 2: Estadísticas --- LA HEMOS QUITADO --- */}
+                    {/* (El div de activeTab === "stats" se elimina) */}
+
+                    {/* Pestaña 3: Explosión (MRP) */}
+                    {activeTab === "mrp" && (
+                      <motion.div
+                        key="mrp"
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                      >
+                        <h3 className="text-gray-300 font-bold text-sm mb-4">
+                          Materiales necesarios para completar lo{" "}
+                          <span className="text-yellow-400">PENDIENTE</span> del
+                          plan:
+                        </h3>
+                        <div className="overflow-hidden border border-slate-700 rounded-lg">
+                          <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-gray-400 uppercase bg-slate-700">
+                              <tr>
+                                <th className="px-4 py-3">Materia Prima</th>
+                                <th className="px-4 py-3 text-right">
+                                  Necesario
+                                </th>
+                                <th className="px-4 py-3 text-right">Stock</th>
+                                <th className="px-4 py-3 text-right">Balance</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                              {explosion.length === 0 ? (
+                                <tr>
+                                  <td
+                                    colSpan="4"
+                                    className="p-8 text-center text-gray-500"
+                                  >
+                                    {currentPlanItems.length > 0
+                                      ? "¡Plan completado o sin recetas!"
+                                      : "El plan está vacío."}
+                                  </td>
+                                </tr>
+                              ) : (
+                                explosion.map((mp) => (
+                                  <tr
+                                    key={mp.id}
+                                    className="hover:bg-slate-700/50"
+                                  >
+                                    <td className="px-4 py-3">
+                                      <p className="font-medium text-white">
+                                        {mp.nombre}
+                                      </p>
+                                      <p className="text-xs text-gray-400 font-mono">
+                                        {mp.codigo}
+                                      </p>
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono text-yellow-300">
+                                      {mp.necesario}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono text-blue-300">
+                                      {mp.stock}
+                                    </td>
+                                    <td
+                                      className={`px-4 py-3 text-right font-mono font-bold ${
+                                        mp.balance < 0
+                                          ? "text-red-400"
+                                          : "text-green-400"
+                                      }`}
+                                    >
+                                      {mp.balance}
+                                      {mp.balance < 0 && (
+                                        <FaShoppingCart
+                                          title="Necesita compra"
+                                          className="inline ml-2 text-red-500"
+                                        />
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* --- MODIFICACIÓN 5: Renderizado condicional del Modal --- */}
+      <AnimatePresence>
+        {showStatsModal && (
+          <PlanStats
+            items={currentPlanItems}
+            operarios={currentPlanOperarios}
+            onClose={() => setShowStatsModal(false)}
+          />
         )}
       </AnimatePresence>
-    </motion.div>
+    </>
   );
 }
