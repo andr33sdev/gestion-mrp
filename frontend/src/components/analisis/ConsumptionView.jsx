@@ -12,6 +12,8 @@ import {
   FaBoxOpen,
   FaLightbulb,
   FaFireAlt,
+  FaClipboardList,
+  FaExclamationCircle,
 } from "react-icons/fa";
 import {
   ResponsiveContainer,
@@ -71,6 +73,88 @@ function DaysLeftBadge({ days, val }) {
   );
 }
 
+// --- MODAL: PRODUCTOS SIN RECETA (AMPLIADO) ---
+function MissingRecipesModal({ items, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-md flex justify-center items-center z-[130] p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 20 }}
+        // CAMBIO: max-w-5xl para que sea bien ancho
+        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl border border-red-500/30 flex flex-col overflow-hidden max-h-[85vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6 border-b border-slate-700 bg-gradient-to-r from-slate-800 to-red-900/20 flex justify-between items-start">
+          <div>
+            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+              <FaExclamationCircle className="text-red-400" /> Auditoría de
+              Recetas
+            </h2>
+            <p className="text-sm text-gray-300 mt-2">
+              Estos productos se han vendido pero{" "}
+              <strong>no tienen receta configurada</strong>.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full hover:bg-slate-700 text-gray-400 hover:text-white transition-colors"
+          >
+            <FaTimes size={20} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto custom-scrollbar p-0">
+          <table className="w-full text-left text-sm text-gray-300">
+            <thead className="bg-slate-700/50 text-gray-400 uppercase text-xs font-bold tracking-wider sticky top-0 z-10 backdrop-blur-sm">
+              <tr>
+                <th className="px-6 py-3">Producto Terminado</th>
+                <th className="px-6 py-3 text-right">Ventas Detectadas</th>
+                <th className="px-6 py-3 text-center">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {items.map((item, idx) => (
+                <tr
+                  key={idx}
+                  className="hover:bg-slate-700/30 transition-colors group"
+                >
+                  <td className="px-6 py-4 font-medium text-white select-all group-hover:text-blue-300 transition-colors">
+                    {item.name}
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono font-bold text-blue-300">
+                    {item.count}
+                  </td>
+                  <td className="px-6 py-4 text-center">
+                    <span className="px-3 py-1 rounded-full text-[10px] uppercase font-bold bg-red-900/40 text-red-300 border border-red-800">
+                      {item.reason}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="p-4 bg-slate-800/80 border-t border-slate-700 flex justify-between items-center">
+          <span className="text-xs text-gray-500">
+            Tip: Copia el nombre y búscalo en la pestaña Ingeniería para crearle
+            la receta.
+          </span>
+          <button
+            onClick={onClose}
+            className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold rounded-lg transition-all"
+          >
+            Cerrar
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // --- MODAL DE SUGERENCIAS (IA) ---
 function SuggestionsModal({ items, onClose, onSelect }) {
   return (
@@ -82,7 +166,6 @@ function SuggestionsModal({ items, onClose, onSelect }) {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 20 }}
-        // SE AUMENTÓ EL ANCHO A max-w-5xl
         className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl border border-purple-500/50 flex flex-col overflow-hidden max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -93,7 +176,6 @@ function SuggestionsModal({ items, onClose, onSelect }) {
               Reposición
             </h2>
             <p className="text-sm text-gray-300 mt-2 max-w-lg">
-              {/* Texto actualizado a 30 días */}
               Estos son los semielaborados de <strong>Mayor Venta</strong> que
               tienen una cobertura <strong>menor a 30 días</strong>.
               <span className="block text-xs text-purple-300 mt-1 font-medium">
@@ -182,7 +264,7 @@ function SuggestionsModal({ items, onClose, onSelect }) {
   );
 }
 
-// --- MODAL DE DETALLE (Se mantiene igual) ---
+// --- MODAL DE DETALLE (Igual que antes) ---
 function SemiDetailModal({ item, onClose }) {
   if (!item) return null;
 
@@ -372,6 +454,7 @@ export default function ConsumptionView({ analysisData }) {
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [selectedDetailItem, setSelectedDetailItem] = useState(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showMissingModal, setShowMissingModal] = useState(false);
 
   const toggleSelection = (itemName) => {
     const newSet = new Set(selectedItems);
@@ -381,12 +464,13 @@ export default function ConsumptionView({ analysisData }) {
   };
 
   // --- LÓGICA DE SUGERENCIAS (IA) ---
-  // Modificado a 30 días
+  // Filtra: Cobertura < 30 días Y que tenga consumo activo (evita basura)
+  // Ordena: Primero los que MÁS se venden (Prom. Mensual descendente)
   const suggestedItems = useMemo(() => {
     return consumo
       .filter((item) => item.daysLeftVal < 30 && parseFloat(item.monthly) > 0)
       .sort((a, b) => parseFloat(b.monthly) - parseFloat(a.monthly))
-      .slice(0, 10);
+      .slice(0, 20); // Top 20 sugerencias
   }, [consumo]);
 
   const suggestions = useMemo(() => {
@@ -421,6 +505,12 @@ export default function ConsumptionView({ analysisData }) {
             }}
           />
         )}
+        {showMissingModal && (
+          <MissingRecipesModal
+            items={missingRecipes}
+            onClose={() => setShowMissingModal(false)}
+          />
+        )}
       </AnimatePresence>
 
       {/* Header */}
@@ -437,19 +527,42 @@ export default function ConsumptionView({ analysisData }) {
           </p>
         </div>
 
-        {/* BOTÓN SUGERENCIAS */}
-        <button
-          onClick={() => setShowSuggestions(true)}
-          className="group relative px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/30 transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-3 border border-white/10"
-        >
-          <FaLightbulb className="text-yellow-300 text-lg animate-pulse" />
-          <span>Sugerencias IA</span>
-          {suggestedItems.length > 0 && (
-            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full border-2 border-gray-900 shadow-sm">
-              {suggestedItems.length}
-            </span>
-          )}
-        </button>
+        <div className="flex gap-3">
+          {/* BOTÓN PRODUCTOS SIN RECETA */}
+          <button
+            onClick={() => setShowMissingModal(true)}
+            className={`group relative px-5 py-3 font-bold rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 border ${
+              missingRecipes.length > 0
+                ? "bg-slate-800 border-red-500 text-red-400 hover:bg-red-900/20"
+                : "bg-slate-800 border-slate-600 text-gray-400 opacity-50 cursor-not-allowed"
+            }`}
+            disabled={missingRecipes.length === 0}
+          >
+            <FaClipboardList
+              className={missingRecipes.length > 0 ? "text-lg" : ""}
+            />
+            <span>Sin Receta</span>
+            {missingRecipes.length > 0 && (
+              <span className="ml-1 bg-red-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
+                {missingRecipes.length}
+              </span>
+            )}
+          </button>
+
+          {/* BOTÓN SUGERENCIAS */}
+          <button
+            onClick={() => setShowSuggestions(true)}
+            className="group relative px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/30 transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-3 border border-white/10"
+          >
+            <FaLightbulb className="text-yellow-300 text-lg animate-pulse" />
+            <span>Sugerencias IA</span>
+            {suggestedItems.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full border-2 border-gray-900 shadow-sm">
+                {suggestedItems.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* BUSCADOR */}
@@ -473,7 +586,6 @@ export default function ConsumptionView({ analysisData }) {
           )}
         </div>
 
-        {/* SUGERENCIAS */}
         {searchTerm && (
           <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl z-50 max-h-72 overflow-y-auto custom-scrollbar">
             {suggestions.length === 0 ? (
