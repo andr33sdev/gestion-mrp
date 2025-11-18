@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+/* --- ESTILOS PARA LA IMPRESIÓN DEL REPORTE (PDF) --- */
+@media print {
+    /* Oculta todo el contenido de la aplicación */
+    body > div {
+        display: none !important;
+    }
+    
+    /* Muestra solo el contenedor del reporte y lo ajusta */
+    #reporte-imprimir {
+        display: block !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        color: #000; /* Asegura texto negro */
+        font-family: sans-serif;
+    }
+    
+    /* Evita que se impriman los links y estilos de fondo */
+    h1, h2, h3 { color: #1e3a8a !important; }
+    table { page-break-inside: auto; width: 100%; }
+    tr    { page-break-inside: avoid; page-break-after: auto; }
+    thead { display: table-header-group; }
+}
+/* --- FIN DE ESTILOS PDF --- */

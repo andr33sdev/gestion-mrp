@@ -25,106 +25,6 @@ async function inicializarTablas() {
   try {
     console.log("Verificando tablas de base de datos...");
 
-    // Tablas de Horno
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS estado_produccion (
-        estacion_id INTEGER PRIMARY KEY,
-        producto_actual TEXT
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS registros (
-        id SERIAL PRIMARY KEY,
-        fecha DATE,
-        hora TIME,
-        accion TEXT,
-        tipo VARCHAR(50),
-        productos_json TEXT
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS semielaborados (
-        id SERIAL PRIMARY KEY,
-        codigo VARCHAR(100) UNIQUE NOT NULL,
-        nombre VARCHAR(255),
-        stock_actual NUMERIC DEFAULT 0,
-        ultima_actualizacion TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    // Tablas de Ingeniería (Nivel 1 y 2)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS productos_ingenieria (
-        nombre VARCHAR(255) PRIMARY KEY
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS recetas (
-        id SERIAL PRIMARY KEY,
-        producto_terminado VARCHAR(255) REFERENCES productos_ingenieria(nombre) ON DELETE CASCADE,
-        semielaborado_id INTEGER REFERENCES semielaborados(id),
-        cantidad NUMERIC DEFAULT 1,
-        ultima_actualizacion TIMESTAMP DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS materias_primas (
-        id SERIAL PRIMARY KEY,
-        codigo VARCHAR(100) UNIQUE NOT NULL,
-        nombre VARCHAR(255),
-        stock_actual NUMERIC DEFAULT 0,
-        ultima_actualizacion TIMESTAMP DEFAULT NOW()
-      );
-    `);
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS recetas_semielaborados (
-        id SERIAL PRIMARY KEY,
-        semielaborado_id INTEGER REFERENCES semielaborados(id) ON DELETE CASCADE,
-        materia_prima_id INTEGER REFERENCES materias_primas(id) ON DELETE CASCADE,
-        cantidad NUMERIC DEFAULT 1,
-        CONSTRAINT uq_receta_semi UNIQUE(semielaborado_id, materia_prima_id)
-      );
-    `);
-
-    // --- Tablas de Planificación (CON LÓGICA DE CORRECCIÓN) ---
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS planes_produccion (
-        id SERIAL PRIMARY KEY,
-        nombre VARCHAR(255) NOT NULL,
-        fecha_creacion TIMESTAMP DEFAULT NOW(),
-        estado VARCHAR(50) DEFAULT 'ABIERTO'
-      );
-    `);
-
-    // 1. Crear la tabla 'planes_items' (si no existe)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS planes_items (
-        id SERIAL PRIMARY KEY,
-        plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE,
-        semielaborado_id INTEGER REFERENCES semielaborados(id),
-        cantidad NUMERIC NOT NULL DEFAULT 0 
-      );
-    `);
-
-    // 2. CORRECCIÓN A: Renombrar 'cantidad' a 'cantidad_requerida'
-    try {
-      await client.query(`
-        ALTER TABLE planes_items 
-        RENAME COLUMN cantidad TO cantidad_requerida;
-      `);
-      console.log("✔ Columna 'cantidad' renombrada a 'cantidad_requerida'.");
-    } catch (e) {
-      if (e.code === "42701") {
-        console.log("i Columna 'cantidad_requerida' ya existía.");
-      } else if (e.code === "42703") {
-        console.log(
-          "i Columna 'cantidad' no existía, saltando renombrado (ya estaba ok)."
-        );
-      } else {
-        throw e;
-      }
-    }
-
     // 3. CORRECCIÓN B: Añadir 'cantidad_producida'
     try {
       await client.query(`
@@ -140,6 +40,18 @@ async function inicializarTablas() {
       }
     }
 
+    // --- CORRECCIÓN C: Unificar columna 'cantidad' en recetas_semielaborados ---
+    // Esta lógica detecta si existe la columna errónea 'cantidad_ok' y la renombra a 'cantidad'.
+    try {
+      await client.query(`
+        ALTER TABLE recetas_semielaborados 
+        RENAME COLUMN cantidad_ok TO cantidad;
+      `);
+      console.log("✔ AUTOMÁTICO: Se renombró 'cantidad_ok' a 'cantidad'.");
+    } catch (e) {
+      // Si falla, asumimos que ya se llama 'cantidad' o que no existe la errónea.
+      // No hacemos nada, el código seguirá usando 'cantidad'.
+    }
     // 1. Tabla de Operarios
     await client.query(`
       CREATE TABLE IF NOT EXISTS operarios (
@@ -149,17 +61,65 @@ async function inicializarTablas() {
       );
     `);
 
-    // 2. Tabla de Registros de Producción (EL "QUIÉN" "QUÉ" "CUÁNDO")
+    // 2. Tabla de Registros de Producción (AJUSTADA PARA CALIDAD Y TURNO)
     await client.query(`
       CREATE TABLE IF NOT EXISTS registros_produccion (
         id SERIAL PRIMARY KEY,
         plan_item_id INTEGER REFERENCES planes_items(id) ON DELETE SET NULL,
         semielaborado_id INTEGER REFERENCES semielaborados(id) NOT NULL,
         operario_id INTEGER REFERENCES operarios(id) NOT NULL,
-        cantidad NUMERIC NOT NULL,
-        fecha_produccion TIMESTAMP DEFAULT NOW()
+        cantidad_ok NUMERIC NOT NULL DEFAULT 0,            -- NUEVO: OK
+        cantidad_scrap NUMERIC NOT NULL DEFAULT 0,         -- NUEVO: Fallas
+        motivo_scrap VARCHAR(255),                         -- NUEVO: Motivo de la falla
+        turno VARCHAR(50) NOT NULL DEFAULT 'Diurno',       -- NUEVO: Turno
+        fecha_produccion TIMESTAMP NOT NULL DEFAULT NOW()  -- Fecha (Ahora no es solo NOW())
       );
     `);
+
+    // --- CORRECCIÓN DE ESQUEMA (para migrar de 'cantidad' a 'cantidad_ok') ---
+    try {
+      await client.query(`
+          ALTER TABLE registros_produccion 
+          RENAME COLUMN cantidad TO cantidad_ok;
+        `);
+      console.log(
+        "✔ Columna 'cantidad' renombrada a 'cantidad_ok' en registros_produccion."
+      );
+    } catch (e) {
+      if (e.code === "42701") {
+        // Columna ya existe
+        console.log("i Columna 'cantidad_ok' ya existía.");
+      } else if (e.code === "42703") {
+        // Columna original no existía, se asume nuevo esquema
+        // No hacer nada, se añaden las columnas nuevas a continuación
+      } else {
+        throw e;
+      }
+    }
+
+    // --- Añadir nuevas columnas si no existen ---
+    const columnDefinitions = [
+      { name: "cantidad_scrap", type: "NUMERIC NOT NULL DEFAULT 0" },
+      { name: "motivo_scrap", type: "VARCHAR(255)" },
+      { name: "turno", type: "VARCHAR(50) NOT NULL DEFAULT 'Diurno'" },
+    ];
+
+    for (const col of columnDefinitions) {
+      try {
+        await client.query(`
+                ALTER TABLE registros_produccion 
+                ADD COLUMN ${col.name} ${col.type};
+            `);
+        console.log(`✔ Columna '${col.name}' añadida a registros_produccion.`);
+      } catch (e) {
+        if (e.code === "42701" || e.code === "42703") {
+          // Column already exists or other safe error
+          console.log(`i Columna '${col.name}' ya existía.`);
+        } else {
+          throw e;
+        }
+      }
+    }
 
     // Añadimos un índice para acelerar futuras consultas de métricas
     await client.query(`
@@ -513,7 +473,7 @@ app.get("/api/ingenieria/recetas/all", async (req, res) => {
     // 1. Consulta con LEFT JOIN para traer todo, aunque el semielaborado no exista
     const query = `
       SELECT 
-        r.producto_terminado, 
+        r.producto_terminado,  -- <--- ASEGÚRATE QUE DIGA 'producto_terminado'
         r.cantidad, 
         r.semielaborado_id, 
         s.id as semi_existente_id, 
@@ -526,29 +486,26 @@ app.get("/api/ingenieria/recetas/all", async (req, res) => {
 
     const { rows } = await client.query(query);
 
-    // 2. Agrupamiento SIN FILTROS (Si está roto, lo mostramos igual)
+    // 2. Agrupamiento SIN FILTROS
     const recetasAgrupadas = {};
     let alertas = 0;
 
     rows.forEach((row) => {
-      const prod = row.producto_terminado;
+      const prod = row.producto_terminado; // <--- Usar la misma variable
 
-      // Inicializar array si es la primera vez que vemos este producto
       if (!recetasAgrupadas[prod]) {
         recetasAgrupadas[prod] = [];
       }
 
-      // LÓGICA DE RESCATE: Si no hay nombre, inventamos uno para que se vea el error
       const existeSemielaborado = !!row.semi_existente_id;
       if (!existeSemielaborado) alertas++;
 
       recetasAgrupadas[prod].push({
         semielaborado_id: row.semielaborado_id,
-        // Si no hay código/nombre, ponemos un aviso visible
         codigo: row.codigo || "ERROR",
         nombre: row.nombre || `⚠️ ERROR: ID ${row.semielaborado_id} BORRADO`,
         cantidad: Number(row.cantidad),
-        error: !existeSemielaborado, // Flag para el frontend (opcional)
+        error: !existeSemielaborado,
       });
     });
 
@@ -562,7 +519,7 @@ app.get("/api/ingenieria/recetas/all", async (req, res) => {
 
     res.json(recetasAgrupadas);
   } catch (err) {
-    console.error("❌ [API] Error:", err);
+    console.error("❌ [API] Error en /api/ingenieria/recetas/all:", err);
     res.status(500).send(err.message);
   } finally {
     client.release();
@@ -664,9 +621,6 @@ app.get("/api/ingenieria/materias-primas", async (req, res) => {
 app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
-
-    // CORRECCIÓN CLAVE: Hacemos JOIN con 'semielaborados' para obtener el NOMBRE (s.nombre)
-    // Usaremos 's.nombre' como la clave del objeto, no el ID.
     const { rows } = await db.query(`
             SELECT 
                 s.nombre as semi_nombre,
@@ -681,12 +635,13 @@ app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
         `);
 
     const recetasAgrupadas = rows.reduce((acc, row) => {
-      const nombreClave = row.semi_nombre; // ¡Usamos el NOMBRE como clave!
+      // --- CORRECCIÓN: Usar ID en lugar de NOMBRE ---
+      const idClave = row.semielaborado_id;
 
-      if (!acc[nombreClave]) {
-        acc[nombreClave] = [];
+      if (!acc[idClave]) {
+        acc[idClave] = [];
       }
-      acc[nombreClave].push({
+      acc[idClave].push({
         materia_prima_id: row.materia_prima_id,
         codigo: row.codigo,
         nombre: row.mp_nombre,
@@ -695,10 +650,6 @@ app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
       return acc;
     }, {});
 
-    const count = Object.keys(recetasAgrupadas).length;
-    console.log(
-      `[DEBUG BACKEND] /recetas-semielaborados/all -> Envió ${count} recetas de semis.`
-    );
     res.json(recetasAgrupadas);
   } catch (err) {
     console.error("[ERROR BACKEND] /recetas-semielaborados/all:", err);
@@ -709,12 +660,13 @@ app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
 // ORDEN CORREGIDO: La ruta '/:id' DEBE IR DESPUÉS.
 app.get("/api/ingenieria/recetas-semielaborados/:id", async (req, res) => {
   try {
+    // CORRECCIÓN: Usar 'r.cantidad' aquí también
     const { rows } = await db.query(
-      `SELECT r.*, mp.codigo, mp.nombre, mp.stock_actual
+      `SELECT r.id, r.semielaborado_id, r.materia_prima_id, r.cantidad, mp.codigo, mp.nombre, mp.stock_actual
        FROM recetas_semielaborados r
        JOIN materias_primas mp ON r.materia_prima_id = mp.id
        WHERE r.semielaborado_id = $1`,
-      [req.params.id] // Aquí es donde antes recibía "all"
+      [req.params.id]
     );
     res.json(rows);
   } catch (err) {
@@ -828,13 +780,72 @@ app.get("/api/planificacion/:id/operarios", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     const { rows } = await db.query(
-      `SELECT o.nombre, SUM(r.cantidad) as total_producido
+      `SELECT o.nombre, SUM(r.cantidad_ok) as total_producido
        FROM registros_produccion r
        JOIN operarios o ON r.operario_id = o.id
        JOIN planes_items pi ON r.plan_item_id = pi.id
        WHERE pi.plan_id = $1
        GROUP BY o.nombre
        ORDER BY total_producido DESC`,
+      [id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 2c. OBTENER HISTORIAL DE PRODUCCIÓN DETALLADO DE UN PLAN (NUEVO)
+app.get("/api/planificacion/:id/historial", async (req, res) => {
+  const { id } = req.params;
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      `SELECT 
+         rp.id,
+         s.nombre as semielaborado,
+         o.nombre as operario,
+         rp.cantidad_ok as cantidad,
+         rp.cantidad_scrap as scrap,  
+         rp.motivo_scrap as motivo,   
+         rp.fecha_produccion
+       FROM registros_produccion rp
+       JOIN planes_items pi ON rp.plan_item_id = pi.id
+       JOIN semielaborados s ON rp.semielaborado_id = s.id
+       JOIN operarios o ON rp.operario_id = o.id
+       WHERE pi.plan_id = $1
+       ORDER BY rp.fecha_produccion DESC`,
+      [id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});
+
+// 2c. NUEVO ENDPOINT: OBTENER REGISTROS DE PRODUCCIÓN DETALLADOS POR PLAN
+app.get("/api/planificacion/:id/producciones", async (req, res) => {
+  const { id } = req.params;
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    const { rows } = await db.query(
+      `SELECT 
+         rp.id, 
+         rp.cantidad_ok, 
+         rp.cantidad_scrap, 
+         rp.motivo_scrap, 
+         rp.turno,
+         TO_CHAR(rp.fecha_produccion AT TIME ZONE 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI') as fecha_hora,
+         o.nombre as operario_nombre,
+         s.nombre as semielaborado_nombre
+       FROM registros_produccion rp
+       JOIN operarios o ON rp.operario_id = o.id
+       JOIN planes_items pi ON rp.plan_item_id = pi.id
+       JOIN semielaborados s ON pi.semielaborado_id = s.id
+       WHERE pi.plan_id = $1
+       ORDER BY rp.fecha_produccion DESC`,
       [id]
     );
     res.json(rows);
@@ -947,21 +958,33 @@ app.delete("/api/planificacion/:id", async (req, res) => {
   }
 });
 
-// 7. REGISTRAR PRODUCCIÓN (Carga Rápida) - MODIFICADA
+// 7. REGISTRAR PRODUCCIÓN (Carga Rápida) - MODIFICADA PARA FALLAS Y TURNO
 app.post("/api/produccion/registrar-a-plan", async (req, res) => {
-  // AHORA ACEPTA operario_id
-  const { plan_id, semielaborado_id, cantidad, operario_id } = req.body;
+  const {
+    plan_id,
+    semielaborado_id,
+    cantidad_ok,
+    cantidad_scrap,
+    operario_id,
+    motivo_scrap = "", // Puede ser vacío si scrap es 0
+    turno,
+    fecha_produccion, // Viene como string "YYYY-MM-DD"
+  } = req.body;
 
-  if (
-    !plan_id ||
-    !semielaborado_id ||
-    !cantidad ||
-    cantidad <= 0 ||
-    !operario_id
-  ) {
-    return res
-      .status(400)
-      .json({ msg: "Faltan datos (plan, semielaborado, cantidad u operario)" });
+  if (!plan_id || !semielaborado_id || !operario_id || !turno) {
+    return res.status(400).json({
+      msg: "Faltan datos obligatorios (plan, semielaborado, operario o turno)",
+    });
+  }
+
+  const ok = Number(cantidad_ok) || 0;
+  const scrap = Number(cantidad_scrap) || 0;
+  const total_producido = ok + scrap;
+
+  if (total_producido <= 0) {
+    return res.status(400).json({
+      msg: "La cantidad total producida (OK + Fallas) debe ser mayor a 0.",
+    });
   }
 
   const client = await db.connect();
@@ -984,21 +1007,33 @@ app.post("/api/produccion/registrar-a-plan", async (req, res) => {
 
     const plan_item_id = itemRes.rows[0].id;
     const plan_nombre = itemRes.rows[0].plan_nombre;
+    const prodDate = fecha_produccion
+      ? `${fecha_produccion} 12:00:00`
+      : "NOW()"; // Usamos 12:00:00 para evitar problemas de timezone con sólo la fecha
 
-    // --- PASO 2: Actualizar el progreso en planes_items ---
+    // --- PASO 2: Actualizar el progreso en planes_items (SOLO con la cantidad OK) ---
     const updateRes = await client.query(
       `UPDATE planes_items 
         SET cantidad_producida = cantidad_producida + $1 
         WHERE id = $2
         RETURNING cantidad_producida`,
-      [cantidad, plan_item_id]
+      [ok, plan_item_id] // SOLO SUMAMOS CANTIDAD OK
     );
 
-    // --- PASO 3: Insertar el registro granular en registros_produccion ---
+    // --- PASO 3: Insertar el registro granular (CON TODOS LOS DETALLES) ---
     await client.query(
-      `INSERT INTO registros_produccion (plan_item_id, semielaborado_id, operario_id, cantidad)
-       VALUES ($1, $2, $3, $4)`,
-      [plan_item_id, semielaborado_id, operario_id, cantidad]
+      `INSERT INTO registros_produccion (plan_item_id, semielaborado_id, operario_id, cantidad_ok, cantidad_scrap, motivo_scrap, turno, fecha_produccion)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        plan_item_id,
+        semielaborado_id,
+        operario_id,
+        ok,
+        scrap,
+        motivo_scrap,
+        turno,
+        prodDate,
+      ]
     );
 
     // Si todo salió bien, confirmamos la transacción
@@ -1006,7 +1041,7 @@ app.post("/api/produccion/registrar-a-plan", async (req, res) => {
 
     res.json({
       success: true,
-      msg: `Producción registrada en el plan '${plan_nombre}'.`,
+      msg: `Producción registrada en el plan '${plan_nombre}'. (OK: ${ok}, Fallas: ${scrap})`,
       nuevo_total: updateRes.rows[0].cantidad_producida,
     });
   } catch (err) {

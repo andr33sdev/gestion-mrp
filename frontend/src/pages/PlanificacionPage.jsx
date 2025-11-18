@@ -1,12 +1,16 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useReactToPrint } from "react-to-print";
+import { PlanPdf } from "../components/planificacion/PlanPdf"; // asegúrate del import correcto
 import { API_BASE_URL } from "../utils.js";
+
+// Componentes existentes
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 import PlanCard from "../components/planificacion/PlanCard";
 import PlanItemCard from "../components/planificacion/PlanItemCard";
-// --- MODIFICACIÓN 1: Importar el nuevo Modal ---
-import PlanStats from "../components/planificacion/PlanStats"; // Importamos el modal
+import PlanStats from "../components/planificacion/PlanStats";
 import TabButton from "../components/planificacion/TabButton";
+
 import {
   FaClipboardList,
   FaPlus,
@@ -19,31 +23,40 @@ import {
   FaChartPie,
   FaFileInvoice,
   FaShoppingCart,
+  FaPrint,
+  FaIndustry, // Nuevo icono para producción
 } from "react-icons/fa";
 
-// --- PÁGINA PRINCIPAL DE PLANIFICACIÓN ---
 export default function PlanificacionPage() {
-  // === ESTADOS MAESTROS (Datos de la BD) ===
+  // === ESTADOS MAESTROS ===
   const [allSemis, setAllSemis] = useState([]);
   const [allMPs, setAllMPs] = useState([]);
   const [recetasMap, setRecetasMap] = useState({});
   const [masterPlanList, setMasterPlanList] = useState([]);
 
-  // === ESTADOS DE DETALLE (El plan activo) ===
+  // === ESTADOS DE DETALLE ===
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [currentPlanNombre, setCurrentPlanNombre] = useState("Nuevo Plan");
   const [currentPlanItems, setCurrentPlanItems] = useState([]);
   const [currentPlanEstado, setCurrentPlanEstado] = useState("ABIERTO");
-  const [currentPlanOperarios, setCurrentPlanOperarios] = useState([]); // (Esto ya lo teníamos)
+  const [currentPlanOperarios, setCurrentPlanOperarios] = useState([]);
+  const [historialProduccion, setHistorialProduccion] = useState([]); // <--- NUEVO ESTADO
 
   // === ESTADOS DE UI ===
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("items");
-  // --- MODIFICACIÓN 2: Nuevo estado para controlar el modal ---
   const [showStatsModal, setShowStatsModal] = useState(false);
 
-  // --- LÓGICA DE DATOS (Sin cambios) ---
+  // === REFERENCIAS PARA IMPRESIÓN ===
+  const componentRef = useRef(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => componentRef.current, // <--- ESTA ES LA CLAVE
+    documentTitle: `Plan_${currentPlanNombre.replace(/\s+/g, "_")}`,
+  });
+
+  // --- LÓGICA DE DATOS ---
   useEffect(() => {
     const cargarDatosMaestros = async () => {
       try {
@@ -72,12 +85,15 @@ export default function PlanificacionPage() {
     setLoading(true);
     setSelectedPlanId(planId);
     setActiveTab("items");
-    setCurrentPlanOperarios([]); // Limpiar estado anterior
+    setCurrentPlanOperarios([]);
+    setHistorialProduccion([]); // Limpiar historial
+
     try {
-      // Usamos Promise.all para cargar ambas cosas a la vez
-      const [resPlan, resOperarios] = await Promise.all([
+      // Cargamos Plan, Operarios y Historial a la vez
+      const [resPlan, resOperarios, resHistorial] = await Promise.all([
         fetch(`${API_BASE_URL}/planificacion/${planId}`),
-        fetch(`${API_BASE_URL}/planificacion/${planId}/operarios`), // <-- Petición de operarios
+        fetch(`${API_BASE_URL}/planificacion/${planId}/operarios`),
+        fetch(`${API_BASE_URL}/planificacion/${planId}/historial`), // <--- NUEVA LLAMADA
       ]);
 
       if (!resPlan.ok) throw new Error("No se pudo cargar el plan");
@@ -86,9 +102,11 @@ export default function PlanificacionPage() {
       setCurrentPlanItems(planDetalle.items);
       setCurrentPlanEstado(planDetalle.estado);
 
-      // Guardamos los datos de los operarios si la petición fue exitosa
       if (resOperarios.ok) {
         setCurrentPlanOperarios(await resOperarios.json());
+      }
+      if (resHistorial.ok) {
+        setHistorialProduccion(await resHistorial.json());
       }
     } catch (err) {
       console.error(err);
@@ -106,7 +124,8 @@ export default function PlanificacionPage() {
     );
     setCurrentPlanItems([]);
     setCurrentPlanEstado("ABIERTO");
-    setCurrentPlanOperarios([]); // <-- Limpiamos operarios
+    setCurrentPlanOperarios([]);
+    setHistorialProduccion([]);
     setActiveTab("items");
   };
 
@@ -117,12 +136,7 @@ export default function PlanificacionPage() {
     if (cantidad && cantidad > 0) {
       setCurrentPlanItems((prev) => [
         ...prev,
-        {
-          semielaborado,
-          cantidad,
-          producido: 0,
-          plan_item_id: null,
-        },
+        { semielaborado, cantidad, producido: 0, plan_item_id: null },
       ]);
     }
   };
@@ -213,7 +227,7 @@ export default function PlanificacionPage() {
 
   const handleDeletePlan = async () => {
     if (selectedPlanId === "NEW") {
-      setSelectedPlanId(null); // Simplemente des-selecciona
+      setSelectedPlanId(null);
       return;
     }
     if (
@@ -225,9 +239,7 @@ export default function PlanificacionPage() {
       try {
         const res = await fetch(
           `${API_BASE_URL}/planificacion/${selectedPlanId}`,
-          {
-            method: "DELETE",
-          }
+          { method: "DELETE" }
         );
         if (!res.ok) throw new Error("No se pudo eliminar el plan");
         alert("Plan eliminado.");
@@ -277,24 +289,18 @@ export default function PlanificacionPage() {
       .filter(Boolean)
       .sort((a, b) => a.balance - b.balance);
   }, [currentPlanItems, recetasMap, allMPs]);
-  // --- FIN LÓGICA DE DATOS ---
 
   const isPlanCerrado = currentPlanEstado === "CERRADO";
   const isPlanNuevo = selectedPlanId === "NEW";
 
-  // --- RENDERIZADO ---
   return (
-    // --- MODIFICACIÓN 3: Envolvemos todo en un <> para poner el modal al mismo nivel ---
     <>
       <motion.div
         layout
         className="animate-in fade-in duration-500 flex flex-col h-[calc(100vh-140px)] min-h-[700px] gap-6"
       >
-        {/* --- SECCIÓN 1: KARDEX DE PLANES (ARRIBA) --- */}
-        <motion.div
-          layout
-          className="bg-slate-800 rounded-xl flex flex-col border border-slate-700 shadow-lg overflow-hidden"
-        >
+        {/* --- SECCIÓN 1: KARDEX DE PLANES --- */}
+        <motion.div className="bg-slate-800 rounded-xl flex flex-col border border-slate-700 shadow-lg overflow-hidden">
           <div className="p-4 bg-slate-800/50 border-b border-slate-700 z-10 flex justify-between items-center">
             <h2 className="text-xl font-bold text-white flex items-center gap-3">
               <FaClipboardList className="text-blue-400" /> Planes de Producción
@@ -335,7 +341,7 @@ export default function PlanificacionPage() {
           </div>
         </motion.div>
 
-        {/* --- SECCIÓN 2: DETALLE DEL PLAN (ABAJO) --- */}
+        {/* --- SECCIÓN 2: DETALLE DEL PLAN --- */}
         <AnimatePresence>
           {!selectedPlanId ? (
             <motion.div
@@ -355,7 +361,7 @@ export default function PlanificacionPage() {
               transition={{ duration: 0.3 }}
               className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg flex flex-col overflow-hidden"
             >
-              {/* Toolbar del Plan Activo */}
+              {/* Toolbar */}
               <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row justify-between items-center gap-3">
                 <input
                   type="text"
@@ -366,13 +372,31 @@ export default function PlanificacionPage() {
                 />
                 <div className="flex gap-2 flex-wrap justify-end">
                   <button
+                    onClick={() => {
+                      if (!selectedPlanId || isPlanNuevo) {
+                        alert("No hay plan listo para imprimir");
+                        return;
+                      }
+                      if (!componentRef.current) {
+                        alert("El contenido para imprimir no está disponible. Esperá y volvé a intentar.");
+                        console.warn("[PRINT] componentRef vacío:", componentRef.current);
+                        return;
+                      }
+                      handlePrint();
+                    }}
+                    disabled={!selectedPlanId || isPlanNuevo}
+                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white transition-all disabled:opacity-50"
+                  >
+                    <FaPrint /> PDF
+                  </button>
+                  <button
                     onClick={handleToggleEstado}
                     disabled={isSaving || isPlanNuevo}
                     className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${
                       isPlanCerrado
-                        ? "bg-gray-600 hover:bg-gray-500 text-white"
-                        : "bg-green-600 hover:bg-green-500 text-white"
-                    } disabled:opacity-50`}
+                        ? "bg-gray-600 hover:bg-gray-500"
+                        : "bg-green-600 hover:bg-green-500"
+                    } text-white disabled:opacity-50`}
                   >
                     {isPlanCerrado ? <FaLock /> : <FaLockOpen />}{" "}
                     {isPlanCerrado ? "Cerrado" : "Abierto"}
@@ -399,7 +423,7 @@ export default function PlanificacionPage() {
                 </div>
               </div>
 
-              {/* Contenedor de Pestañas */}
+              {/* Tabs */}
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex border-b border-slate-700 bg-slate-800/50">
                   <TabButton
@@ -408,12 +432,12 @@ export default function PlanificacionPage() {
                     active={activeTab === "items"}
                     onClick={() => setActiveTab("items")}
                   />
-                  {/* --- MODIFICACIÓN 4: El botón de Stats ahora abre el modal --- */}
+                  {/* PESTAÑA PRODUCCIÓN RECUPERADA */}
                   <TabButton
-                    icon={<FaChartPie />}
-                    label="Estadísticas"
-                    active={showStatsModal} // Se resalta si el modal está abierto
-                    onClick={() => setShowStatsModal(true)} // <-- Abre el modal
+                    icon={<FaIndustry />}
+                    label="Producción"
+                    active={activeTab === "produccion"}
+                    onClick={() => setActiveTab("produccion")}
                   />
                   <TabButton
                     icon={<FaFileInvoice />}
@@ -421,12 +445,18 @@ export default function PlanificacionPage() {
                     active={activeTab === "mrp"}
                     onClick={() => setActiveTab("mrp")}
                   />
+                  <TabButton
+                    icon={<FaChartPie />}
+                    label="Estadísticas"
+                    active={showStatsModal}
+                    onClick={() => setShowStatsModal(true)}
+                  />
                 </div>
 
-                {/* Contenido de Pestañas (con scroll) */}
+                {/* Contenido de Tabs */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
                   <AnimatePresence mode="wait">
-                    {/* Pestaña 1: Items del Plan */}
+                    {/* TAB 1: Items */}
                     {activeTab === "items" && (
                       <motion.div
                         key="items"
@@ -441,32 +471,167 @@ export default function PlanificacionPage() {
                           disabled={isPlanCerrado || isSaving}
                         />
                         <div className="mt-6">
-                          <AnimatePresence>
-                            {currentPlanItems.length === 0 ? (
-                              <p className="text-gray-500 text-center py-4">
-                                Agrega semielaborados al plan.
-                              </p>
-                            ) : (
-                              <ul className="space-y-3">
-                                {currentPlanItems.map((item, index) => (
-                                  <PlanItemCard
-                                    key={item.semielaborado.id + index} // Clave más robusta
-                                    item={item}
-                                    onRemove={() => handleRemoveItem(index)}
-                                    isPlanCerrado={isPlanCerrado}
-                                  />
-                                ))}
-                              </ul>
-                            )}
-                          </AnimatePresence>
+                          <ul className="space-y-3">
+                            {currentPlanItems.map((item, index) => (
+                              <PlanItemCard
+                                key={item.semielaborado.id + "_" + index}
+                                item={item}
+                                onRemove={() => handleRemoveItem(index)}
+                                isPlanCerrado={isPlanCerrado}
+                              />
+                            ))}
+                          </ul>
                         </div>
                       </motion.div>
                     )}
 
-                    {/* Pestaña 2: Estadísticas --- LA HEMOS QUITADO --- */}
-                    {/* (El div de activeTab === "stats" se elimina) */}
+                    {/* TAB 2: PRODUCCIÓN (RECUPERADA) */}
+                    {activeTab === "produccion" && (
+                      <motion.div
+                        key="produccion"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        className="space-y-4"
+                      >
+                        <div className="flex items-center justify-between px-1">
+                          <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                            <FaIndustry className="text-blue-400" /> Historial
+                            de Producción
+                          </h3>
+                          <span className="text-xs text-gray-500 font-medium px-2 py-1 bg-slate-800 rounded border border-slate-700">
+                            {historialProduccion.length} registros
+                          </span>
+                        </div>
 
-                    {/* Pestaña 3: Explosión (MRP) */}
+                        <div className="overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-xl shadow-xl backdrop-blur-sm">
+                          <table className="w-full text-sm text-left border-collapse">
+                            <thead className="text-xs text-gray-400 uppercase bg-slate-900/50 tracking-wider font-semibold">
+                              <tr>
+                                <th className="px-6 py-4 font-medium">
+                                  Fecha / Hora
+                                </th>
+                                <th className="px-6 py-4 font-medium">
+                                  Operario
+                                </th>
+                                <th className="px-6 py-4 font-medium">
+                                  Producto
+                                </th>
+                                <th className="px-6 py-4 text-center font-medium text-emerald-400">
+                                  OK
+                                </th>
+                                <th className="px-6 py-4 text-center font-medium text-rose-400">
+                                  Scrap
+                                </th>
+                                <th className="px-6 py-4 font-medium">
+                                  Observaciones
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700/50">
+                              {historialProduccion.length === 0 ? (
+                                <tr>
+                                  <td
+                                    colSpan="6"
+                                    className="p-12 text-center text-gray-500 flex flex-col items-center justify-center gap-2"
+                                  >
+                                    <FaIndustry className="text-4xl opacity-20 mb-2" />
+                                    <span className="text-lg font-medium">
+                                      Sin actividad registrada
+                                    </span>
+                                    <span className="text-sm opacity-70">
+                                      Aún no se ha cargado producción para este
+                                      plan.
+                                    </span>
+                                  </td>
+                                </tr>
+                              ) : (
+                                historialProduccion.map((reg) => (
+                                  <tr
+                                    key={reg.id}
+                                    className="group hover:bg-white/5 transition-colors duration-200"
+                                  >
+                                    {/* FECHA */}
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="flex flex-col">
+                                        <span className="text-white font-medium">
+                                          {new Date(
+                                            reg.fecha_produccion
+                                          ).toLocaleDateString("es-AR")}
+                                        </span>
+                                        <span className="text-xs text-slate-500 font-mono">
+                                          {new Date(
+                                            reg.fecha_produccion
+                                          ).toLocaleTimeString("es-AR", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
+                                        </span>
+                                      </div>
+                                    </td>
+
+                                    {/* OPERARIO */}
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-300 group-hover:text-white transition-colors">
+                                          {reg.operario}
+                                        </span>
+                                      </div>
+                                    </td>
+
+                                    {/* PRODUCTO */}
+                                    <td className="px-6 py-4">
+                                      <span
+                                        className="text-blue-300 font-medium block truncate max-w-[200px]"
+                                        title={reg.semielaborado}
+                                      >
+                                        {reg.semielaborado}
+                                      </span>
+                                    </td>
+
+                                    {/* CANTIDAD OK (BADGE VERDE) */}
+                                    <td className="px-6 py-4 text-center whitespace-nowrap">
+                                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold shadow-sm min-w-[50px]">
+                                        {reg.cantidad}
+                                      </span>
+                                    </td>
+
+                                    {/* CANTIDAD SCRAP (BADGE ROJO O GRIS) */}
+                                    <td className="px-6 py-4 text-center whitespace-nowrap">
+                                      {Number(reg.scrap) > 0 ? (
+                                        <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold shadow-sm min-w-[40px] animate-pulse">
+                                          {reg.scrap}
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-600">-</span>
+                                      )}
+                                    </td>
+
+                                    {/* MOTIVO */}
+                                    <td className="px-6 py-4">
+                                      {Number(reg.scrap) > 0 ? (
+                                        <div className="flex items-center gap-1 text-rose-300 text-xs bg-rose-900/20 px-2 py-1 rounded border border-rose-900/30 w-fit">
+                                          <span className="font-semibold">
+                                            Falla:
+                                          </span>{" "}
+                                          {reg.motivo}
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs text-gray-600 italic">
+                                          Sin novedades
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* TAB 3: MRP */}
                     {activeTab === "mrp" && (
                       <motion.div
                         key="mrp"
@@ -476,8 +641,7 @@ export default function PlanificacionPage() {
                       >
                         <h3 className="text-gray-300 font-bold text-sm mb-4">
                           Materiales necesarios para completar lo{" "}
-                          <span className="text-yellow-400">PENDIENTE</span> del
-                          plan:
+                          <span className="text-yellow-400">PENDIENTE</span>:
                         </h3>
                         <div className="overflow-hidden border border-slate-700 rounded-lg">
                           <table className="w-full text-sm text-left">
@@ -488,59 +652,45 @@ export default function PlanificacionPage() {
                                   Necesario
                                 </th>
                                 <th className="px-4 py-3 text-right">Stock</th>
-                                <th className="px-4 py-3 text-right">Balance</th>
+                                <th className="px-4 py-3 text-right">
+                                  Balance
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-700">
-                              {explosion.length === 0 ? (
-                                <tr>
+                              {explosion.map((mp) => (
+                                <tr
+                                  key={mp.id}
+                                  className="hover:bg-slate-700/50"
+                                >
+                                  <td className="px-4 py-3">
+                                    <p className="font-medium text-white">
+                                      {mp.nombre}
+                                    </p>
+                                    <p className="text-xs text-gray-400 font-mono">
+                                      {mp.codigo}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-mono text-yellow-300">
+                                    {mp.necesario}
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-mono text-blue-300">
+                                    {mp.stock}
+                                  </td>
                                   <td
-                                    colSpan="4"
-                                    className="p-8 text-center text-gray-500"
+                                    className={`px-4 py-3 text-right font-mono font-bold ${
+                                      mp.balance < 0
+                                        ? "text-red-400"
+                                        : "text-green-400"
+                                    }`}
                                   >
-                                    {currentPlanItems.length > 0
-                                      ? "¡Plan completado o sin recetas!"
-                                      : "El plan está vacío."}
+                                    {mp.balance}
+                                    {mp.balance < 0 && (
+                                      <FaShoppingCart className="inline ml-2 text-red-500" />
+                                    )}
                                   </td>
                                 </tr>
-                              ) : (
-                                explosion.map((mp) => (
-                                  <tr
-                                    key={mp.id}
-                                    className="hover:bg-slate-700/50"
-                                  >
-                                    <td className="px-4 py-3">
-                                      <p className="font-medium text-white">
-                                        {mp.nombre}
-                                      </p>
-                                      <p className="text-xs text-gray-400 font-mono">
-                                        {mp.codigo}
-                                      </p>
-                                    </td>
-                                    <td className="px-4 py-3 text-right font-mono text-yellow-300">
-                                      {mp.necesario}
-                                    </td>
-                                    <td className="px-4 py-3 text-right font-mono text-blue-300">
-                                      {mp.stock}
-                                    </td>
-                                    <td
-                                      className={`px-4 py-3 text-right font-mono font-bold ${
-                                        mp.balance < 0
-                                          ? "text-red-400"
-                                          : "text-green-400"
-                                      }`}
-                                    >
-                                      {mp.balance}
-                                      {mp.balance < 0 && (
-                                        <FaShoppingCart
-                                          title="Necesita compra"
-                                          className="inline ml-2 text-red-500"
-                                        />
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
+                              ))}
                             </tbody>
                           </table>
                         </div>
@@ -554,7 +704,6 @@ export default function PlanificacionPage() {
         </AnimatePresence>
       </motion.div>
 
-      {/* --- MODIFICACIÓN 5: Renderizado condicional del Modal --- */}
       <AnimatePresence>
         {showStatsModal && (
           <PlanStats
@@ -564,6 +713,24 @@ export default function PlanificacionPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* COMPONENTE OCULTO CORRECTAMENTE (Ahora con position absolute y coordenadas negativas) */}
+      <div
+        style={{
+          position: "absolute",
+          left: "-9999px",
+          top: 0,
+          width: "210mm",
+          background: "#fff",
+        }}
+      >
+        <PlanPdf
+          ref={componentRef}
+          plan={{ nombre: currentPlanNombre }}
+          items={currentPlanItems}
+          explosion={explosion}
+        />
+      </div>
     </>
   );
 }

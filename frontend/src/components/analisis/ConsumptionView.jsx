@@ -555,7 +555,7 @@ export default function ConsumptionView({ analysisData }) {
             className="group relative px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/30 transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-3 border border-white/10"
           >
             <FaLightbulb className="text-yellow-300 text-lg animate-pulse" />
-            <span>Sugerencias IA</span>
+            <span>Sugerencias</span>
             {suggestedItems.length > 0 && (
               <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full border-2 border-gray-900 shadow-sm">
                 {suggestedItems.length}

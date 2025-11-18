@@ -1,3 +1,4 @@
+// frontend/src/pages/RegistrarProduccionPage.jsx
 import { useEffect, useState } from "react";
 import {
   FaPlusCircle,
@@ -7,7 +8,11 @@ import {
   FaBox,
   FaChevronDown,
   FaUser,
-} from "react-icons/fa"; // <-- FaUser AÑADIDO
+  FaCheckCircle,
+  FaCalendarAlt, // Icono para fecha
+  FaExchangeAlt, // Icono para turno
+  FaTimesCircle, // Icono para fallas
+} from "react-icons/fa";
 import { motion } from "framer-motion";
 import { API_BASE_URL } from "../utils.js";
 
@@ -22,7 +27,6 @@ function AutoCompleteInput({
   const [value, setValue] = useState(initialValue);
   const [sugerencias, setSugerencias] = useState([]);
 
-  // Sincronizar si el valor inicial se limpia desde fuera
   useEffect(() => {
     setValue(initialValue);
   }, [initialValue]);
@@ -46,9 +50,9 @@ function AutoCompleteInput({
   };
 
   const handleSelect = (semi) => {
-    setValue(semi.nombre); // Dejamos el nombre puesto
+    setValue(semi.nombre);
     setSugerencias([]);
-    onSelect(semi); // Pasamos el objeto completo
+    onSelect(semi);
   };
 
   return (
@@ -74,7 +78,7 @@ function AutoCompleteInput({
           {sugerencias.map((s) => (
             <div
               key={s.id}
-              onMouseDown={() => handleSelect(s)} // Usar onMouseDown para que se dispare antes que el onBlur
+              onMouseDown={() => handleSelect(s)}
               className="p-3 hover:bg-slate-600 cursor-pointer border-b border-slate-600 last:border-b-0"
             >
               <p className="font-bold text-sm text-white">{s.nombre}</p>
@@ -92,21 +96,38 @@ export default function RegistrarProduccionPage() {
   // Datos maestros
   const [allSemis, setAllSemis] = useState([]);
   const [openPlans, setOpenPlans] = useState([]);
-  const [operarios, setOperarios] = useState([]); // <-- NUEVO
+  const [operarios, setOperarios] = useState([]);
+  const motivosFalla = [
+    "Pieza quemada",
+    "Pieza cruda",
+    "Material erróneo",
+    "Materia prima defectuosa",
+    "Matriz fría",
+    "Sin respiradero",
+    "Sin silicona",
+    "Otros",
+  ];
 
   // Estado del formulario
-  const [selectedOperarioId, setSelectedOperarioId] = useState(""); // <-- NUEVO
+  const [selectedOperarioId, setSelectedOperarioId] = useState("");
   const [selectedSemi, setSelectedSemi] = useState(null);
   const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [cantidad, setCantidad] = useState(1);
-  const [autoCompleteKey, setAutoCompleteKey] = useState(Date.now()); // Para forzar reseteo
+  const [cantidadOk, setCantidadOk] = useState(0); // <-- OK
+  const [cantidadScrap, setCantidadScrap] = useState(0); // <-- FALLAS
+  const [motivoScrap, setMotivoScrap] = useState(motivosFalla[0]); // <-- MOTIVO
+  const [fechaProduccion, setFechaProduccion] = useState(
+    new Date().toISOString().split("T")[0]
+  ); // <-- FECHA
+  const [turno, setTurno] = useState("Diurno"); // <-- TURNO
+
+  const [autoCompleteKey, setAutoCompleteKey] = useState(Date.now());
 
   // Estado de UI
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", msg: "" });
 
-  // Carga inicial de datos (semielaborados, planes abiertos y OPERARIOS)
+  // Carga inicial de datos
   useEffect(() => {
     const cargarDatos = async () => {
       try {
@@ -114,11 +135,11 @@ export default function RegistrarProduccionPage() {
         const [resSemis, resPlanes, resOperarios] = await Promise.all([
           fetch(`${API_BASE_URL}/ingenieria/semielaborados`),
           fetch(`${API_BASE_URL}/planificacion/abiertos`),
-          fetch(`${API_BASE_URL}/operarios`), // <-- NUEVO
+          fetch(`${API_BASE_URL}/operarios`),
         ]);
         setAllSemis(await resSemis.json());
         setOpenPlans(await resPlanes.json());
-        setOperarios(await resOperarios.json()); // <-- NUEVO
+        setOperarios(await resOperarios.json());
       } catch (err) {
         setFeedback({ type: "error", msg: "Error al cargar datos. Recargue." });
       } finally {
@@ -131,18 +152,31 @@ export default function RegistrarProduccionPage() {
   const resetForm = () => {
     setSelectedSemi(null);
     setSelectedPlanId("");
-    setCantidad(1);
-    setAutoCompleteKey(Date.now()); // Resetea el AutoComplete
-    // NO reseteamos el operario, asumiendo que el mismo operario carga varias cosas
+    setCantidadOk(0);
+    setCantidadScrap(0);
+    setMotivoScrap(motivosFalla[0]);
+    setTurno("Diurno");
+    setFechaProduccion(new Date().toISOString().split("T")[0]);
+    setAutoCompleteKey(Date.now());
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFeedback({ type: "", msg: "" });
 
-    // --- VALIDACIÓN MODIFICADA ---
-    if (!selectedOperarioId || !selectedSemi || !selectedPlanId || !cantidad) {
-      setFeedback({ type: "error", msg: "Complete todos los campos." });
+    const totalProducido = Number(cantidadOk) + Number(cantidadScrap);
+
+    if (
+      !selectedOperarioId ||
+      !selectedSemi ||
+      !selectedPlanId ||
+      totalProducido <= 0 ||
+      !fechaProduccion
+    ) {
+      setFeedback({
+        type: "error",
+        msg: "Complete todos los campos obligatorios y asegure que la cantidad total sea > 0.",
+      });
       return;
     }
 
@@ -155,8 +189,12 @@ export default function RegistrarProduccionPage() {
         body: JSON.stringify({
           semielaborado_id: selectedSemi.id,
           plan_id: selectedPlanId,
-          cantidad: Number(cantidad),
-          operario_id: selectedOperarioId, // <-- NUEVO
+          cantidad_ok: Number(cantidadOk),
+          cantidad_scrap: Number(cantidadScrap),
+          operario_id: selectedOperarioId,
+          motivo_scrap: cantidadScrap > 0 ? motivoScrap : "",
+          turno: turno,
+          fecha_produccion: fechaProduccion,
         }),
       });
 
@@ -168,9 +206,9 @@ export default function RegistrarProduccionPage() {
 
       setFeedback({
         type: "success",
-        msg: `${data.msg} (Progreso: ${data.nuevo_total})`,
+        msg: `${data.msg} (Progreso OK: ${data.nuevo_total})`,
       });
-      resetForm(); // Limpia el formulario para la próxima carga
+      resetForm();
     } catch (err) {
       setFeedback({ type: "error", msg: err.message });
     } finally {
@@ -191,7 +229,7 @@ export default function RegistrarProduccionPage() {
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-3xl mx-auto"
+      className="max-w-4xl mx-auto"
     >
       <div className="flex items-center gap-4 mb-6">
         <FaPlusCircle className="text-4xl text-blue-400" />
@@ -200,7 +238,7 @@ export default function RegistrarProduccionPage() {
             Registrar Producción
           </h1>
           <p className="text-gray-400">
-            Carga la producción y asígnala a un plan de trabajo abierto.
+            Asigna las unidades producidas (OK y Fallas) a un plan y turno.
           </p>
         </div>
       </div>
@@ -209,40 +247,105 @@ export default function RegistrarProduccionPage() {
         onSubmit={handleSubmit}
         className="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 md:p-8 space-y-6"
       >
-        {/* --- PASO 1: QUIÉN ERES --- */}
-        <div>
-          <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-            <FaUser /> 1. Operario
-          </label>
-          <div className="relative">
-            <select
-              value={selectedOperarioId}
-              onChange={(e) => setSelectedOperarioId(e.target.value)}
-              disabled={isSaving || operarios.length === 0}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg appearance-none focus:outline-none focus:ring-2 focus:border-blue-500"
-            >
-              <option value="" disabled>
-                {operarios.length === 0
-                  ? "No hay operarios cargados"
-                  : "Selecciona tu nombre..."}
-              </option>
-              {operarios.map((op) => (
-                <option key={op.id} value={op.id}>
-                  {op.nombre}
+        {/* --- DATOS INICIALES --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 1. OPERARIO */}
+          <div>
+            <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+              <FaUser /> Operario
+            </label>
+            <div className="relative">
+              <select
+                value={selectedOperarioId}
+                onChange={(e) => setSelectedOperarioId(e.target.value)}
+                disabled={isSaving || operarios.length === 0}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg appearance-none focus:outline-none focus:ring-2 focus:border-blue-500"
+              >
+                <option value="" disabled>
+                  {operarios.length === 0
+                    ? "No hay operarios cargados"
+                    : "Selecciona tu nombre..."}
                 </option>
-              ))}
-            </select>
-            <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                {operarios.map((op) => (
+                  <option key={op.id} value={op.id}>
+                    {op.nombre}
+                  </option>
+                ))}
+              </select>
+              <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* 2. PLAN */}
+          <div>
+            <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+              <FaClipboardList /> Asignar al Plan
+            </label>
+            <div className="relative">
+              <select
+                value={selectedPlanId}
+                onChange={(e) => setSelectedPlanId(e.target.value)}
+                disabled={isSaving || openPlans.length === 0}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg appearance-none focus:outline-none focus:ring-2 focus:border-blue-500"
+              >
+                <option value="" disabled>
+                  {openPlans.length === 0
+                    ? "No hay planes abiertos"
+                    : "Selecciona un plan..."}
+                </option>
+                {openPlans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.nombre}
+                  </option>
+                ))}
+              </select>
+              <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            </div>
           </div>
         </div>
 
-        {/* --- PASO 2: QUÉ PRODUJISTE --- */}
+        {/* --- DATOS DE FECHA Y TURNO --- */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 3. FECHA */}
+          <div>
+            <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+              <FaCalendarAlt /> Fecha de Producción
+            </label>
+            <input
+              type="date"
+              value={fechaProduccion}
+              onChange={(e) => setFechaProduccion(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:border-blue-500"
+              disabled={isSaving}
+            />
+          </div>
+          {/* 4. TURNO */}
+          <div>
+            <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
+              <FaExchangeAlt /> Turno
+            </label>
+            <div className="relative">
+              <select
+                value={turno}
+                onChange={(e) => setTurno(e.target.value)}
+                disabled={isSaving}
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg appearance-none focus:outline-none focus:ring-2 focus:border-blue-500"
+              >
+                <option value="Diurno">Diurno</option>
+                <option value="Nocturno">Nocturno</option>
+              </select>
+              <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+
+        {/* --- PRODUCTO Y CANTIDADES --- */}
         <div>
           <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-            <FaBox /> 2. Semielaborado Producido
+            <FaBox /> Semielaborado Producido
           </label>
           <AutoCompleteInput
-            key={autoCompleteKey} // Para forzar reseteo
+            key={autoCompleteKey}
             items={allSemis}
             onSelect={setSelectedSemi}
             placeholder="Busca el producto por nombre o código..."
@@ -251,50 +354,67 @@ export default function RegistrarProduccionPage() {
           />
         </div>
 
-        {/* --- PASO 3: QUÉ PLAN AFECTA --- */}
-        <div>
-          <label className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2">
-            <FaClipboardList /> 3. Asignar al Plan
-          </label>
-          <div className="relative">
-            <select
-              value={selectedPlanId}
-              onChange={(e) => setSelectedPlanId(e.target.value)}
-              disabled={isSaving || openPlans.length === 0}
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg appearance-none focus:outline-none focus:ring-2 focus:border-blue-500"
+        {/* --- CANTIDADES: OK Y FALLAS --- */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-1">
+            <label
+              htmlFor="ok"
+              className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2 text-green-400"
             >
-              <option value="" disabled>
-                {openPlans.length === 0
-                  ? "No hay planes abiertos"
-                  : "Selecciona un plan..."}
-              </option>
-              {openPlans.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.nombre}
-                </option>
-              ))}
-            </select>
-            <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+              <FaCheckCircle /> Cantidad OK
+            </label>
+            <input
+              id="ok"
+              type="number"
+              value={cantidadOk}
+              onChange={(e) => setCantidadOk(e.target.value)}
+              min="0"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:border-green-500"
+              disabled={isSaving}
+            />
           </div>
-        </div>
 
-        {/* --- PASO 4: CUÁNTO --- */}
-        <div>
-          <label
-            htmlFor="cantidad"
-            className="block text-sm font-bold text-gray-300 mb-2"
-          >
-            4. Cantidad
-          </label>
-          <input
-            id="cantidad"
-            type="number"
-            value={cantidad}
-            onChange={(e) => setCantidad(e.target.value)}
-            min="1"
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:border-blue-500"
-            disabled={isSaving}
-          />
+          <div className="md:col-span-2">
+            <label
+              htmlFor="scrap"
+              className="block text-sm font-bold text-gray-300 mb-2 flex items-center gap-2 text-red-400"
+            >
+              <FaTimesCircle /> Fallas / Scrap
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              {/* Input Fallas */}
+              <input
+                id="scrap"
+                type="number"
+                value={cantidadScrap}
+                onChange={(e) => setCantidadScrap(e.target.value)}
+                min="0"
+                className="col-span-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:border-red-500"
+                disabled={isSaving}
+              />
+              {/* Selector de Motivo */}
+              <div className="col-span-2 relative">
+                <select
+                  value={motivoScrap}
+                  onChange={(e) => setMotivoScrap(e.target.value)}
+                  disabled={isSaving || cantidadScrap === 0}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-lg appearance-none focus:outline-none focus:ring-2 focus:border-red-500 disabled:opacity-50"
+                >
+                  {motivosFalla.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+              </div>
+            </div>
+            {Number(cantidadScrap) > 0 && !motivoScrap && (
+              <p className="text-red-400 text-xs mt-1">
+                Seleccione un motivo para las fallas.
+              </p>
+            )}
+          </div>
         </div>
 
         {/* --- BOTÓN Y FEEDBACK --- */}
@@ -306,8 +426,8 @@ export default function RegistrarProduccionPage() {
               !selectedOperarioId ||
               !selectedSemi ||
               !selectedPlanId ||
-              cantidad <= 0
-            } // <-- VALIDACIÓN MODIFICADA
+              Number(cantidadOk) + Number(cantidadScrap) <= 0
+            }
             className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg text-lg flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
           >
             {isSaving ? (
