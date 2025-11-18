@@ -154,35 +154,53 @@ export default function IngenieriaProductos() {
   useEffect(() => {
     const cargarDatos = async () => {
       try {
+        console.log("🛠️ [Ingeniería] Iniciando carga de datos...");
+
         // A. Cargar Productos (Fusionando Excel + BD)
         const [resPedidos, resRecetas] = await Promise.all([
           fetch(`${PEDIDOS_API_URL}?t=${Date.now()}`),
           fetch(`${API_BASE_URL}/ingenieria/recetas/all`),
         ]);
+
         const dataPedidos = await resPedidos.json();
         const dataRecetas = await resRecetas.json();
+
+        // --- 🔍 AQUÍ ESTÁN LOS LOGS QUE PEDISTE ---
+        console.group("🔍 DEBUG INGENIERÍA: Datos Recibidos");
+        console.log("1️⃣ Pedidos (Excel):", dataPedidos);
+        console.log("2️⃣ Recetas (BD - Productos Terminados):", dataRecetas);
+        // ^^^ BUSCA AQUÍ TU RECETA NUEVA. ¿Tiene un array [] con items o está vacío?
+        console.groupEnd();
+        // -------------------------------------------
 
         const setNombres = new Set();
         dataPedidos.forEach((r) => {
           const nombre = r.MODELO || r.Modelo;
           if (nombre) setNombres.add(nombre.trim());
         });
+
+        // Añadimos también las claves de las recetas (para que no falten si no hay ventas)
         Object.keys(dataRecetas).forEach((nombre) => {
           if (nombre) setNombres.add(nombre.trim());
         });
+
         setProductos(Array.from(setNombres).sort());
 
         // B. Cargar Semielaborados
         const resSemis = await fetch(
           `${API_BASE_URL}/ingenieria/semielaborados`
         );
-        setSemielaborados(await resSemis.json());
+        const dataSemis = await resSemis.json();
+        console.log("3️⃣ Semielaborados Disponibles:", dataSemis); // Log extra para verificar IDs
+        setSemielaborados(dataSemis);
 
         // C. Cargar Materias Primas
         const resMP = await fetch(`${API_BASE_URL}/ingenieria/materias-primas`);
-        setMateriasPrimas(await resMP.json());
+        const dataMP = await resMP.json();
+        console.log("4️⃣ Materias Primas:", dataMP);
+        setMateriasPrimas(dataMP);
       } catch (error) {
-        console.error("Error cargando datos iniciales:", error);
+        console.error("❌ Error cargando datos iniciales:", error);
       }
     };
     cargarDatos();

@@ -503,6 +503,72 @@ app.post("/api/ingenieria/recetas", async (req, res) => {
   }
 });
 
+// --- RECETAS DE PRODUCTOS TERMINADOS (Nivel 1) ---
+app.get("/api/ingenieria/recetas/all", async (req, res) => {
+  const client = await db.connect();
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    console.log("⚡ [API] Solicitando recetas (Modo Tolerante)...");
+
+    // 1. Consulta con LEFT JOIN para traer todo, aunque el semielaborado no exista
+    const query = `
+      SELECT 
+        r.producto_terminado, 
+        r.cantidad, 
+        r.semielaborado_id, 
+        s.id as semi_existente_id, 
+        s.codigo, 
+        s.nombre
+      FROM recetas r
+      LEFT JOIN semielaborados s ON r.semielaborado_id = s.id
+      ORDER BY r.producto_terminado
+    `;
+
+    const { rows } = await client.query(query);
+
+    // 2. Agrupamiento SIN FILTROS (Si está roto, lo mostramos igual)
+    const recetasAgrupadas = {};
+    let alertas = 0;
+
+    rows.forEach((row) => {
+      const prod = row.producto_terminado;
+
+      // Inicializar array si es la primera vez que vemos este producto
+      if (!recetasAgrupadas[prod]) {
+        recetasAgrupadas[prod] = [];
+      }
+
+      // LÓGICA DE RESCATE: Si no hay nombre, inventamos uno para que se vea el error
+      const existeSemielaborado = !!row.semi_existente_id;
+      if (!existeSemielaborado) alertas++;
+
+      recetasAgrupadas[prod].push({
+        semielaborado_id: row.semielaborado_id,
+        // Si no hay código/nombre, ponemos un aviso visible
+        codigo: row.codigo || "ERROR",
+        nombre: row.nombre || `⚠️ ERROR: ID ${row.semielaborado_id} BORRADO`,
+        cantidad: Number(row.cantidad),
+        error: !existeSemielaborado, // Flag para el frontend (opcional)
+      });
+    });
+
+    console.log(
+      `📦 [API] Enviando ${Object.keys(recetasAgrupadas).length} productos.`
+    );
+    if (alertas > 0)
+      console.log(
+        `🚨 [API] Se enviaron ${alertas} ingredientes rotos para diagnóstico.`
+      );
+
+    res.json(recetasAgrupadas);
+  } catch (err) {
+    console.error("❌ [API] Error:", err);
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
 app.get("/api/ingenieria/recetas/:producto", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
@@ -516,38 +582,6 @@ app.get("/api/ingenieria/recetas/:producto", async (req, res) => {
       [req.params.producto]
     );
     res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send(err.message);
-  }
-});
-
-app.get("/api/ingenieria/recetas/all", async (req, res) => {
-  try {
-    res.setHeader("Cache-Control", "no-store");
-    const { rows: manualProds } = await db.query(
-      "SELECT nombre FROM productos_ingenieria"
-    );
-    const { rows: recipes } = await db.query(
-      `SELECT r.producto_terminado, r.cantidad, s.id as semielaborado_id, s.codigo, s.nombre
-       FROM recetas r
-       JOIN semielaborados s ON r.semielaborado_id = s.id`
-    );
-    const recetasAgrupadas = {};
-    manualProds.forEach((p) => {
-      recetasAgrupadas[p.nombre] = [];
-    });
-    recipes.forEach((row) => {
-      const prod = row.producto_terminado;
-      if (!recetasAgrupadas[prod]) recetasAgrupadas[prod] = [];
-      recetasAgrupadas[prod].push({
-        semielaborado_id: row.semielaborado_id,
-        codigo: row.codigo,
-        nombre: row.nombre,
-        cantidad: row.cantidad,
-      });
-    });
-    res.json(recetasAgrupadas);
   } catch (err) {
     console.error(err);
     res.status(500).send(err.message);
@@ -626,39 +660,48 @@ app.get("/api/ingenieria/materias-primas", async (req, res) => {
 // --- INICIO DE LA SECCIÓN CORREGIDA ---
 // =========================================================
 
-// ORDEN CORREGIDO: La ruta '/all' DEBE IR PRIMERO.
+// --- RECETAS DE SEMIELABORADOS (Nivel 2) ---
 app.get("/api/ingenieria/recetas-semielaborados/all", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
 
+    // CORRECCIÓN CLAVE: Hacemos JOIN con 'semielaborados' para obtener el NOMBRE (s.nombre)
+    // Usaremos 's.nombre' como la clave del objeto, no el ID.
     const { rows } = await db.query(`
             SELECT 
+                s.nombre as semi_nombre,
                 r.semielaborado_id, 
                 r.cantidad, 
                 mp.id as materia_prima_id, 
                 mp.codigo, 
-                mp.nombre
+                mp.nombre as mp_nombre
             FROM recetas_semielaborados r
             JOIN materias_primas mp ON r.materia_prima_id = mp.id
+            JOIN semielaborados s ON r.semielaborado_id = s.id
         `);
 
     const recetasAgrupadas = rows.reduce((acc, row) => {
-      const semi_id = row.semielaborado_id;
-      if (!acc[semi_id]) {
-        acc[semi_id] = [];
+      const nombreClave = row.semi_nombre; // ¡Usamos el NOMBRE como clave!
+
+      if (!acc[nombreClave]) {
+        acc[nombreClave] = [];
       }
-      acc[semi_id].push({
+      acc[nombreClave].push({
         materia_prima_id: row.materia_prima_id,
         codigo: row.codigo,
-        nombre: row.nombre,
+        nombre: row.mp_nombre,
         cantidad: Number(row.cantidad),
       });
       return acc;
     }, {});
 
+    const count = Object.keys(recetasAgrupadas).length;
+    console.log(
+      `[DEBUG BACKEND] /recetas-semielaborados/all -> Envió ${count} recetas de semis.`
+    );
     res.json(recetasAgrupadas);
   } catch (err) {
-    console.error(err);
+    console.error("[ERROR BACKEND] /recetas-semielaborados/all:", err);
     res.status(500).send(err.message);
   }
 });

@@ -4,8 +4,6 @@ import {
   FaChartLine,
   FaCogs,
   FaSignOutAlt,
-  FaLock,
-  FaKey,
   FaClipboardList,
   FaPlusCircle,
   FaUsersCog,
@@ -120,6 +118,26 @@ export default function App() {
   } else if (page === "/operarios") {
     component = isAuthGerencia ? (
       <OperariosPage />
+    ) : (
+      <LoginPage
+        onLoginSuccess={loginGerencia}
+        expectedPassword={PASS_GERENCIA}
+        title="Acceso Gerencia"
+      />
+    );
+  } else if (page === "/hoja-de-ruta") {
+    component = isAuthGerencia ? (
+      <RoutePlannerPage />
+    ) : (
+      <LoginPage
+        onLoginSuccess={loginGerencia}
+        expectedPassword={PASS_GERENCIA}
+        title="Acceso Gerencia"
+      />
+    );
+  } else if (page === "/pronostico") {
+    component = isAuthGerencia ? (
+      <PronosticoPage />
     ) : (
       <LoginPage
         onLoginSuccess={loginGerencia}

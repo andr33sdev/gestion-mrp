@@ -6,6 +6,9 @@ export const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 export const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
 export const PEDIDOS_API_URL = `${API_BASE_URL}/pedidos-analisis`;
 
+// Asegúrate de que estas rutas estén bien:
+export const SUGERENCIAS_PLAN_URL = `${API_BASE_URL}/planificacion/sugerencias-produccion`;
+
 export const POLLING_INTERVAL = 10000;
 export const HORAS_TIMEOUT_ENFRIADO = 2;
 export const MAX_HORAS_CICLO_PROMEDIO = 4;
@@ -26,7 +29,6 @@ export function formatDuration(ms) {
     .toString()
     .padStart(2, "0")}`;
 }
-
 
 // --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 export function getStationStatus(stationId, allRecords) {
