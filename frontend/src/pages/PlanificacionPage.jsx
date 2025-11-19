@@ -1,10 +1,12 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useReactToPrint } from "react-to-print";
-import { PlanPdf } from "../components/planificacion/PlanPdf"; // asegúrate del import correcto
 import { API_BASE_URL } from "../utils.js";
 
-// Componentes existentes
+// --- LIBRERÍAS DE PDF (JSPDF) ---
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+
+// Componentes
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 import PlanCard from "../components/planificacion/PlanCard";
 import PlanItemCard from "../components/planificacion/PlanItemCard";
@@ -22,41 +24,30 @@ import {
   FaTasks,
   FaChartPie,
   FaFileInvoice,
-  FaShoppingCart,
   FaPrint,
-  FaIndustry, // Nuevo icono para producción
+  FaIndustry,
 } from "react-icons/fa";
 
 export default function PlanificacionPage() {
-  // === ESTADOS MAESTROS ===
+  // === ESTADOS ===
   const [allSemis, setAllSemis] = useState([]);
   const [allMPs, setAllMPs] = useState([]);
   const [recetasMap, setRecetasMap] = useState({});
   const [masterPlanList, setMasterPlanList] = useState([]);
 
-  // === ESTADOS DE DETALLE ===
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [currentPlanNombre, setCurrentPlanNombre] = useState("Nuevo Plan");
   const [currentPlanItems, setCurrentPlanItems] = useState([]);
   const [currentPlanEstado, setCurrentPlanEstado] = useState("ABIERTO");
   const [currentPlanOperarios, setCurrentPlanOperarios] = useState([]);
-  const [historialProduccion, setHistorialProduccion] = useState([]); // <--- NUEVO ESTADO
+  const [historialProduccion, setHistorialProduccion] = useState([]);
 
-  // === ESTADOS DE UI ===
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("items");
   const [showStatsModal, setShowStatsModal] = useState(false);
 
-  // === REFERENCIAS PARA IMPRESIÓN ===
-  const componentRef = useRef(null);
-
-  const handlePrint = useReactToPrint({
-    content: () => componentRef.current, // <--- ESTA ES LA CLAVE
-    documentTitle: `Plan_${currentPlanNombre.replace(/\s+/g, "_")}`,
-  });
-
-  // --- LÓGICA DE DATOS ---
+  // --- CARGA DE DATOS ---
   useEffect(() => {
     const cargarDatosMaestros = async () => {
       try {
@@ -72,7 +63,7 @@ export default function PlanificacionPage() {
         setRecetasMap(await resRecetas.json());
         setMasterPlanList(await resPlanes.json());
       } catch (err) {
-        console.error("Error cargando datos maestros:", err);
+        console.error("Error cargando datos:", err);
       } finally {
         setLoading(false);
       }
@@ -80,181 +71,7 @@ export default function PlanificacionPage() {
     cargarDatosMaestros();
   }, []);
 
-  const handleSelectPlan = async (planId) => {
-    if (isSaving) return;
-    setLoading(true);
-    setSelectedPlanId(planId);
-    setActiveTab("items");
-    setCurrentPlanOperarios([]);
-    setHistorialProduccion([]); // Limpiar historial
-
-    try {
-      // Cargamos Plan, Operarios y Historial a la vez
-      const [resPlan, resOperarios, resHistorial] = await Promise.all([
-        fetch(`${API_BASE_URL}/planificacion/${planId}`),
-        fetch(`${API_BASE_URL}/planificacion/${planId}/operarios`),
-        fetch(`${API_BASE_URL}/planificacion/${planId}/historial`), // <--- NUEVA LLAMADA
-      ]);
-
-      if (!resPlan.ok) throw new Error("No se pudo cargar el plan");
-      const planDetalle = await resPlan.json();
-      setCurrentPlanNombre(planDetalle.nombre);
-      setCurrentPlanItems(planDetalle.items);
-      setCurrentPlanEstado(planDetalle.estado);
-
-      if (resOperarios.ok) {
-        setCurrentPlanOperarios(await resOperarios.json());
-      }
-      if (resHistorial.ok) {
-        setHistorialProduccion(await resHistorial.json());
-      }
-    } catch (err) {
-      console.error(err);
-      alert(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateNew = () => {
-    if (isSaving) return;
-    setSelectedPlanId("NEW");
-    setCurrentPlanNombre(
-      `Nuevo Plan ${new Date().toLocaleDateString("es-AR")}`
-    );
-    setCurrentPlanItems([]);
-    setCurrentPlanEstado("ABIERTO");
-    setCurrentPlanOperarios([]);
-    setHistorialProduccion([]);
-    setActiveTab("items");
-  };
-
-  const handleAddItem = (semielaborado) => {
-    const cantidad = Number(
-      prompt(`Cantidad a fabricar de "${semielaborado.nombre}":`, "10")
-    );
-    if (cantidad && cantidad > 0) {
-      setCurrentPlanItems((prev) => [
-        ...prev,
-        { semielaborado, cantidad, producido: 0, plan_item_id: null },
-      ]);
-    }
-  };
-
-  const handleRemoveItem = (indexToRemove) => {
-    setCurrentPlanItems((prev) => prev.filter((_, i) => i !== indexToRemove));
-  };
-
-  const handleSavePlan = async () => {
-    if (!currentPlanNombre) return alert("El plan necesita un nombre.");
-    setIsSaving(true);
-    const planData = {
-      nombre: currentPlanNombre,
-      items: currentPlanItems.map((item) => ({
-        semielaborado: item.semielaborado,
-        cantidad: item.cantidad,
-        producido: item.producido,
-        plan_item_id: item.plan_item_id,
-      })),
-    };
-    try {
-      let response;
-      if (selectedPlanId === "NEW") {
-        response = await fetch(`${API_BASE_URL}/planificacion`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(planData),
-        });
-      } else {
-        response = await fetch(
-          `${API_BASE_URL}/planificacion/${selectedPlanId}`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(planData),
-          }
-        );
-      }
-      if (!response.ok) throw new Error("Error al guardar en el servidor");
-      const result = await response.json();
-      const resPlanes = await fetch(`${API_BASE_URL}/planificacion`);
-      setMasterPlanList(await resPlanes.json());
-      if (selectedPlanId === "NEW") {
-        setSelectedPlanId(result.planId);
-      }
-      alert("Plan guardado.");
-    } catch (err) {
-      console.error(err);
-      alert(err.message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleToggleEstado = async () => {
-    if (selectedPlanId === "NEW")
-      return alert("Guarda el plan antes de cerrarlo.");
-    const nuevoEstado = currentPlanEstado === "ABIERTO" ? "CERRADO" : "ABIERTO";
-    if (
-      window.confirm(
-        `¿Estás seguro que quieres marcar este plan como "${nuevoEstado}"?`
-      )
-    ) {
-      setIsSaving(true);
-      try {
-        const res = await fetch(
-          `${API_BASE_URL}/planificacion/${selectedPlanId}/estado`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ estado: nuevoEstado }),
-          }
-        );
-        if (!res.ok) throw new Error("No se pudo actualizar el estado");
-        setCurrentPlanEstado(nuevoEstado);
-        setMasterPlanList((prevList) =>
-          prevList.map((p) =>
-            p.id === selectedPlanId ? { ...p, estado: nuevoEstado } : p
-          )
-        );
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        setIsSaving(false);
-      }
-    }
-  };
-
-  const handleDeletePlan = async () => {
-    if (selectedPlanId === "NEW") {
-      setSelectedPlanId(null);
-      return;
-    }
-    if (
-      window.confirm(
-        `¿Estás seguro de ELIMINAR el plan "${currentPlanNombre}"? Esta acción no se puede deshacer.`
-      )
-    ) {
-      setIsSaving(true);
-      try {
-        const res = await fetch(
-          `${API_BASE_URL}/planificacion/${selectedPlanId}`,
-          { method: "DELETE" }
-        );
-        if (!res.ok) throw new Error("No se pudo eliminar el plan");
-        alert("Plan eliminado.");
-        setMasterPlanList((prev) =>
-          prev.filter((p) => p.id !== selectedPlanId)
-        );
-        setSelectedPlanId(null);
-      } catch (err) {
-        alert(err.message);
-      } finally {
-        setIsSaving(false);
-      }
-    }
-  };
-
+  // --- CÁLCULO MRP ---
   const explosion = useMemo(() => {
     const totalNecesario = {};
     currentPlanItems.forEach((item) => {
@@ -290,6 +107,345 @@ export default function PlanificacionPage() {
       .sort((a, b) => a.balance - b.balance);
   }, [currentPlanItems, recetasMap, allMPs]);
 
+  // --- GENERADOR PDF PRO (FLUJO CONTINUO) ---
+  const generarPDF = () => {
+    const doc = new jsPDF();
+    const fecha = new Date().toLocaleDateString("es-AR");
+    const hora = new Date().toLocaleTimeString("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // --- CÁLCULOS PARA EL HEADER ---
+    const totalItems = currentPlanItems.length;
+    const totalUnidades = currentPlanItems.reduce(
+      (acc, i) => acc + Number(i.cantidad),
+      0
+    );
+    const totalProducido = currentPlanItems.reduce(
+      (acc, i) => acc + Number(i.producido),
+      0
+    );
+    const avancePorcentaje =
+      totalUnidades > 0
+        ? ((totalProducido / totalUnidades) * 100).toFixed(1)
+        : "0.0";
+    const faltantesMRP = explosion.filter((i) => i.balance < 0).length;
+
+    // 1. ENCABEZADO
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("ORDEN DE PRODUCCIÓN", 14, 20);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("Sistema de Gestión - Horno Rotomoldeo", 14, 26);
+
+    // Info Derecha
+    doc.setFontSize(12);
+    doc.text(`PLAN: ${currentPlanNombre}`, 200, 20, { align: "right" });
+    doc.setFontSize(10);
+    doc.text(`ESTADO: ${currentPlanEstado}`, 200, 26, { align: "right" });
+    doc.text(`FECHA: ${fecha} ${hora}`, 200, 32, { align: "right" });
+
+    doc.setLineWidth(0.5);
+    doc.line(14, 36, 200, 36);
+
+    // 2. RESUMEN EJECUTIVO
+    doc.setFillColor(245, 245, 245); // Gris muy suave
+    doc.rect(14, 40, 186, 16, "F");
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+
+    doc.text("ÍTEMS TOTALES", 30, 45, { align: "center" });
+    doc.text(String(totalItems), 30, 52, { align: "center" });
+
+    doc.text("UNIDADES META", 70, 45, { align: "center" });
+    doc.text(String(totalUnidades), 70, 52, { align: "center" });
+
+    doc.text("AVANCE REAL", 110, 45, { align: "center" });
+    doc.text(`${totalProducido} (${avancePorcentaje}%)`, 110, 52, {
+      align: "center",
+    });
+
+    doc.text("ALERTAS MRP", 150, 45, { align: "center" });
+    doc.text(faltantesMRP > 0 ? `${faltantesMRP} FALTANTES` : "OK", 150, 52, {
+      align: "center",
+    });
+
+    // 3. TABLA 1: DETALLE
+    doc.setFontSize(11);
+    doc.text("1. DETALLE DE PRODUCCIÓN", 14, 65);
+
+    const tableBodyItems = currentPlanItems.map((item) => [
+      item.semielaborado?.codigo || "-",
+      item.semielaborado?.nombre || "Desconocido",
+      item.cantidad,
+      item.producido,
+      item.cantidad - item.producido,
+    ]);
+
+    autoTable(doc, {
+      startY: 68,
+      head: [["CÓDIGO", "PRODUCTO", "META", "HECHO", "PENDIENTE"]],
+      body: tableBodyItems,
+      theme: "plain",
+      styles: { fontSize: 9, cellPadding: 2, lineColor: 200, lineWidth: 0.1 },
+      headStyles: {
+        fillColor: [20, 20, 20],
+        textColor: 255,
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        2: { halign: "right", fontStyle: "bold" },
+        3: { halign: "right" },
+        4: { halign: "right", fontStyle: "bold" },
+      },
+    });
+
+    // 4. TABLA 2: MATERIALES
+    let finalY = doc.lastAutoTable.finalY + 8;
+
+    // Verificación de seguridad para que el título no quede huérfano al final de hoja
+    if (finalY > 270) {
+      doc.addPage();
+      finalY = 20;
+    }
+
+    doc.setFontSize(11);
+    doc.text("2. REQUERIMIENTO DE MATERIALES", 14, finalY + 5);
+
+    const tableBodyExplosion = explosion.map((mp) => [
+      mp.nombre,
+      mp.codigo,
+      mp.necesario,
+      mp.stock,
+      mp.balance < 0 ? `FALTA ${Math.abs(mp.balance)}` : mp.balance,
+    ]);
+
+    autoTable(doc, {
+      startY: finalY + 8,
+      head: [["MATERIA PRIMA", "CÓDIGO", "NECESARIO", "STOCK", "BALANCE"]],
+      body: tableBodyExplosion,
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 2, lineColor: 180 },
+      headStyles: {
+        fillColor: [230, 230, 230],
+        textColor: 0,
+        fontStyle: "bold",
+        lineWidth: 0.1,
+      },
+      columnStyles: {
+        2: { halign: "right" },
+        3: { halign: "right" },
+        4: { halign: "right", fontStyle: "bold" },
+      },
+      didParseCell: function (data) {
+        if (
+          data.column.index === 4 &&
+          String(data.cell.raw).startsWith("FALTA")
+        ) {
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+
+    // 5. TABLA 3: OPERARIOS (Ahora fluye natural, sin forzar página salvo necesario)
+    if (currentPlanOperarios.length > 0) {
+      finalY = doc.lastAutoTable.finalY + 8;
+
+      // Si queda poco espacio, saltamos, sino seguimos
+      if (finalY > 250) {
+        doc.addPage();
+        finalY = 20;
+      }
+
+      doc.setFontSize(11);
+      doc.text("3. RESUMEN DE OPERARIOS", 14, finalY + 5);
+
+      const tableBodyOps = currentPlanOperarios.map((op) => [
+        op.nombre,
+        op.total_producido,
+      ]);
+
+      autoTable(doc, {
+        startY: finalY + 8,
+        head: [["OPERARIO", "TOTAL PRODUCIDO"]],
+        body: tableBodyOps,
+        theme: "striped",
+        styles: { fontSize: 9, cellPadding: 2 },
+        headStyles: { fillColor: [50, 50, 50], textColor: 255 },
+        columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+        margin: { right: 110 }, // Hacemos la tabla más angosta para que se vea elegante
+      });
+    }
+
+    // 6. FIRMAS (Lógica Inteligente)
+    finalY = doc.lastAutoTable.finalY;
+    const pageHeight = doc.internal.pageSize.height;
+
+    // Espacio necesario para firmas ~40mm.
+    // Si no cabe en la hoja actual (margen 20mm), agregamos nueva
+    if (finalY + 40 > pageHeight - 20) {
+      doc.addPage();
+      // En nueva página, las firmas van abajo del todo
+    }
+
+    // Dibujamos firmas SIEMPRE al pie de la página (sea la actual o la nueva)
+    const signatureY = pageHeight - 35;
+
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(0);
+
+    doc.line(30, signatureY, 90, signatureY);
+    doc.setFontSize(8);
+    doc.text("PREPARADO POR", 60, signatureY + 5, { align: "center" });
+
+    doc.line(120, signatureY, 180, signatureY);
+    doc.text("AUTORIZADO POR", 150, signatureY + 5, { align: "center" });
+
+    // PIE DE PÁGINA (En todas las hojas)
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setTextColor(150);
+      doc.text(
+        `Página ${i} de ${pageCount} - Generado el ${fecha} ${hora}`,
+        105,
+        pageHeight - 10,
+        { align: "center" }
+      );
+    }
+
+    doc.save(`Plan_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`);
+  };
+
+  // --- HANDLERS ---
+  const handleSelectPlan = async (planId) => {
+    if (isSaving) return;
+    setLoading(true);
+    setSelectedPlanId(planId);
+    setActiveTab("items");
+    setCurrentPlanOperarios([]);
+    setHistorialProduccion([]);
+    try {
+      const [resPlan, resOperarios, resHistorial] = await Promise.all([
+        fetch(`${API_BASE_URL}/planificacion/${planId}`),
+        fetch(`${API_BASE_URL}/planificacion/${planId}/operarios`),
+        fetch(`${API_BASE_URL}/planificacion/${planId}/historial`),
+      ]);
+      if (!resPlan.ok) throw new Error("Error al cargar plan");
+      const planDetalle = await resPlan.json();
+      setCurrentPlanNombre(planDetalle.nombre);
+      setCurrentPlanItems(planDetalle.items);
+      setCurrentPlanEstado(planDetalle.estado);
+      if (resOperarios.ok) setCurrentPlanOperarios(await resOperarios.json());
+      if (resHistorial.ok) setHistorialProduccion(await resHistorial.json());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateNew = () => {
+    setSelectedPlanId("NEW");
+    setCurrentPlanNombre(
+      `Nuevo Plan ${new Date().toLocaleDateString("es-AR")}`
+    );
+    setCurrentPlanItems([]);
+    setCurrentPlanEstado("ABIERTO");
+    setCurrentPlanOperarios([]);
+    setHistorialProduccion([]);
+    setActiveTab("items");
+  };
+
+  const handleAddItem = (semielaborado) => {
+    const cantidad = Number(prompt(`Cantidad:`, "10"));
+    if (cantidad > 0)
+      setCurrentPlanItems((prev) => [
+        ...prev,
+        { semielaborado, cantidad, producido: 0, plan_item_id: null },
+      ]);
+  };
+
+  const handleRemoveItem = (index) =>
+    setCurrentPlanItems((prev) => prev.filter((_, i) => i !== index));
+
+  const handleSavePlan = async () => {
+    if (!currentPlanNombre) return;
+    setIsSaving(true);
+    try {
+      const body = {
+        nombre: currentPlanNombre,
+        items: currentPlanItems.map((i) => ({
+          semielaborado: i.semielaborado,
+          cantidad: i.cantidad,
+          producido: i.producido,
+          plan_item_id: i.plan_item_id,
+        })),
+      };
+      const url =
+        selectedPlanId === "NEW"
+          ? `${API_BASE_URL}/planificacion`
+          : `${API_BASE_URL}/planificacion/${selectedPlanId}`;
+      const method = selectedPlanId === "NEW" ? "POST" : "PUT";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Error");
+      const data = await res.json();
+      const all = await fetch(`${API_BASE_URL}/planificacion`).then((r) =>
+        r.json()
+      );
+      setMasterPlanList(all);
+      if (selectedPlanId === "NEW") setSelectedPlanId(data.planId);
+      alert("Guardado");
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleToggleEstado = async () => {
+    if (selectedPlanId === "NEW") return;
+    const estado = currentPlanEstado === "ABIERTO" ? "CERRADO" : "ABIERTO";
+    if (confirm("¿Cambiar estado?")) {
+      setIsSaving(true);
+      await fetch(`${API_BASE_URL}/planificacion/${selectedPlanId}/estado`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado }),
+      });
+      setCurrentPlanEstado(estado);
+      setMasterPlanList((prev) =>
+        prev.map((p) => (p.id === selectedPlanId ? { ...p, estado } : p))
+      );
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeletePlan = async () => {
+    if (selectedPlanId === "NEW") {
+      setSelectedPlanId(null);
+      return;
+    }
+    if (confirm("¿Eliminar?")) {
+      setIsSaving(true);
+      await fetch(`${API_BASE_URL}/planificacion/${selectedPlanId}`, {
+        method: "DELETE",
+      });
+      setMasterPlanList((prev) => prev.filter((p) => p.id !== selectedPlanId));
+      setSelectedPlanId(null);
+      setIsSaving(false);
+    }
+  };
+
   const isPlanCerrado = currentPlanEstado === "CERRADO";
   const isPlanNuevo = selectedPlanId === "NEW";
 
@@ -299,15 +455,13 @@ export default function PlanificacionPage() {
         layout
         className="animate-in fade-in duration-500 flex flex-col h-[calc(100vh-140px)] min-h-[700px] gap-6"
       >
-        {/* --- SECCIÓN 1: KARDEX DE PLANES --- */}
+        {/* KARDEX */}
         <motion.div className="bg-slate-800 rounded-xl flex flex-col border border-slate-700 shadow-lg overflow-hidden">
           <div className="p-4 bg-slate-800/50 border-b border-slate-700 z-10 flex justify-between items-center">
             <h2 className="text-xl font-bold text-white flex items-center gap-3">
               <FaClipboardList className="text-blue-400" /> Planes de Producción
             </h2>
             <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
               onClick={handleCreateNew}
               className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg"
             >
@@ -322,11 +476,6 @@ export default function PlanificacionPage() {
             ) : (
               <div className="flex p-4 space-x-4 min-w-max">
                 <AnimatePresence>
-                  {masterPlanList.length === 0 && (
-                    <p className="p-4 text-center text-gray-500 text-sm">
-                      No hay planes guardados. ¡Crea uno!
-                    </p>
-                  )}
                   {masterPlanList.map((plan) => (
                     <PlanCard
                       key={plan.id}
@@ -341,62 +490,39 @@ export default function PlanificacionPage() {
           </div>
         </motion.div>
 
-        {/* --- SECCIÓN 2: DETALLE DEL PLAN --- */}
+        {/* DETALLE */}
         <AnimatePresence>
-          {!selectedPlanId ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex-1 bg-slate-800/50 rounded-xl border-2 border-dashed border-slate-700 flex justify-center items-center"
-            >
-              <p className="text-gray-500 text-lg font-medium">
-                ← Selecciona un plan o crea uno nuevo para ver el detalle
-              </p>
-            </motion.div>
-          ) : (
+          {selectedPlanId && (
             <motion.div
               layout
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
               className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg flex flex-col overflow-hidden"
             >
-              {/* Toolbar */}
               <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row justify-between items-center gap-3">
                 <input
                   type="text"
                   value={currentPlanNombre}
                   onChange={(e) => setCurrentPlanNombre(e.target.value)}
-                  className="w-full md:w-1/3 bg-transparent border-0 border-b-2 border-slate-700 focus:border-blue-500 px-1 py-2 text-xl font-bold text-white focus:outline-none focus:ring-0 transition-all"
+                  className="w-full md:w-1/3 bg-transparent border-0 border-b-2 border-slate-700 focus:border-blue-500 px-1 py-2 text-xl font-bold text-white focus:outline-none"
                   disabled={isPlanCerrado || isSaving}
                 />
-                <div className="flex gap-2 flex-wrap justify-end">
+                <div className="flex gap-2">
+                  {/* BOTÓN PDF */}
                   <button
-                    onClick={() => {
-                      if (!selectedPlanId || isPlanNuevo) {
-                        alert("No hay plan listo para imprimir");
-                        return;
-                      }
-                      if (!componentRef.current) {
-                        alert("El contenido para imprimir no está disponible. Esperá y volvé a intentar.");
-                        console.warn("[PRINT] componentRef vacío:", componentRef.current);
-                        return;
-                      }
-                      handlePrint();
-                    }}
-                    disabled={!selectedPlanId || isPlanNuevo}
-                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white transition-all disabled:opacity-50"
+                    onClick={generarPDF}
+                    disabled={isPlanNuevo}
+                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white shadow-lg transition-all disabled:opacity-50"
                   >
                     <FaPrint /> PDF
                   </button>
+
                   <button
                     onClick={handleToggleEstado}
                     disabled={isSaving || isPlanNuevo}
-                    className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${
-                      isPlanCerrado
-                        ? "bg-gray-600 hover:bg-gray-500"
-                        : "bg-green-600 hover:bg-green-500"
-                    } text-white disabled:opacity-50`}
+                    className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 text-white ${
+                      isPlanCerrado ? "bg-gray-600" : "bg-green-600"
+                    }`}
                   >
                     {isPlanCerrado ? <FaLock /> : <FaLockOpen />}{" "}
                     {isPlanCerrado ? "Cerrado" : "Abierto"}
@@ -404,14 +530,14 @@ export default function PlanificacionPage() {
                   <button
                     onClick={handleDeletePlan}
                     disabled={isSaving || isPlanNuevo}
-                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-red-800 hover:bg-red-700 text-white transition-all disabled:opacity-50"
+                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-red-800 hover:bg-red-700 text-white"
                   >
                     <FaTrash />
                   </button>
                   <button
                     onClick={handleSavePlan}
                     disabled={isPlanCerrado || isSaving}
-                    className="px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50"
+                    className="px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white"
                   >
                     {isSaving ? (
                       <FaSpinner className="animate-spin" />
@@ -423,16 +549,14 @@ export default function PlanificacionPage() {
                 </div>
               </div>
 
-              {/* Tabs */}
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex border-b border-slate-700 bg-slate-800/50">
                   <TabButton
                     icon={<FaTasks />}
-                    label="Items del Plan"
+                    label="Items"
                     active={activeTab === "items"}
                     onClick={() => setActiveTab("items")}
                   />
-                  {/* PESTAÑA PRODUCCIÓN RECUPERADA */}
                   <TabButton
                     icon={<FaIndustry />}
                     label="Producción"
@@ -441,7 +565,7 @@ export default function PlanificacionPage() {
                   />
                   <TabButton
                     icon={<FaFileInvoice />}
-                    label="Explosión (MRP)"
+                    label="MRP"
                     active={activeTab === "mrp"}
                     onClick={() => setActiveTab("mrp")}
                   />
@@ -452,251 +576,111 @@ export default function PlanificacionPage() {
                     onClick={() => setShowStatsModal(true)}
                   />
                 </div>
-
-                {/* Contenido de Tabs */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                  <AnimatePresence mode="wait">
-                    {/* TAB 1: Items */}
-                    {activeTab === "items" && (
-                      <motion.div
-                        key="items"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                      >
-                        <AutoCompleteInput
-                          items={allSemis}
-                          onSelect={handleAddItem}
-                          placeholder="Buscar semielaborado para añadir..."
-                          disabled={isPlanCerrado || isSaving}
-                        />
-                        <div className="mt-6">
-                          <ul className="space-y-3">
-                            {currentPlanItems.map((item, index) => (
-                              <PlanItemCard
-                                key={item.semielaborado.id + "_" + index}
-                                item={item}
-                                onRemove={() => handleRemoveItem(index)}
-                                isPlanCerrado={isPlanCerrado}
-                              />
-                            ))}
-                          </ul>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {/* TAB 2: PRODUCCIÓN (RECUPERADA) */}
-                    {activeTab === "produccion" && (
-                      <motion.div
-                        key="produccion"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="space-y-4"
-                      >
-                        <div className="flex items-center justify-between px-1">
-                          <h3 className="text-white font-bold text-lg flex items-center gap-2">
-                            <FaIndustry className="text-blue-400" /> Historial
-                            de Producción
-                          </h3>
-                          <span className="text-xs text-gray-500 font-medium px-2 py-1 bg-slate-800 rounded border border-slate-700">
-                            {historialProduccion.length} registros
-                          </span>
-                        </div>
-
-                        <div className="overflow-hidden bg-slate-800/40 border border-slate-700/50 rounded-xl shadow-xl backdrop-blur-sm">
-                          <table className="w-full text-sm text-left border-collapse">
-                            <thead className="text-xs text-gray-400 uppercase bg-slate-900/50 tracking-wider font-semibold">
-                              <tr>
-                                <th className="px-6 py-4 font-medium">
-                                  Fecha / Hora
-                                </th>
-                                <th className="px-6 py-4 font-medium">
-                                  Operario
-                                </th>
-                                <th className="px-6 py-4 font-medium">
-                                  Producto
-                                </th>
-                                <th className="px-6 py-4 text-center font-medium text-emerald-400">
-                                  OK
-                                </th>
-                                <th className="px-6 py-4 text-center font-medium text-rose-400">
-                                  Scrap
-                                </th>
-                                <th className="px-6 py-4 font-medium">
-                                  Observaciones
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-700/50">
-                              {historialProduccion.length === 0 ? (
-                                <tr>
-                                  <td
-                                    colSpan="6"
-                                    className="p-12 text-center text-gray-500 flex flex-col items-center justify-center gap-2"
-                                  >
-                                    <FaIndustry className="text-4xl opacity-20 mb-2" />
-                                    <span className="text-lg font-medium">
-                                      Sin actividad registrada
-                                    </span>
-                                    <span className="text-sm opacity-70">
-                                      Aún no se ha cargado producción para este
-                                      plan.
-                                    </span>
-                                  </td>
-                                </tr>
-                              ) : (
-                                historialProduccion.map((reg) => (
-                                  <tr
-                                    key={reg.id}
-                                    className="group hover:bg-white/5 transition-colors duration-200"
-                                  >
-                                    {/* FECHA */}
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                      <div className="flex flex-col">
-                                        <span className="text-white font-medium">
-                                          {new Date(
-                                            reg.fecha_produccion
-                                          ).toLocaleDateString("es-AR")}
-                                        </span>
-                                        <span className="text-xs text-slate-500 font-mono">
-                                          {new Date(
-                                            reg.fecha_produccion
-                                          ).toLocaleTimeString("es-AR", {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                          })}
-                                        </span>
-                                      </div>
-                                    </td>
-
-                                    {/* OPERARIO */}
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-gray-300 group-hover:text-white transition-colors">
-                                          {reg.operario}
-                                        </span>
-                                      </div>
-                                    </td>
-
-                                    {/* PRODUCTO */}
-                                    <td className="px-6 py-4">
-                                      <span
-                                        className="text-blue-300 font-medium block truncate max-w-[200px]"
-                                        title={reg.semielaborado}
-                                      >
-                                        {reg.semielaborado}
-                                      </span>
-                                    </td>
-
-                                    {/* CANTIDAD OK (BADGE VERDE) */}
-                                    <td className="px-6 py-4 text-center whitespace-nowrap">
-                                      <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold shadow-sm min-w-[50px]">
-                                        {reg.cantidad}
-                                      </span>
-                                    </td>
-
-                                    {/* CANTIDAD SCRAP (BADGE ROJO O GRIS) */}
-                                    <td className="px-6 py-4 text-center whitespace-nowrap">
-                                      {Number(reg.scrap) > 0 ? (
-                                        <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold shadow-sm min-w-[40px] animate-pulse">
-                                          {reg.scrap}
-                                        </span>
-                                      ) : (
-                                        <span className="text-gray-600">-</span>
-                                      )}
-                                    </td>
-
-                                    {/* MOTIVO */}
-                                    <td className="px-6 py-4">
-                                      {Number(reg.scrap) > 0 ? (
-                                        <div className="flex items-center gap-1 text-rose-300 text-xs bg-rose-900/20 px-2 py-1 rounded border border-rose-900/30 w-fit">
-                                          <span className="font-semibold">
-                                            Falla:
-                                          </span>{" "}
-                                          {reg.motivo}
-                                        </div>
-                                      ) : (
-                                        <span className="text-xs text-gray-600 italic">
-                                          Sin novedades
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </motion.div>
-                    )}
-
-                    {/* TAB 3: MRP */}
-                    {activeTab === "mrp" && (
-                      <motion.div
-                        key="mrp"
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 10 }}
-                      >
-                        <h3 className="text-gray-300 font-bold text-sm mb-4">
-                          Materiales necesarios para completar lo{" "}
-                          <span className="text-yellow-400">PENDIENTE</span>:
-                        </h3>
-                        <div className="overflow-hidden border border-slate-700 rounded-lg">
-                          <table className="w-full text-sm text-left">
-                            <thead className="text-xs text-gray-400 uppercase bg-slate-700">
-                              <tr>
-                                <th className="px-4 py-3">Materia Prima</th>
-                                <th className="px-4 py-3 text-right">
-                                  Necesario
-                                </th>
-                                <th className="px-4 py-3 text-right">Stock</th>
-                                <th className="px-4 py-3 text-right">
-                                  Balance
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-700">
-                              {explosion.map((mp) => (
-                                <tr
-                                  key={mp.id}
-                                  className="hover:bg-slate-700/50"
-                                >
-                                  <td className="px-4 py-3">
-                                    <p className="font-medium text-white">
-                                      {mp.nombre}
-                                    </p>
-                                    <p className="text-xs text-gray-400 font-mono">
-                                      {mp.codigo}
-                                    </p>
-                                  </td>
-                                  <td className="px-4 py-3 text-right font-mono text-yellow-300">
-                                    {mp.necesario}
-                                  </td>
-                                  <td className="px-4 py-3 text-right font-mono text-blue-300">
-                                    {mp.stock}
-                                  </td>
-                                  <td
-                                    className={`px-4 py-3 text-right font-mono font-bold ${
-                                      mp.balance < 0
-                                        ? "text-red-400"
-                                        : "text-green-400"
-                                    }`}
-                                  >
-                                    {mp.balance}
-                                    {mp.balance < 0 && (
-                                      <FaShoppingCart className="inline ml-2 text-red-500" />
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                  {activeTab === "items" && (
+                    <div>
+                      <AutoCompleteInput
+                        items={allSemis}
+                        onSelect={handleAddItem}
+                        placeholder="Buscar semielaborado..."
+                        disabled={isPlanCerrado || isSaving}
+                      />
+                      <ul className="space-y-3 mt-6">
+                        {currentPlanItems.map((item, i) => (
+                          <PlanItemCard
+                            key={i}
+                            item={item}
+                            onRemove={() => handleRemoveItem(i)}
+                            isPlanCerrado={isPlanCerrado}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {activeTab === "produccion" && (
+                    <div className="overflow-hidden bg-slate-800/50 border border-slate-700 rounded-xl shadow-xl backdrop-blur-sm">
+                      <table className="w-full text-sm text-left border-collapse">
+                        <thead className="text-xs text-gray-400 uppercase bg-slate-900/60 tracking-wider font-semibold">
+                          <tr>
+                            <th className="px-6 py-4">Fecha</th>
+                            <th className="px-6 py-4">Operario</th>
+                            <th className="px-6 py-4">Producto</th>
+                            <th className="px-6 py-4 text-right text-emerald-400">
+                              OK
+                            </th>
+                            <th className="px-6 py-4 text-right text-rose-400">
+                              Scrap
+                            </th>
+                            <th className="px-6 py-4">Detalles</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700/50">
+                          {historialProduccion.map((reg) => (
+                            <tr key={reg.id} className="hover:bg-white/5">
+                              <td className="px-6 py-4 text-white">
+                                {new Date(
+                                  reg.fecha_produccion
+                                ).toLocaleDateString()}
+                              </td>
+                              <td className="px-6 py-4 text-gray-300">
+                                {reg.operario}
+                              </td>
+                              <td className="px-6 py-4 text-blue-300">
+                                {reg.semielaborado}
+                              </td>
+                              <td className="px-6 py-4 text-right font-bold text-emerald-400">
+                                {reg.cantidad}
+                              </td>
+                              <td className="px-6 py-4 text-right font-bold text-rose-400">
+                                {reg.scrap || "-"}
+                              </td>
+                              <td className="px-6 py-4 text-xs text-gray-500">
+                                {reg.motivo}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {activeTab === "mrp" && (
+                    <div className="overflow-hidden border border-slate-700 rounded-lg">
+                      <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-gray-400 uppercase bg-slate-700">
+                          <tr>
+                            <th className="px-4 py-3">Materia Prima</th>
+                            <th className="px-4 py-3 text-right">Necesario</th>
+                            <th className="px-4 py-3 text-right">Stock</th>
+                            <th className="px-4 py-3 text-right">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700">
+                          {explosion.map((mp) => (
+                            <tr key={mp.id} className="hover:bg-slate-700/50">
+                              <td className="px-4 py-3 text-white">
+                                {mp.nombre}
+                              </td>
+                              <td className="px-4 py-3 text-right text-yellow-300">
+                                {mp.necesario}
+                              </td>
+                              <td className="px-4 py-3 text-right text-blue-300">
+                                {mp.stock}
+                              </td>
+                              <td
+                                className={`px-4 py-3 text-right font-bold ${
+                                  mp.balance < 0
+                                    ? "text-red-400"
+                                    : "text-green-400"
+                                }`}
+                              >
+                                {mp.balance}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
@@ -713,24 +697,6 @@ export default function PlanificacionPage() {
           />
         )}
       </AnimatePresence>
-
-      {/* COMPONENTE OCULTO CORRECTAMENTE (Ahora con position absolute y coordenadas negativas) */}
-      <div
-        style={{
-          position: "absolute",
-          left: "-9999px",
-          top: 0,
-          width: "210mm",
-          background: "#fff",
-        }}
-      >
-        <PlanPdf
-          ref={componentRef}
-          plan={{ nombre: currentPlanNombre }}
-          items={currentPlanItems}
-          explosion={explosion}
-        />
-      </div>
     </>
   );
 }
