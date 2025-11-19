@@ -1123,18 +1123,20 @@ app.get("/api/operarios/:id/stats", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
 
-    // Consultas en paralelo
+    // 1. Consulta de Operario (Igual)
     const operarioRes = db.query("SELECT nombre FROM operarios WHERE id = $1", [
       id,
     ]);
 
+    // 2. Consulta Total (Igual)
     const totalRes = db.query(
-      "SELECT SUM(cantidad) as total_unidades FROM registros_produccion WHERE operario_id = $1",
+      "SELECT SUM(cantidad_ok) as total_unidades FROM registros_produccion WHERE operario_id = $1",
       [id]
     );
 
+    // 3. Top Producto (Igual)
     const topProductoRes = db.query(
-      `SELECT s.nombre, SUM(r.cantidad) as total
+      `SELECT s.nombre, SUM(r.cantidad_ok) as total
        FROM registros_produccion r
        JOIN semielaborados s ON r.semielaborado_id = s.id
        WHERE r.operario_id = $1
@@ -1144,13 +1146,25 @@ app.get("/api/operarios/:id/stats", async (req, res) => {
       [id]
     );
 
+    // 4. Actividad Reciente (MODIFICADO: Incluye el nombre del Plan)
     const recienteRes = db.query(
-      `SELECT s.nombre, r.cantidad, r.fecha_produccion
+      `SELECT 
+         r.id,
+         s.nombre, 
+         r.cantidad_ok as cantidad, 
+         r.cantidad_scrap,
+         r.motivo_scrap,
+         r.fecha_produccion,
+         r.turno,
+         pp.nombre as plan_nombre
        FROM registros_produccion r
        JOIN semielaborados s ON r.semielaborado_id = s.id
+       -- Hacemos LEFT JOIN por si el plan fue borrado, para no perder el registro
+       LEFT JOIN planes_items pi ON r.plan_item_id = pi.id
+       LEFT JOIN planes_produccion pp ON pi.plan_id = pp.id
        WHERE r.operario_id = $1
        ORDER BY r.fecha_produccion DESC
-       LIMIT 5`,
+       LIMIT 10`,
       [id]
     );
 
