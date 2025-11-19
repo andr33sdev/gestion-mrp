@@ -90,22 +90,6 @@ export default function AnalisisPedidos() {
       stockMap[normalizeKey(s.nombre)] = Number(s.stock_actual || 0);
     });
 
-    const filteredData = datosPedidos.filter((row) => {
-      const dStr = row.FECHA || row.Fecha || row.fecha;
-      if (!dStr) return false;
-      const d = new Date(dStr);
-      if (isNaN(d.getTime())) return false;
-      if (
-        (row.ESTADO || row.Estado || "")
-          .toString()
-          .toUpperCase()
-          .includes("CANCELADO")
-      )
-        return false;
-      // Para dashboard general usamos 2025
-      return d.getFullYear() >= 2025;
-    });
-
     const uniqueOrders = new Set(),
       uniqueMLOrders = new Set();
     const prodMapY = {},
@@ -134,37 +118,41 @@ export default function AnalisisPedidos() {
     ];
     monthNames.forEach((m) => (monthMap[m] = 0));
 
-    // --- ESTRUCTURAS MEJORADAS ---
-    const consumoTotal2025 = {}; // Ahora guardará detalle mensual también
+    const consumoTotal2025 = {};
     const consumoUltimos6Meses = {};
     const missingRecipesMap = {};
 
     // --- BUCLE GENERAL ---
     datosPedidos.forEach((row) => {
+      // 1. CORRECCIÓN DE CLAVES (Soporte Minúsculas de DB)
       const dStr = row.FECHA || row.Fecha || row.fecha;
       if (!dStr) return;
+
       const d = new Date(dStr);
       if (isNaN(d.getTime())) return;
-      if (
-        (row.ESTADO || row.Estado || "")
-          .toString()
-          .toUpperCase()
-          .includes("CANCELADO")
-      )
-        return;
 
-      const cantVendida = Number(row.CANTIDAD || row.Cantidad || 1);
-      const prodName = row.MODELO || row.Modelo || "Desconocido";
+      const estado = (row.ESTADO || row.Estado || row.estado || "")
+        .toString()
+        .toUpperCase();
+      if (estado.includes("CANCELADO")) return;
+
+      // Leemos cantidad, modelo, cliente y detalles con todas las variantes posibles
+      const cantVendida = Number(
+        row.CANTIDAD || row.Cantidad || row.cantidad || 1
+      );
+      const prodName = row.MODELO || row.Modelo || row.modelo || "Desconocido";
+      const cliName =
+        row.CLIENTE || row.Cliente || row.cliente || "Desconocido";
+      const detalles = (row.DETALLES || row.Detalles || row.detalles || "")
+        .toString()
+        .toLowerCase();
+      const oc = row.OC || row.oc;
+
       const prodKey = normalizeKey(prodName);
 
       // 1. Lógica DASHBOARD (Año 2025)
       if (d.getFullYear() >= 2025) {
-        const oc = row.OC || row.oc;
-        const isML = (row.DETALLES || "")
-          .toString()
-          .toLowerCase()
-          .includes("mercadolibre");
-        const cliName = row.CLIENTE || row.Cliente || "Desconocido";
+        const isML = detalles.includes("mercadolibre");
 
         if (oc) {
           uniqueOrders.add(oc);
@@ -267,7 +255,6 @@ export default function AnalisisPedidos() {
 
     const consumoData = Array.from(allSemiKeys)
       .map((key) => {
-        // Datos base
         const data2025 = consumoTotal2025[key] || {
           name: key,
           total: 0,
@@ -279,13 +266,11 @@ export default function AnalisisPedidos() {
         const realName = data2025.name || data6M.name || key;
         const stock = stockMap[key] || 0;
 
-        // Promedios
         const promedioDiario = data6M.total / daysInPeriod;
         const promedioMensual = promedioDiario * 30;
         const diasRestantes =
           promedioDiario > 0 ? stock / promedioDiario : 9999;
 
-        // Formatear datos para el gráfico del modal
         const chartData = monthNames
           .slice(0, currentMonth + 1)
           .map((mes, i) => ({
@@ -293,11 +278,10 @@ export default function AnalisisPedidos() {
             consumo: data2025.months[i] || 0,
           }));
 
-        // Formatear "Usado En" para el PieChart del modal
         const usedInChart = Object.entries(data2025.usedIn)
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value)
-          .slice(0, 5); // Top 5 productos
+          .slice(0, 5);
 
         return {
           name: realName,
@@ -307,7 +291,6 @@ export default function AnalisisPedidos() {
           daily: promedioDiario.toFixed(2),
           daysLeft: diasRestantes === 9999 ? "∞" : diasRestantes.toFixed(1),
           daysLeftVal: diasRestantes,
-          // --- DATOS EXTRA PARA EL MODAL ---
           chartData: chartData,
           usedInChart: usedInChart,
         };
@@ -318,9 +301,8 @@ export default function AnalisisPedidos() {
       (a, b) => b.count - a.count
     );
 
-    // Filtramos raw para el modal de ventas
     const filteredRaw = datosPedidos.filter((row) => {
-      const d = new Date(row.FECHA || row.Fecha);
+      const d = new Date(row.FECHA || row.Fecha || row.fecha);
       return !isNaN(d) && d.getFullYear() >= 2025;
     });
 
@@ -369,12 +351,15 @@ export default function AnalisisPedidos() {
     setMostrarSugerencias(false);
     setModalPage(1);
     setHistorialFilter("TODOS");
+
+    // CORRECCIÓN DE FILTRO EN SELECCIÓN
     const rows = analysisData.raw.filter(
       (r) =>
         (modoVista === "PRODUCTOS"
-          ? r.MODELO || r.Modelo
-          : r.CLIENTE || r.Cliente) === name
+          ? r.MODELO || r.Modelo || r.modelo
+          : r.CLIENTE || r.Cliente || r.cliente) === name
     );
+
     let total = 0;
     const pieMap = {};
     const monthNames = [
@@ -393,38 +378,51 @@ export default function AnalisisPedidos() {
     ];
     const prodMonthMap = {};
     monthNames.forEach((m) => (prodMonthMap[m] = 0));
+
     const history = rows
       .sort(
-        (a, b) => new Date(b.FECHA || b.Fecha) - new Date(a.FECHA || a.Fecha)
+        (a, b) =>
+          new Date(b.FECHA || b.Fecha || b.fecha) -
+          new Date(a.FECHA || a.Fecha || a.fecha)
       )
       .map((r) => {
-        const cant = Number(r.CANTIDAD || 1);
+        const cant = Number(r.CANTIDAD || r.Cantidad || r.cantidad || 1);
         total += cant;
-        const key = modoVista === "CLIENTES" ? r.MODELO || "" : r.CLIENTE || "";
+        const key =
+          modoVista === "CLIENTES"
+            ? r.MODELO || r.Modelo || r.modelo || ""
+            : r.CLIENTE || r.Cliente || r.cliente || "";
+
         pieMap[key] = (pieMap[key] || 0) + cant;
+
         const d = new Date(r.FECHA || r.Fecha || r.fecha);
         if (!isNaN(d)) {
           const mName = monthNames[d.getMonth()];
           if (prodMonthMap[mName] !== undefined) prodMonthMap[mName] += cant;
         }
         return {
-          fecha: new Date(r.FECHA || r.Fecha).toLocaleDateString("es-AR"),
+          fecha: new Date(r.FECHA || r.Fecha || r.fecha).toLocaleDateString(
+            "es-AR"
+          ),
           col: key,
           cant,
           oc: r.OC || r.oc || "-",
-          isML: (r.DETALLES || "")
+          isML: (r.DETALLES || r.Detalles || r.detalles || "")
             .toString()
             .toLowerCase()
             .includes("mercadolibre"),
         };
       });
+
     const topPie = Object.entries(pieMap)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
+
     const salesChart = monthNames
       .slice(0, new Date().getMonth() + 1)
       .map((m) => ({ mes: m, ventas: prodMonthMap[m] }));
+
     setSelectedItem({
       name,
       total,
@@ -522,7 +520,6 @@ export default function AnalisisPedidos() {
 
       {view === "DASHBOARD" && (
         <>
-          {/* ... (CÓDIGO DASHBOARD IDÉNTICO AL ANTERIOR) ... */}
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-6">
             <h1 className="text-4xl font-bold flex items-center gap-3">
               {isCli ? (
@@ -562,8 +559,6 @@ export default function AnalisisPedidos() {
             </div>
           </div>
 
-          {/* ... (RESTO DEL DASHBOARD IGUAL) ... */}
-          {/* SOLO PARA NO REPETIR TODO EL BLOQUE GIGANTE, ASUME QUE EL CONTENIDO ES EL MISMO */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
             <div
               className={`bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 flex flex-col justify-center ${

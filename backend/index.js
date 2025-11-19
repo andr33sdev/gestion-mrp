@@ -25,6 +25,20 @@ async function inicializarTablas() {
   try {
     console.log("Verificando tablas de base de datos...");
 
+    // --- NUEVA TABLA: Espejo de Pedidos (Excel) ---
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS pedidos (
+        id SERIAL PRIMARY KEY,
+        fecha TIMESTAMP,
+        cliente TEXT,
+        modelo TEXT,
+        cantidad NUMERIC,
+        oc TEXT,
+        estado TEXT,
+        detalles TEXT
+      );
+    `);
+
     // 3. CORRECCIÓN B: Añadir 'cantidad_producida'
     try {
       await client.query(`
@@ -332,18 +346,13 @@ app.get("/api/leer-archivo", async (req, res) => {
 
 app.get("/api/pedidos-analisis", async (req, res) => {
   try {
-    res.setHeader("Cache-Control", "no-store, no-cache");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-
-    const buffer = await leerArchivoPedidos();
-    const wb = XLSX.read(Buffer.from(buffer), {
-      type: "buffer",
-      cellDates: true,
-    });
-    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    res.json(data);
+    // ¡Ahora consultamos la base de datos local! (Milisegundos)
+    const { rows } = await db.query(
+      "SELECT * FROM pedidos ORDER BY fecha DESC"
+    );
+    res.json(rows);
   } catch (err) {
+    console.error(err);
     res.status(500).send(err.message);
   }
 });
@@ -1191,6 +1200,98 @@ app.get("/api/operarios/:id/stats", async (req, res) => {
   }
 });
 
+// --- FUNCIÓN DE SINCRONIZACIÓN MEJORADA (Filtro 2025 + Limpieza de datos) ---
+async function sincronizarPedidos() {
+  console.log("⏳ [SYNC] Iniciando sincronización de Pedidos (Excel -> DB)...");
+
+  // NOTA: Movemos la conexión aquí abajo para no ocupar el cliente mientras descargamos
+  // 1. Descargar y Procesar Excel (Esto no usa DB)
+  let rawData = [];
+  try {
+    const buffer = await leerArchivoPedidos();
+    const wb = XLSX.read(Buffer.from(buffer), {
+      type: "buffer",
+      cellDates: true,
+    });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    rawData = XLSX.utils.sheet_to_json(sheet);
+  } catch (e) {
+    console.error("❌ [SYNC] Error descargando Excel:", e.message);
+    return; // Salimos si falla la descarga
+  }
+
+  const client = await db.connect();
+  try {
+    const FECHA_CORTE = new Date("2025-01-01");
+    const valoresInsertar = [];
+
+    // 2. Preparar datos en memoria
+    for (const r of rawData) {
+      const fechaRaw = r.FECHA || r.Fecha || r.fecha;
+      let fecha = null;
+      if (fechaRaw) fecha = new Date(fechaRaw);
+
+      // Filtro
+      if (!fecha || isNaN(fecha.getTime()) || fecha < FECHA_CORTE) continue;
+
+      // Limpieza Cantidad
+      let cantidadRaw = r.CANTIDAD || r.Cantidad || r.cantidad || 0;
+      let cantidad = 0;
+      if (typeof cantidadRaw === "number") {
+        cantidad = cantidadRaw;
+      } else {
+        const limpio = String(cantidadRaw)
+          .replace(/,/g, ".")
+          .replace(/[^\d.-]/g, "");
+        cantidad = parseFloat(limpio);
+        if (isNaN(cantidad)) cantidad = 0;
+      }
+
+      const cliente = r.CLIENTE || r.Cliente || r.cliente || null;
+      const modelo = r.MODELO || r.Modelo || r.modelo || null;
+      const oc = r.OC || r.oc || null;
+      const estado = r.ESTADO || r.Estado || r.estado || null;
+      const detalles = r.DETALLES || r.Detalles || r.detalles || null;
+
+      valoresInsertar.push([
+        fecha,
+        cliente,
+        modelo,
+        cantidad,
+        oc,
+        estado,
+        detalles,
+      ]);
+    }
+
+    // 3. Inserción por LOTES (Batching) - ¡LA SOLUCIÓN AL TIMEOUT!
+    await client.query("BEGIN");
+    await client.query("TRUNCATE TABLE pedidos RESTART IDENTITY");
+
+    const TAMANO_LOTE = 500; // Insertamos de a 500 filas (muy rápido)
+    console.log(
+      `📦 [SYNC] Insertando ${valoresInsertar.length} registros en lotes de ${TAMANO_LOTE}...`
+    );
+
+    for (let i = 0; i < valoresInsertar.length; i += TAMANO_LOTE) {
+      const lote = valoresInsertar.slice(i, i + TAMANO_LOTE);
+      const query = format(
+        "INSERT INTO pedidos (fecha, cliente, modelo, cantidad, oc, estado, detalles) VALUES %L",
+        lote
+      );
+      await client.query(query);
+    }
+
+    await client.query("COMMIT");
+    console.log("✅ [SYNC] Sincronización completada con éxito.");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("❌ [SYNC] Error en base de datos:", err.message);
+  } finally {
+    client.release();
+  }
+}
+
 // --- INICIO DEL SERVIDOR ---
 async function iniciarServidor() {
   await setupAuth();
@@ -1198,6 +1299,9 @@ async function iniciarServidor() {
   app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
   await sincronizarBaseDeDatos();
   setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
+  // 2. Pedidos de Excel (Cada 15 min - Ajustable)
+  await sincronizarPedidos(); // Primera carga al arrancar
+  setInterval(sincronizarPedidos, 15 * 60 * 1000);
 }
 
 iniciarServidor();

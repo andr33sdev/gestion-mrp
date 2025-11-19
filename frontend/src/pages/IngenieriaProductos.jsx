@@ -68,7 +68,6 @@ function DraggableItem({ item, isOverlay }) {
 }
 
 // --- 2. ÁREA DE RECETA (Donde soltamos) ---
-// *** NUEVO: AÑADIDO 'onCantidadChange' ***
 function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
   const { setNodeRef, isOver } = useDroppable({ id: "receta-droppable" });
   return (
@@ -99,7 +98,6 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
               className="bg-slate-700 p-3 rounded-lg flex justify-between items-center group border border-slate-600 animate-in fade-in slide-in-from-bottom-2"
             >
               <div className="flex items-center gap-3">
-                {/* *** NUEVO: onClick y cursor-pointer *** */}
                 <div
                   onClick={() => onCantidadChange && onCantidadChange(idx)}
                   className="bg-slate-800 h-8 w-8 flex items-center justify-center rounded font-bold text-green-400 border border-slate-600 text-sm cursor-pointer hover:bg-slate-700 transition-colors"
@@ -133,19 +131,19 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
 // --- 3. COMPONENTE PRINCIPAL ---
 export default function IngenieriaProductos() {
   // ESTADOS DE DATOS
-  const [productos, setProductos] = useState([]); // Lista strings
-  const [semielaborados, setSemielaborados] = useState([]); // Lista objetos
-  const [materiasPrimas, setMateriasPrimas] = useState([]); // Lista objetos
+  const [productos, setProductos] = useState([]);
+  const [semielaborados, setSemielaborados] = useState([]);
+  const [materiasPrimas, setMateriasPrimas] = useState([]);
 
   // ESTADOS DE INTERFAZ
-  const [modo, setModo] = useState("PRODUCTO"); // "PRODUCTO" o "SEMIELABORADO"
-  const [seleccionado, setSeleccionado] = useState(null); // String (Prod) u Objeto (Semi)
-  const [receta, setReceta] = useState([]); // Items en la receta actual
+  const [modo, setModo] = useState("PRODUCTO");
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [receta, setReceta] = useState([]);
   const [ultimaModificacion, setUltimaModificacion] = useState(null);
 
   // FILTROS
-  const [filtroIzq, setFiltroIzq] = useState(""); // Filtro lista izquierda (lo que edito)
-  const [filtroDer, setFiltroDer] = useState(""); // Filtro lista derecha (ingredientes)
+  const [filtroIzq, setFiltroIzq] = useState("");
+  const [filtroDer, setFiltroDer] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [activeDragId, setActiveDragId] = useState(null);
@@ -156,7 +154,6 @@ export default function IngenieriaProductos() {
       try {
         console.log("🛠️ [Ingeniería] Iniciando carga de datos...");
 
-        // A. Cargar Productos (Fusionando Excel + BD)
         const [resPedidos, resRecetas] = await Promise.all([
           fetch(`${PEDIDOS_API_URL}?t=${Date.now()}`),
           fetch(`${API_BASE_URL}/ingenieria/recetas/all`),
@@ -165,39 +162,29 @@ export default function IngenieriaProductos() {
         const dataPedidos = await resPedidos.json();
         const dataRecetas = await resRecetas.json();
 
-        // --- 🔍 AQUÍ ESTÁN LOS LOGS QUE PEDISTE ---
-        console.group("🔍 DEBUG INGENIERÍA: Datos Recibidos");
-        console.log("1️⃣ Pedidos (Excel):", dataPedidos);
-        console.log("2️⃣ Recetas (BD - Productos Terminados):", dataRecetas);
-        // ^^^ BUSCA AQUÍ TU RECETA NUEVA. ¿Tiene un array [] con items o está vacío?
-        console.groupEnd();
-        // -------------------------------------------
-
         const setNombres = new Set();
+
+        // --- CORRECCIÓN AQUÍ: Aceptar 'modelo' en minúsculas ---
         dataPedidos.forEach((r) => {
-          const nombre = r.MODELO || r.Modelo;
-          if (nombre) setNombres.add(nombre.trim());
+          // Ahora buscamos MODELO, Modelo o modelo (este último es el de la DB)
+          const nombre = r.MODELO || r.Modelo || r.modelo;
+          if (nombre) setNombres.add(nombre.toString().trim());
         });
 
-        // Añadimos también las claves de las recetas (para que no falten si no hay ventas)
         Object.keys(dataRecetas).forEach((nombre) => {
           if (nombre) setNombres.add(nombre.trim());
         });
 
         setProductos(Array.from(setNombres).sort());
 
-        // B. Cargar Semielaborados
         const resSemis = await fetch(
           `${API_BASE_URL}/ingenieria/semielaborados`
         );
         const dataSemis = await resSemis.json();
-        console.log("3️⃣ Semielaborados Disponibles:", dataSemis); // Log extra para verificar IDs
         setSemielaborados(dataSemis);
 
-        // C. Cargar Materias Primas
         const resMP = await fetch(`${API_BASE_URL}/ingenieria/materias-primas`);
         const dataMP = await resMP.json();
-        console.log("4️⃣ Materias Primas:", dataMP);
         setMateriasPrimas(dataMP);
       } catch (error) {
         console.error("❌ Error cargando datos iniciales:", error);
@@ -226,7 +213,6 @@ export default function IngenieriaProductos() {
         setReceta(
           data.map((d) => ({
             ...d,
-            // *** La cantidad AHORA VIENE DE LA BD ***
             cantidad: Number(d.cantidad) || 1,
             id: modo === "PRODUCTO" ? d.semielaborado_id : d.materia_prima_id,
           }))
@@ -241,7 +227,7 @@ export default function IngenieriaProductos() {
     }
   };
 
-  // --- 3. CREAR PRODUCTO NUEVO (Solo modo Producto) ---
+  // --- 3. CREAR PRODUCTO NUEVO ---
   const crearNuevoProducto = () => {
     if (modo !== "PRODUCTO" || !filtroIzq.trim()) return;
     const nuevoNombre = filtroIzq.trim().toUpperCase();
@@ -253,14 +239,12 @@ export default function IngenieriaProductos() {
   };
 
   // --- 4. GUARDAR ---
-  // *** CORREGIDO: Ahora envía la cantidad correcta ***
   const guardar = async () => {
     if (!seleccionado) return;
 
     let endpoint = "";
     let body = {};
 
-    // Mapea la receta real, incluyendo su cantidad
     const itemsToSave = receta.map((r) => ({
       id: r.id,
       cantidad: r.cantidad,
@@ -269,14 +253,14 @@ export default function IngenieriaProductos() {
     if (modo === "PRODUCTO") {
       endpoint = `${API_BASE_URL}/ingenieria/recetas`;
       body = {
-        producto_terminado: seleccionado, // Es un string
-        items: itemsToSave, // <--- CORREGIDO
+        producto_terminado: seleccionado,
+        items: itemsToSave,
       };
     } else {
       endpoint = `${API_BASE_URL}/ingenieria/recetas-semielaborados`;
       body = {
-        semielaborado_id: seleccionado.id, // Es un objeto
-        items: itemsToSave, // <--- CORREGIDO
+        semielaborado_id: seleccionado.id,
+        items: itemsToSave,
       };
     }
 
@@ -295,21 +279,20 @@ export default function IngenieriaProductos() {
     }
   };
 
-  // --- 5. SINCRONIZAR STOCK (Dual) ---
+  // --- 5. SINCRONIZAR STOCK ---
   const syncStock = async () => {
     setLoading(true);
     try {
       let endpoint = "";
       if (modo === "PRODUCTO") {
-        endpoint = `${API_BASE_URL}/ingenieria/sincronizar-stock`; // Sync Semis
+        endpoint = `${API_BASE_URL}/ingenieria/sincronizar-stock`;
       } else {
-        endpoint = `${API_BASE_URL}/ingenieria/sincronizar-mp`; // Sync MP
+        endpoint = `${API_BASE_URL}/ingenieria/sincronizar-mp`;
       }
 
       const r = await fetch(endpoint, { method: "POST" });
       if (!r.ok) throw new Error("Error del servidor");
 
-      // Refrescar la lista correspondiente
       if (modo === "PRODUCTO") {
         const res = await fetch(`${API_BASE_URL}/ingenieria/semielaborados`);
         setSemielaborados(await res.json());
@@ -317,11 +300,7 @@ export default function IngenieriaProductos() {
         const res = await fetch(`${API_BASE_URL}/ingenieria/materias-primas`);
         setMateriasPrimas(await res.json());
       }
-      alert(
-        `Sincronización de ${
-          modo === "PRODUCTO" ? "Semielaborados" : "Materia Prima"
-        } completada.`
-      );
+      alert(`Sincronización completada.`);
     } catch (e) {
       alert("Error sincronizando: " + e.message);
     }
@@ -329,8 +308,6 @@ export default function IngenieriaProductos() {
   };
 
   // --- 6. DRAG & DROP HANDLERS ---
-
-  // *** NUEVO: Pregunta la cantidad al arrastrar ***
   const handleDragEnd = (e) => {
     setActiveDragId(null);
     if (e.over && e.over.id === "receta-droppable") {
@@ -339,14 +316,13 @@ export default function IngenieriaProductos() {
       const itemData = listaOrigen.find((s) => s.id == itemId); // eslint-disable-line
 
       if (itemData) {
-        // PREGUNTAR CANTIDAD
         const defaultQty = modo === "PRODUCTO" ? "1" : "1.0";
         const cantidadStr = prompt(
           `Ingrese la cantidad de "${itemData.nombre}":`,
           defaultQty
         );
 
-        if (cantidadStr === null) return; // Cancelado
+        if (cantidadStr === null) return;
 
         const cantidad = Number(cantidadStr);
         if (isNaN(cantidad) || cantidad <= 0) {
@@ -361,7 +337,6 @@ export default function IngenieriaProductos() {
 
   const handleDragStart = (e) => setActiveDragId(e.active.id);
 
-  // *** NUEVO: Handler para editar cantidad ***
   const handleCantidadChange = (indexToChange) => {
     const item = receta[indexToChange];
     const defaultQty = String(item.cantidad);
@@ -370,7 +345,7 @@ export default function IngenieriaProductos() {
       defaultQty
     );
 
-    if (cantidadStr === null) return; // Cancelado
+    if (cantidadStr === null) return;
 
     const cantidad = Number(cantidadStr);
     if (isNaN(cantidad) || cantidad <= 0) {
@@ -378,7 +353,6 @@ export default function IngenieriaProductos() {
       return;
     }
 
-    // Actualizar el estado
     setReceta((prev) =>
       prev.map((r, index) =>
         index === indexToChange ? { ...r, cantidad: cantidad } : r
@@ -386,9 +360,7 @@ export default function IngenieriaProductos() {
     );
   };
 
-  // --- 7. PREPARAR LISTAS VISUALES (Lógica de "escribir para ver") ---
-
-  // Columna Izquierda (Buscador de lo que voy a editar)
+  // --- 7. PREPARAR LISTAS VISUALES ---
   let listaIzquierdaVisible = [];
   if (filtroIzq.trim() === "") {
     listaIzquierdaVisible = [];
@@ -404,7 +376,6 @@ export default function IngenieriaProductos() {
     );
   }
 
-  // Columna Derecha (Ingredientes disponibles)
   const listaDerechaSource =
     modo === "PRODUCTO" ? semielaborados : materiasPrimas;
   const listaDerechaVisible =
@@ -432,7 +403,6 @@ export default function IngenieriaProductos() {
 
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      {/* --- HEADER: SWITCH DE MODO --- */}
       <div className="flex justify-center mb-6 bg-slate-800/50 p-2 rounded-2xl gap-4 border border-slate-700 w-fit mx-auto">
         <button
           onClick={() => {
@@ -469,7 +439,6 @@ export default function IngenieriaProductos() {
       </div>
 
       <div className="grid grid-cols-12 gap-6 h-[calc(100vh-200px)] min-h-[600px]">
-        {/* --- COLUMNA 1: BUSCADOR (IZQUIERDA) --- */}
         <div className="col-span-3 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
           <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
             <h3
@@ -489,14 +458,12 @@ export default function IngenieriaProductos() {
             />
           </div>
           <div className="overflow-y-auto p-2 space-y-1 custom-scrollbar">
-            {/* Mensaje de ayuda o lista */}
             {filtroIzq.trim() === "" ? (
               <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic opacity-50">
                 Escribe para buscar...
               </div>
             ) : (
               <>
-                {/* Botón Crear Producto */}
                 {noCoincideNinguno && (
                   <div
                     onClick={crearNuevoProducto}
@@ -506,7 +473,6 @@ export default function IngenieriaProductos() {
                   </div>
                 )}
 
-                {/* Lista */}
                 {listaIzquierdaVisible.length === 0 && !noCoincideNinguno ? (
                   <div className="text-center text-gray-500 text-xs mt-4">
                     Sin coincidencias
@@ -540,7 +506,6 @@ export default function IngenieriaProductos() {
           </div>
         </div>
 
-        {/* --- COLUMNA 2: EDITOR DE RECETA (CENTRO) --- */}
         <div className="col-span-5 flex flex-col bg-slate-900/50 rounded-xl border border-slate-700 overflow-hidden shadow-lg relative">
           <div className="p-5 bg-slate-800 border-b border-slate-700 flex justify-between items-start">
             <div>
@@ -573,7 +538,7 @@ export default function IngenieriaProductos() {
                   onRemove={(idx) =>
                     setReceta((prev) => prev.filter((_, i) => i !== idx))
                   }
-                  onCantidadChange={handleCantidadChange} // <-- Pasamos el handler
+                  onCantidadChange={handleCantidadChange}
                   placeholderText={
                     modo === "PRODUCTO"
                       ? "Arrastra Semielaborados"
@@ -594,7 +559,6 @@ export default function IngenieriaProductos() {
           </div>
         </div>
 
-        {/* --- COLUMNA 3: INGREDIENTES DISPONIBLES (DERECHA) --- */}
         <div className="col-span-4 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
           <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
             <div className="flex justify-between items-center mb-3">
@@ -624,7 +588,6 @@ export default function IngenieriaProductos() {
             />
           </div>
           <div className="overflow-y-auto p-2 bg-slate-800/50 custom-scrollbar flex-1">
-            {/* Mensaje de ayuda o lista */}
             {filtroDer.trim() === "" ? (
               <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic opacity-50">
                 Busca componentes...
