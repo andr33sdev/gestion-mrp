@@ -363,12 +363,57 @@ export default function PlanificacionPage() {
   };
 
   const handleAddItem = (semielaborado) => {
-    const cantidad = Number(prompt(`Cantidad:`, "10"));
-    if (cantidad > 0)
-      setCurrentPlanItems((prev) => [
-        ...prev,
-        { semielaborado, cantidad, producido: 0, plan_item_id: null },
-      ]);
+    const cantidadInput = prompt(
+      `Cantidad a fabricar de "${semielaborado.nombre}":`,
+      "10"
+    );
+
+    // Si el usuario cancela, no hacemos nada
+    if (cantidadInput === null) return;
+
+    const cantidad = Number(cantidadInput);
+
+    if (cantidad && cantidad > 0) {
+      setCurrentPlanItems((prev) => {
+        // 1. Buscamos si el ítem ya existe en la lista actual
+        const index = prev.findIndex(
+          (item) => item.semielaborado.id === semielaborado.id
+        );
+
+        if (index !== -1) {
+          // 2. CASO A: YA EXISTE -> Sumamos la cantidad
+          const nuevosItems = [...prev];
+          nuevosItems[index] = {
+            ...nuevosItems[index],
+            cantidad: nuevosItems[index].cantidad + cantidad,
+          };
+          return nuevosItems;
+        } else {
+          // 3. CASO B: NO EXISTE -> Lo agregamos como nuevo
+          return [
+            ...prev,
+            {
+              semielaborado,
+              cantidad,
+              producido: 0,
+              plan_item_id: null,
+            },
+          ];
+        }
+      });
+    }
+  };
+
+  // --- NUEVA FUNCIÓN PARA EDITAR CANTIDAD ---
+  const handleEditItem = (indexToEdit, newQuantity) => {
+    setCurrentPlanItems((prev) => {
+      const nuevos = [...prev];
+      nuevos[indexToEdit] = {
+        ...nuevos[indexToEdit],
+        cantidad: newQuantity, // Actualizamos solo la meta
+      };
+      return nuevos;
+    });
   };
 
   const handleRemoveItem = (index) =>
@@ -591,6 +636,7 @@ export default function PlanificacionPage() {
                             key={i}
                             item={item}
                             onRemove={() => handleRemoveItem(i)}
+                            onEdit={(qty) => handleEditItem(i, qty)}
                             isPlanCerrado={isPlanCerrado}
                           />
                         ))}

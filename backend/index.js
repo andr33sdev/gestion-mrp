@@ -1249,28 +1249,67 @@ app.put("/api/planificacion/:id/estado", async (req, res) => {
   }
 });
 
-
-// 5. ACTUALIZAR UN PLAN COMPLETO (Nombre y/o Items)
+// 5. ACTUALIZAR UN PLAN (LÓGICA INTELIGENTE: NO BORRA HISTORIAL)
 app.put("/api/planificacion/:id", async (req, res) => {
   const { id } = req.params;
-  const { nombre, items } = req.body;
+  const { nombre, items } = req.body; // items trae 'plan_item_id' si ya existe
+
   if (!nombre || !items) {
     return res.status(400).json({ msg: "Faltan datos (nombre o items)" });
   }
+
   const client = await db.connect();
   try {
     await client.query("BEGIN");
+
+    // 1. Actualizar nombre del plan
     await client.query(
       "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
       [nombre, id]
     );
-    await client.query("DELETE FROM planes_items WHERE plan_id = $1", [id]);
+
+    // 2. Obtener qué ítems tiene el plan actualmente en la BD
+    const resCurrent = await client.query(
+      "SELECT id FROM planes_items WHERE plan_id = $1",
+      [id]
+    );
+    const idsEnBaseDatos = resCurrent.rows.map((r) => r.id);
+
+    // 3. Procesar la lista que viene del Frontend
+    const idsQueSiguen = [];
+
     for (const item of items) {
-      await client.query(
-        "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, cantidad_producida) VALUES ($1, $2, $3, $4)",
-        [id, item.semielaborado.id, item.cantidad, item.producido || 0]
-      );
+      if (item.plan_item_id) {
+        // CASO A: EL ÍTEM YA EXISTÍA -> ACTUALIZAR META
+        // Solo tocamos 'cantidad_requerida'. No tocamos 'cantidad_producida' ni el ID.
+        // Así los registros de los operarios siguen vinculados perfectamente.
+        await client.query(
+          "UPDATE planes_items SET cantidad_requerida = $1 WHERE id = $2",
+          [item.cantidad, item.plan_item_id]
+        );
+        idsQueSiguen.push(item.plan_item_id);
+      } else {
+        // CASO B: ÍTEM NUEVO AGREGADO AHORA -> INSERTAR
+        await client.query(
+          "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, cantidad_producida) VALUES ($1, $2, $3, 0)",
+          [id, item.semielaborado.id, item.cantidad]
+        );
+      }
     }
+
+    // 4. CASO C: ÍTEMS QUE ESTABAN PERO EL USUARIO QUITÓ -> BORRAR
+    // Filtramos los IDs de la BD que NO vinieron en la lista nueva
+    const idsParaBorrar = idsEnBaseDatos.filter(
+      (dbId) => !idsQueSiguen.includes(dbId)
+    );
+
+    if (idsParaBorrar.length > 0) {
+      // Borramos solo los que sacaste de la lista
+      await client.query("DELETE FROM planes_items WHERE id = ANY($1::int[])", [
+        idsParaBorrar,
+      ]);
+    }
+
     await client.query("COMMIT");
     res.json({ success: true, planId: id });
   } catch (err) {
@@ -1279,6 +1318,22 @@ app.put("/api/planificacion/:id", async (req, res) => {
     res.status(500).send(err.message);
   } finally {
     client.release();
+  }
+});
+
+// --- AQUÍ ESTABA EL FALTANTE: DELETE PLAN ---
+app.delete("/api/planificacion/:id", async (req, res) => {
+  try {
+    const result = await db.query(
+      "DELETE FROM planes_produccion WHERE id = $1 RETURNING *",
+      [req.params.id]
+    );
+    if (result.rowCount === 0)
+      return res.status(404).json({ msg: "Plan no encontrado" });
+    res.json({ success: true, msg: "Plan eliminado" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
   }
 });
 
