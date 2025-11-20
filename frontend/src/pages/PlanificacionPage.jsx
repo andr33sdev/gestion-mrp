@@ -139,7 +139,7 @@ export default function PlanificacionPage() {
 
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.text("Sistema de Gestión - Horno Rotomoldeo", 14, 26);
+    doc.text("Sistema de Gestión - Conoflex Argentina", 14, 26);
 
     // Info Derecha
     doc.setFontSize(12);
