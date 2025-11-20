@@ -429,7 +429,7 @@ export default function LogisticaPage() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-8 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 border-slate-700 pt-4 md:pt-0">
-                                        <div className="text-center"><p className="text-xs text-gray-500 uppercase font-bold">Bultos</p><p className="text-xl font-bold text-white">{viaje.total_items}</p></div>
+                                        <div className="text-center"><p className="text-xs text-gray-500 uppercase font-bold">Modelos</p><p className="text-xl font-bold text-white">{viaje.total_items}</p></div>
                                         <div className="text-center"><p className="text-xs text-gray-500 uppercase font-bold">Unidades</p><p className="text-xl font-bold text-white">{viaje.total_unidades}</p></div>
                                         <div className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider border ${isRecibido ? "bg-green-900/20 border-green-500/50 text-green-400" : "bg-orange-900/20 border-orange-500/50 text-orange-400 animate-pulse"}`}>{isRecibido ? "ENTREGADO" : "EN CAMINO"}</div>
                                     </div>

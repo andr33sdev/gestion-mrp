@@ -336,30 +336,22 @@ app.get("/api/leer-archivo", async (req, res) => {
   }
 });
 
+// --- PEDIDOS Y ANÁLISIS (VERSIÓN RÁPIDA - BASE DE DATOS) ---
 app.get("/api/pedidos-analisis", async (req, res) => {
   try {
-    res.setHeader("Cache-Control", "no-store, no-cache");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
+    // Headers para evitar caché viejo
+    res.setHeader("Cache-Control", "no-store");
 
-    const buffer = await leerArchivoPedidos();
-    const wb = XLSX.read(Buffer.from(buffer), {
-      type: "buffer",
-      cellDates: true,
-    });
-    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    res.json(data);
-    // ¡Ahora consultamos la base de datos local! (Milisegundos)
-    const { rows } = await db.query(
-      "SELECT * FROM pedidos ORDER BY fecha DESC"
-    );
+    // Consultamos la tabla 'pedidos' que se sincroniza en segundo plano
+    // Esto tarda milisegundos en lugar de minutos
+    const { rows } = await db.query("SELECT * FROM pedidos ORDER BY fecha DESC");
+
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error en /api/pedidos-analisis:", err);
     res.status(500).send(err.message);
   }
 });
-
 // =====================================================
 // --- RUTAS INGENIERÍA ---
 // =====================================================
