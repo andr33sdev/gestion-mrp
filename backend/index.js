@@ -609,6 +609,53 @@ app.delete("/api/produccion/:estacion_id", async (req, res) => {
   }
 });
 
+// --- ELIMINAR PRODUCCIÓN (SIN TOCAR STOCK MP) ---
+app.delete("/api/produccion/:id", async (req, res) => {
+  const { id } = req.params;
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1. Obtener datos del registro antes de borrarlo
+    const regRes = await client.query(
+      "SELECT * FROM registros_produccion WHERE id = $1",
+      [id]
+    );
+
+    if (regRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ msg: "Registro no encontrado" });
+    }
+
+    const reg = regRes.rows[0];
+
+    // 2. Descontar del Plan (Corregir el avance)
+    // Solo si el registro estaba asociado a un plan
+    if (reg.plan_item_id) {
+      await client.query(
+        "UPDATE planes_items SET cantidad_producida = cantidad_producida - $1 WHERE id = $2",
+        [reg.cantidad_ok, reg.plan_item_id]
+      );
+    }
+
+    // 3. Borrar el registro definitivamente
+    await client.query("DELETE FROM registros_produccion WHERE id = $1", [id]);
+
+    await client.query("COMMIT");
+    res.json({
+      success: true,
+      msg: "Producción eliminada y plan actualizado.",
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error eliminando producción:", err);
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
 app.post("/api/sincronizar", async (req, res) => {
   const r = await sincronizarBaseDeDatos();
   res.status(r.success ? 200 : 500).json(r);
@@ -1029,42 +1076,42 @@ app.get("/api/planificacion/abiertos", async (req, res) => {
   }
 });
 
-// 2. OBTENER UN PLAN Específico (con progreso)
+// --- PLANIFICACIÓN (CÁLCULO DINÁMICO - CORAZÓN DEL SISTEMA) ---
 app.get("/api/planificacion/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    res.setHeader("Cache-Control", "no-store");
-    const planRes = await db.query(
-      "SELECT * FROM planes_produccion WHERE id = $1",
+    const { rows } = await db.query(
+      "SELECT * FROM planes_produccion WHERE id=$1",
       [id]
     );
-    if (planRes.rows.length === 0) {
-      return res.status(404).json({ msg: "Plan no encontrado" });
-    }
-    const plan = planRes.rows[0];
+    if (rows.length === 0) return res.status(404).send("No existe");
+    const plan = rows[0];
+
+    // AQUÍ ESTÁ LA MAGIA: No leemos un campo fijo. SUMAMOS los registros reales.
+    // Si borras un registro, esta suma baja automáticamente.
     const itemsRes = await db.query(
-      `SELECT 
-         pi.id as plan_item_id, 
-         pi.cantidad_requerida,
-         pi.cantidad_producida,
-         s.id,
-         s.nombre,
-         s.codigo
-       FROM planes_items pi
-       JOIN semielaborados s ON pi.semielaborado_id = s.id
-       WHERE pi.plan_id = $1`,
+      `
+            SELECT 
+                pi.id as plan_item_id, 
+                pi.cantidad_requerida,
+                COALESCE((SELECT SUM(rp.cantidad_ok) FROM registros_produccion rp WHERE rp.plan_item_id = pi.id), 0) as cantidad_producida,
+                s.id, s.nombre, s.codigo
+            FROM planes_items pi
+            JOIN semielaborados s ON pi.semielaborado_id = s.id
+            WHERE pi.plan_id = $1
+        `,
       [id]
     );
-    plan.items = itemsRes.rows.map((row) => ({
-      plan_item_id: row.plan_item_id,
-      semielaborado: { id: row.id, nombre: row.nombre, codigo: row.codigo },
-      cantidad: Number(row.cantidad_requerida),
-      producido: Number(row.cantidad_producida),
+
+    plan.items = itemsRes.rows.map((i) => ({
+      ...i,
+      semielaborado: { id: i.id, nombre: i.nombre, codigo: i.codigo },
+      cantidad: Number(i.cantidad_requerida),
+      producido: Number(i.cantidad_producida),
     }));
     res.json(plan);
-  } catch (err) {
-    console.error(err);
-    res.status(500).send(err.message);
+  } catch (e) {
+    res.status(500).send(e.message);
   }
 });
 
@@ -1234,24 +1281,6 @@ app.put("/api/planificacion/:id", async (req, res) => {
   }
 });
 
-// 6. ELIMINAR UN PLAN
-app.delete("/api/planificacion/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await db.query(
-      "DELETE FROM planes_produccion WHERE id = $1 RETURNING *",
-      [id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ msg: "Plan no encontrado" });
-    }
-    res.json({ success: true, msg: `Plan ${id} eliminado.` });
-  } catch (err) {
-    console.error("Error eliminando plan:", err);
-    res.status(500).send(err.message);
-  }
-});
-
 // 7. REGISTRAR PRODUCCIÓN (Carga Rápida) - MODIFICADA PARA FALLAS Y TURNO
 app.post("/api/produccion/registrar-a-plan", async (req, res) => {
   const {
@@ -1342,6 +1371,38 @@ app.post("/api/produccion/registrar-a-plan", async (req, res) => {
     await client.query("ROLLBACK");
     console.error("Error registrando producción:", err);
     res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// --- ELIMINAR PRODUCCIÓN (CORREGIDO PARA DEVOLVER SIEMPRE JSON) ---
+app.delete("/api/produccion/registro/:id", async (req, res) => {
+  const { id } = req.params;
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Solo borramos el registro. La suma del plan se recalcula sola al leer.
+    const resDel = await client.query(
+      "DELETE FROM registros_produccion WHERE id = $1",
+      [id]
+    );
+
+    if (resDel.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res
+        .status(404)
+        .json({ msg: "El registro no existe o ya fue eliminado." });
+    }
+
+    await client.query("COMMIT");
+    return res.json({ success: true, msg: "Registro eliminado exitosamente." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error al eliminar:", err.message);
+    // CORRECCIÓN: Devolvemos JSON
+    return res.status(500).json({ msg: err.message || "Error al eliminar" });
   } finally {
     client.release();
   }

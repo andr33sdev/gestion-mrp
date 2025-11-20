@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   FaUsersCog,
   FaUserPlus,
@@ -13,23 +13,37 @@ import {
   FaTimes,
   FaBoxOpen,
   FaCalendarAlt,
-  FaClock,
   FaSun,
   FaMoon,
+  FaPercentage,
   FaClipboardList,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
-import { API_BASE_URL } from "../utils";
+import { API_BASE_URL } from "../utils.js";
 
 const API_URL = `${API_BASE_URL}/operarios`;
 
-// --- Modal de Detalle de Producción (ACTUALIZADO) ---
-function ProduccionModal({ item, onClose }) {
+// --- Modal de Detalle de Producción ---
+function ProduccionModal({ item, onClose, onDelete }) {
   if (!item) return null;
 
-  const isScrap = Number(item.cantidad_scrap) > 0;
+  // Normalización de datos
+  const cantidadScrap = Number(item.cantidad_scrap || 0);
+  const isScrap = cantidadScrap > 0;
   const turnoStr = (item.turno || "DIURNO").toUpperCase();
   const isDiurno = turnoStr === "DIURNO";
+  const planNombre = item.plan_nombre || "Sin Plan Asignado";
+
+  const handleDelete = () => {
+    if (
+      window.confirm(
+        "¿Estás seguro de ANULAR este registro?\n\nSe descontará del plan y se devolverá la materia prima al stock."
+      )
+    ) {
+      onDelete(item.id);
+      onClose();
+    }
+  };
 
   return (
     <div
@@ -48,9 +62,22 @@ function ProduccionModal({ item, onClose }) {
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
             <FaBoxOpen className="text-blue-400" /> Detalle de Registro
           </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <FaTimes />
-          </button>
+          <div className="flex gap-2">
+            {/* BOTÓN ELIMINAR */}
+            <button
+              onClick={handleDelete}
+              className="p-2 bg-red-900/30 text-red-400 hover:bg-red-600 hover:text-white rounded transition-colors border border-red-900/50"
+              title="Anular Registro"
+            >
+              <FaTrash />
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white p-2"
+            >
+              <FaTimes />
+            </button>
+          </div>
         </div>
 
         {/* Body */}
@@ -65,18 +92,16 @@ function ProduccionModal({ item, onClose }) {
             </p>
           </div>
 
-          {/* --- NUEVO: Plan de Producción --- */}
+          {/* Plan (Si existe en el backend) */}
           <div className="flex items-center gap-3 bg-slate-700/30 p-3 rounded-xl border border-slate-600/50">
             <div className="bg-blue-500/20 p-2 rounded-lg text-blue-400">
               <FaClipboardList />
             </div>
             <div>
               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
-                Plan Asignado
+                Contexto
               </p>
-              <p className="text-sm text-white font-medium">
-                {item.plan_nombre || "Sin Plan / Plan Eliminado"}
-              </p>
+              <p className="text-sm text-white font-medium">{planNombre}</p>
             </div>
           </div>
 
@@ -107,7 +132,7 @@ function ProduccionModal({ item, onClose }) {
                   isScrap ? "text-white" : "text-gray-500"
                 }`}
               >
-                {item.cantidad_scrap || 0}
+                {cantidadScrap}
               </p>
             </div>
           </div>
@@ -151,26 +176,45 @@ function ProduccionModal({ item, onClose }) {
 function OperarioDetalle({ operarioId }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedProduccion, setSelectedProduccion] = useState(null); // Estado para el modal
+  const [selectedProduccion, setSelectedProduccion] = useState(null);
 
-  useEffect(() => {
-    if (!operarioId) return;
-
-    const fetchStats = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`${API_URL}/${operarioId}/stats`);
-        if (!res.ok) throw new Error("No se pudieron cargar las estadísticas");
-        setStats(await res.json());
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStats();
+  // Función de carga aislada para poder reusarla
+  const cargarDatos = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/${operarioId}/stats`);
+      if (!res.ok) throw new Error("No se pudieron cargar las estadísticas");
+      setStats(await res.json());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, [operarioId]);
+
+  // Carga inicial al montar o cambiar ID
+  useEffect(() => {
+    if (operarioId) cargarDatos();
+  }, [operarioId, cargarDatos]);
+
+  // Handler de Eliminación
+  const handleEliminarRegistro = async (id) => {
+    try {
+      // CORRECCIÓN: Apuntamos a la ruta '/registro/' para no confundir con la de hornos
+      const res = await fetch(`${API_BASE_URL}/produccion/registro/${id}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        await cargarDatos(); // Recargar la lista
+      } else {
+        alert("Error al eliminar el registro.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de conexión.");
+    }
+  };
 
   if (loading) {
     return (
@@ -182,6 +226,27 @@ function OperarioDetalle({ operarioId }) {
 
   if (!stats) {
     return <div className="p-6 text-gray-500">Error al cargar datos.</div>;
+  }
+
+  // Cálculos de Eficiencia
+  const totalOK = Number(stats.totalUnidades || 0);
+  const totalScrap = Number(stats.totalScrap || 0);
+  const granTotal = totalOK + totalScrap;
+  const eficiencia =
+    granTotal > 0 ? ((totalOK / granTotal) * 100).toFixed(1) : "100.0";
+
+  let colorEficiencia = "text-emerald-400";
+  let bordeEficiencia = "border-emerald-500/30";
+  let bgEficiencia = "bg-emerald-900/20";
+  if (Number(eficiencia) < 95) {
+    colorEficiencia = "text-yellow-400";
+    bordeEficiencia = "border-yellow-500/30";
+    bgEficiencia = "bg-yellow-900/20";
+  }
+  if (Number(eficiencia) < 90) {
+    colorEficiencia = "text-rose-400";
+    bordeEficiencia = "border-rose-500/30";
+    bgEficiencia = "bg-rose-900/20";
   }
 
   return (
@@ -197,23 +262,31 @@ function OperarioDetalle({ operarioId }) {
           {stats.nombre}
         </h2>
 
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        {/* GRID DE TARJETAS DE MÉTRICAS */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          {/* Unidades OK */}
           <div className="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
-            <h3 className="text-sm font-bold text-gray-400">Unidades OK</h3>
-            <p className="text-4xl font-bold text-emerald-400">
-              {stats.totalUnidades || 0}
+            <h3 className="text-xs font-bold text-gray-400 uppercase">
+              Unidades OK
+            </h3>
+            <p className="text-3xl font-bold text-emerald-400 mt-1">
+              {totalOK}
             </p>
           </div>
+
+          {/* Top Producto */}
           <div className="bg-slate-700/50 p-4 rounded-xl border border-slate-600">
-            <h3 className="text-sm font-bold text-gray-400">Producto Top</h3>
+            <h3 className="text-xs font-bold text-gray-400 uppercase">
+              Top Producto
+            </h3>
             <p
-              className="text-xl font-bold text-white truncate mt-1"
+              className="text-sm font-bold text-white truncate mt-2"
               title={stats.topProducto?.nombre || "N/A"}
             >
               {stats.topProducto?.nombre || "N/A"}
             </p>
-            <p className="text-sm text-gray-500">
-              ({stats.topProducto?.total || 0} unidades)
+            <p className="text-xs text-gray-500">
+              ({stats.topProducto?.total || 0} u.)
             </p>
           </div>
         </div>
@@ -222,7 +295,6 @@ function OperarioDetalle({ operarioId }) {
           <FaHistory /> Actividad Reciente
         </h3>
 
-        {/* Lista Scrollable */}
         <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900/40 p-3 rounded-xl border border-slate-700/50">
           <ul className="space-y-2">
             {stats.actividadReciente.length === 0 ? (
@@ -232,6 +304,8 @@ function OperarioDetalle({ operarioId }) {
             ) : (
               stats.actividadReciente.map((act, i) => {
                 const hasScrap = Number(act.cantidad_scrap) > 0;
+                const isDiurno = (act.turno || "DIURNO") === "DIURNO";
+
                 return (
                   <motion.li
                     key={act.id || i}
@@ -247,29 +321,23 @@ function OperarioDetalle({ operarioId }) {
                       <span className="font-medium text-white group-hover:text-blue-300 transition-colors">
                         {act.nombre}
                       </span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-gray-500">
+                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                        <span>
                           {new Date(act.fecha_produccion).toLocaleDateString(
                             "es-AR"
                           )}
                         </span>
                         {hasScrap && (
-                          <span className="text-[10px] bg-rose-900/50 text-rose-300 px-1.5 py-0.5 rounded border border-rose-800 flex items-center gap-1">
-                            <FaExclamationTriangle /> Con Fallas
+                          <span className="ml-2 text-[10px] bg-rose-900/50 text-rose-300 px-1.5 py-0.5 rounded border border-rose-800 flex items-center gap-1">
+                            <FaExclamationTriangle />
                           </span>
                         )}
                       </div>
                     </div>
-
                     <div className="text-right">
                       <span className="font-bold text-lg text-emerald-400">
                         +{act.cantidad}
                       </span>
-                      {hasScrap && (
-                        <p className="text-xs text-rose-400 font-bold">
-                          -{act.cantidad_scrap} scrap
-                        </p>
-                      )}
                     </div>
                   </motion.li>
                 );
@@ -279,12 +347,12 @@ function OperarioDetalle({ operarioId }) {
         </div>
       </motion.div>
 
-      {/* Renderizado del Modal */}
       <AnimatePresence>
         {selectedProduccion && (
           <ProduccionModal
             item={selectedProduccion}
             onClose={() => setSelectedProduccion(null)}
+            onDelete={handleEliminarRegistro}
           />
         )}
       </AnimatePresence>
@@ -292,7 +360,7 @@ function OperarioDetalle({ operarioId }) {
   );
 }
 
-// --- Página Principal (Master/Detail) ---
+// --- Página Principal ---
 export default function OperariosPage() {
   const [operarios, setOperarios] = useState([]);
   const [nuevoNombre, setNuevoNombre] = useState("");
@@ -320,25 +388,21 @@ export default function OperariosPage() {
       }
     };
     cargarOperarios();
-  }, []); // Dependencia vacía para carga inicial
+  }, []);
 
   const handleAgregar = async (e) => {
     e.preventDefault();
     if (!nuevoNombre.trim()) return;
-
     setIsSaving(true);
     setFeedback({ type: "", msg: "" });
-
     try {
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nombre: nuevoNombre.trim() }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || "Error al guardar");
-
       setOperarios([...operarios, data]);
       setNuevoNombre("");
       setFeedback({ type: "success", msg: "Operario agregado" });
@@ -353,23 +417,18 @@ export default function OperariosPage() {
   const handleEliminar = async (id) => {
     if (!window.confirm("¿Seguro que quieres desactivar a este operario?"))
       return;
-
     setFeedback({ type: "", msg: "" });
-
     try {
       const res = await fetch(`${API_URL}/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.msg || "Error al eliminar");
-
       const nuevosOperarios = operarios.filter((op) => op.id !== id);
       setOperarios(nuevosOperarios);
       setFeedback({ type: "success", msg: data.msg });
-
-      if (selectedOperarioId === id) {
+      if (selectedOperarioId === id)
         setSelectedOperarioId(
           nuevosOperarios.length > 0 ? nuevosOperarios[0].id : null
         );
-      }
     } catch (err) {
       setFeedback({ type: "error", msg: err.message });
     }
@@ -387,7 +446,7 @@ export default function OperariosPage() {
         <div>
           <h1 className="text-3xl font-bold text-white">Panel de Operarios</h1>
           <p className="text-gray-400">
-            Administra operarios y consulta sus métricas de producción.
+            Administra operarios y consulta sus métricas.
           </p>
         </div>
       </div>
@@ -419,7 +478,6 @@ export default function OperariosPage() {
               )}
             </button>
           </form>
-
           {feedback.msg && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -433,7 +491,6 @@ export default function OperariosPage() {
               {feedback.msg}
             </motion.div>
           )}
-
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             {loading && operarios.length === 0 ? (
               <div className="p-10 text-center text-gray-500">
