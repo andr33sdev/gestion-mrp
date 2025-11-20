@@ -1249,6 +1249,7 @@ app.put("/api/planificacion/:id/estado", async (req, res) => {
   }
 });
 
+
 // 5. ACTUALIZAR UN PLAN COMPLETO (Nombre y/o Items)
 app.put("/api/planificacion/:id", async (req, res) => {
   const { id } = req.params;
