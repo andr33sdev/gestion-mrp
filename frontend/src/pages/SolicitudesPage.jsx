@@ -13,76 +13,57 @@ import {
   FaClock,
   FaTimes,
   FaSave,
-  FaChevronLeft,
-  FaChevronRight,
+  FaEdit,
+  FaEraser,
 } from "react-icons/fa";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 import { motion, AnimatePresence } from "framer-motion";
 
-// --- FUNCIÓN GENERADORA PDF (DISEÑO PREMIUM AJUSTADO) ---
+// --- FUNCIÓN GENERADORA PDF (PREMIUM) ---
 const imprimirSolicitud = (id, items, fechaStr) => {
   const doc = new jsPDF();
   const fecha = new Date(fechaStr).toLocaleDateString("es-AR");
-
-  // --- 1. ENCABEZADO ---
-  doc.setFillColor(30, 41, 59); // Slate-900
+  doc.setFillColor(30, 41, 59);
   doc.rect(0, 0, 210, 35, "F");
-
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
   doc.text("SOLICITUD DE MATERIALES", 14, 20);
-
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.setTextColor(148, 163, 184); // Slate-400
-  // CAMBIO: Subtítulo ajustado
+  doc.setTextColor(148, 163, 184);
   doc.text("SISTEMA DE GESTIÓN - MRP", 14, 28);
-
-  // --- 2. CAJA DE DATOS (DERECHA) ---
   doc.setFillColor(255, 255, 255);
   doc.roundedRect(140, 10, 60, 20, 2, 2, "F");
-
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
   doc.text("SOLICITUD N°", 145, 16);
   doc.text("FECHA EMISIÓN", 145, 24);
-
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.text(`# ${id}`, 195, 16, { align: "right" });
   doc.text(fecha, 195, 24, { align: "right" });
-
-  // --- 3. DESTINATARIO ---
   const startY = 45;
-  doc.setFillColor(241, 245, 249); // Slate-100
-  // Caja más chica ya que quitamos Prioridad
+  doc.setFillColor(241, 245, 249);
   doc.roundedRect(14, startY, 100, 18, 2, 2, "F");
-
   doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105); // Slate-600
+  doc.setTextColor(71, 85, 105);
   doc.text("DESTINATARIO:", 20, startY + 7);
-
   doc.setFontSize(11);
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
   doc.text("DEPARTAMENTO DE COMPRAS", 20, startY + 13);
-
-  // --- 4. TABLA DE ÍTEMS ---
   const tableBody = items.map((item) => [
     item.codigo || "-",
     item.nombre || "Material Desconocido",
     item.cantidad,
-    // CAMBIO: Corregimos lectura de proveedor para que funcione siempre
     item.proveedor_recomendado || item.proveedor || "-",
   ]);
-
   autoTable(doc, {
     startY: startY + 25,
-    // CAMBIO: Quitamos columna UN.
     head: [
       ["CÓDIGO", "DESCRIPCIÓN DEL MATERIAL", "CANT.", "PROVEEDOR SUGERIDO"],
     ],
@@ -91,11 +72,11 @@ const imprimirSolicitud = (id, items, fechaStr) => {
     styles: {
       fontSize: 9,
       cellPadding: 4,
-      lineColor: [203, 213, 225], // Slate-300
+      lineColor: [203, 213, 225],
       lineWidth: 0.1,
     },
     headStyles: {
-      fillColor: [51, 65, 85], // Slate-700
+      fillColor: [51, 65, 85],
       textColor: 255,
       fontStyle: "bold",
       halign: "center",
@@ -107,46 +88,31 @@ const imprimirSolicitud = (id, items, fechaStr) => {
       3: { fontStyle: "italic" },
     },
   });
-
-  // --- 5. FIRMAS ---
-  // CAMBIO: Sin observaciones, las firmas van más arriba
   let finalY = doc.lastAutoTable.finalY + 40;
-
-  // Si no cabe, nueva hoja
   if (finalY > 250) {
     doc.addPage();
     finalY = 40;
   }
-
-  // Firma 1: Solicitante
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
   doc.text("Andrés Cardoso", 45, finalY, { align: "center" });
-
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100);
   doc.text("JEFE DE PRODUCCIÓN", 45, finalY + 5, { align: "center" });
-
   doc.setDrawColor(0);
   doc.setLineWidth(0.5);
   doc.line(20, finalY + 10, 70, finalY + 10);
-
-  // Firma 2: Autorizante
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(10);
   doc.setFont("helvetica", "bold");
   doc.text("Fernando Rigoni", 165, finalY, { align: "center" });
-
   doc.setFontSize(8);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(100);
   doc.text("GERENTE DE PRODUCCIÓN", 165, finalY + 5, { align: "center" });
-
   doc.line(140, finalY + 10, 190, finalY + 10);
-
-  // PIE DE PÁGINA
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
@@ -159,15 +125,15 @@ const imprimirSolicitud = (id, items, fechaStr) => {
       { align: "center" }
     );
   }
-
   doc.save(`Solicitud_${id}.pdf`);
 };
 
-// --- MODAL DE DETALLE Y RECEPCIÓN ---
-function SolicitudDetailModal({ solicitudId, onClose }) {
+function SolicitudDetailModal({ solicitudId, onClose, todasMateriasPrimas }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [ingresos, setIngresos] = useState({});
+  const [isEditing, setIsEditing] = useState(false);
+  const [edicionValues, setEdicionValues] = useState({});
 
   const cargarDetalle = async () => {
     setLoading(true);
@@ -181,17 +147,84 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
     }
     setLoading(false);
   };
-
   useEffect(() => {
     cargarDetalle();
   }, [solicitudId]);
 
+  // --- LOGICA DE EDICIÓN ---
+  const startEdit = () => {
+    if (!data) return;
+    const initVals = {};
+    data.items.forEach((i) => {
+      initVals[i.id] = {
+        cantidad: i.cantidad,
+        proveedor: i.proveedor_recomendado || "",
+      };
+    });
+    setEdicionValues(initVals);
+    setIsEditing(true);
+  };
+
+  const saveItemChange = async (itemId) => {
+    try {
+      const vals = edicionValues[itemId];
+
+      // VALIDACIÓN FRONTEND
+      if (!vals.cantidad || Number(vals.cantidad) <= 0) {
+        return alert("Por favor ingrese una cantidad válida.");
+      }
+
+      await fetch(`${API_BASE_URL}/compras/item/${itemId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cantidad: Number(vals.cantidad), // <--- Forzamos número
+          proveedor: vals.proveedor,
+        }),
+      });
+      cargarDetalle();
+    } catch (e) {
+      alert("Error al guardar");
+    }
+  };
+
+  const deleteItem = async (itemId) => {
+    if (!confirm("¿Eliminar ítem?")) return;
+    try {
+      await fetch(`${API_BASE_URL}/compras/item/${itemId}`, {
+        method: "DELETE",
+      });
+      cargarDetalle();
+    } catch (e) {
+      alert("Error");
+    }
+  };
+
+  const agregarNuevoItem = async (mp) => {
+    const cantidad = prompt(`Cantidad de ${mp.nombre}:`, "1");
+    if (!cantidad) return;
+    try {
+      await fetch(`${API_BASE_URL}/compras/solicitud/${solicitudId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          materia_prima_id: mp.id,
+          cantidad: Number(cantidad),
+          proveedor: "",
+        }),
+      });
+      cargarDetalle();
+      alert("Ítem agregado.");
+    } catch (e) {
+      alert("Error agregando ítem");
+    }
+  };
+
+  // --- LÓGICA RECEPCIÓN ---
   const handleRecepcion = async (itemId) => {
     const cantidad = ingresos[itemId];
-    if (!cantidad || Number(cantidad) <= 0)
-      return alert("Ingrese una cantidad válida");
-    if (!confirm(`¿Confirmar ingreso de ${cantidad} unidades al stock?`))
-      return;
+    if (!cantidad || Number(cantidad) <= 0) return alert("Cantidad inválida");
+    if (!confirm(`¿Ingresar ${cantidad} unidades?`)) return;
     try {
       const res = await fetch(
         `${API_BASE_URL}/compras/item/${itemId}/recepcion`,
@@ -202,17 +235,13 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
         }
       );
       if (res.ok) {
-        alert("Recepción registrada.");
+        alert("Registrado.");
         setIngresos({ ...ingresos, [itemId]: "" });
         cargarDetalle();
-      } else alert("Error");
+      }
     } catch (e) {
-      alert("Error de conexión");
+      alert("Error");
     }
-  };
-
-  const handleReimprimir = () => {
-    if (data) imprimirSolicitud(data.id, data.items, data.fecha_creacion);
   };
 
   if (!data && loading)
@@ -231,7 +260,7 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-slate-800 w-full max-w-4xl rounded-2xl border border-slate-700 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+        className="bg-slate-800 w-full max-w-5xl rounded-2xl border border-slate-700 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 border-b border-slate-700 bg-slate-900/50 flex justify-between items-start">
@@ -239,28 +268,55 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
               <FaClipboardList className="text-blue-400" /> Solicitud #{data.id}
             </h2>
-            <p className="text-gray-400 text-sm mt-1 flex items-center gap-2">
-              <FaClock /> Creada el{" "}
-              {new Date(data.fecha_creacion).toLocaleDateString("es-AR")}
-            </p>
+            <div className="flex gap-4 mt-2 text-sm">
+              <span className="text-gray-400 flex items-center gap-1">
+                <FaClock /> {new Date(data.fecha_creacion).toLocaleDateString()}
+              </span>
+              <span
+                className={`px-2 rounded border font-bold ${
+                  data.estado === "COMPLETA"
+                    ? "bg-green-900/30 border-green-500 text-green-400"
+                    : "bg-yellow-900/30 border-yellow-500 text-yellow-400"
+                }`}
+              >
+                {data.estado}
+              </span>
+            </div>
           </div>
           <div className="flex gap-2">
+            {!isEditing ? (
+              <button
+                onClick={startEdit}
+                className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg flex items-center gap-2 text-sm font-bold"
+              >
+                <FaEdit /> Editar Pedido
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsEditing(false)}
+                className="p-2 bg-green-600 hover:bg-green-500 text-white rounded-lg flex items-center gap-2 text-sm font-bold"
+              >
+                <FaCheckCircle /> Finalizar Edición
+              </button>
+            )}
             <button
-              onClick={handleReimprimir}
-              className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-full transition-colors"
-              title="Descargar PDF"
+              onClick={() =>
+                imprimirSolicitud(data.id, data.items, data.fecha_creacion)
+              }
+              className="p-2 bg-slate-700 hover:bg-slate-600 text-white rounded-full"
             >
               <FaFilePdf className="text-xl" />
             </button>
             <button
               onClick={onClose}
-              className="p-2 bg-slate-700 hover:bg-red-500/20 hover:text-red-400 rounded-full transition-colors text-gray-400"
+              className="p-2 bg-slate-700 hover:bg-red-500/20 hover:text-red-400 rounded-full text-gray-400"
             >
               <FaTimes className="text-xl" />
             </button>
           </div>
         </div>
-        <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
           <table className="w-full text-left text-sm border-collapse">
             <thead className="bg-slate-900 text-gray-400 uppercase font-bold text-xs sticky top-0">
               <tr>
@@ -268,52 +324,101 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
                 <th className="p-3 text-right">Solicitado</th>
                 <th className="p-3 text-right">Recibido</th>
                 <th className="p-3 text-right">Pendiente</th>
-                <th className="p-3 text-center">Estado</th>
+                <th className="p-3">Proveedor</th>
                 <th className="p-3 text-center">Acción</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
               {data.items.map((item) => {
-                const pendiente =
-                  Number(item.cantidad) - Number(item.cantidad_recibida);
+                const pendiente = Math.max(
+                  0,
+                  Number(item.cantidad) - Number(item.cantidad_recibida)
+                );
                 const isCompleto = item.estado === "COMPLETO";
+
                 return (
-                  <tr key={item.id} className="hover:bg-slate-700/30">
+                  <tr
+                    key={item.id}
+                    className={`hover:bg-slate-700/30 ${
+                      isEditing ? "bg-blue-900/10" : ""
+                    }`}
+                  >
                     <td className="p-3 font-medium text-white">
-                      {item.nombre} <br />{" "}
-                      <span className="text-xs text-gray-500 font-mono">
+                      {item.nombre}
+                      <br />
+                      <span className="text-xs text-gray-500">
                         {item.codigo}
                       </span>
                     </td>
-                    <td className="p-3 text-right font-bold text-blue-200">
-                      {item.cantidad}
+                    <td className="p-3 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          className="w-20 bg-slate-900 border border-blue-500 rounded p-1 text-white text-right"
+                          value={
+                            edicionValues[item.id]?.cantidad || item.cantidad
+                          }
+                          onChange={(e) =>
+                            setEdicionValues({
+                              ...edicionValues,
+                              [item.id]: {
+                                ...edicionValues[item.id],
+                                cantidad: e.target.value,
+                              },
+                            })
+                          }
+                          onBlur={() => saveItemChange(item.id)}
+                        />
+                      ) : (
+                        <span className="font-bold text-blue-200">
+                          {item.cantidad}
+                        </span>
+                      )}
                     </td>
-                    <td className="p-3 text-right font-bold text-green-400">
+                    <td className="p-3 text-right text-green-400 font-bold">
                       {item.cantidad_recibida}
                     </td>
-                    <td className="p-3 text-right font-bold text-red-300">
-                      {Math.max(0, pendiente)}
+                    <td className="p-3 text-right text-red-300 font-bold">
+                      {pendiente}
+                    </td>
+                    <td className="p-3 text-xs">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          className="w-full bg-slate-900 border border-blue-500 rounded p-1 text-white"
+                          value={
+                            edicionValues[item.id]?.proveedor ||
+                            item.proveedor_recomendado
+                          }
+                          onChange={(e) =>
+                            setEdicionValues({
+                              ...edicionValues,
+                              [item.id]: {
+                                ...edicionValues[item.id],
+                                proveedor: e.target.value,
+                              },
+                            })
+                          }
+                          onBlur={() => saveItemChange(item.id)}
+                        />
+                      ) : (
+                        item.proveedor_recomendado || "-"
+                      )}
                     </td>
                     <td className="p-3 text-center">
-                      <span
-                        className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${
-                          isCompleto
-                            ? "bg-green-900/30 border-green-500 text-green-400"
-                            : item.estado === "PARCIAL"
-                            ? "bg-yellow-900/30 border-yellow-500 text-yellow-400"
-                            : "bg-slate-700 border-slate-500 text-gray-400"
-                        }`}
-                      >
-                        {item.estado}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      {!isCompleto ? (
-                        <div className="flex items-center justify-end gap-2">
+                      {isEditing ? (
+                        <button
+                          onClick={() => deleteItem(item.id)}
+                          className="text-red-400 hover:bg-red-900/30 p-2 rounded"
+                        >
+                          <FaTrash />
+                        </button>
+                      ) : !isCompleto ? (
+                        <div className="flex items-center justify-center gap-2">
                           <input
                             type="number"
-                            placeholder="Cant."
-                            className="w-20 bg-slate-900 border border-slate-600 rounded p-2 text-white text-center text-sm focus:border-blue-500 outline-none"
+                            placeholder="Ingreso"
+                            className="w-16 bg-slate-900 border border-slate-600 rounded p-1 text-white text-center text-xs"
                             value={ingresos[item.id] || ""}
                             onChange={(e) =>
                               setIngresos({
@@ -324,15 +429,15 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
                           />
                           <button
                             onClick={() => handleRecepcion(item.id)}
-                            className="p-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow-lg"
+                            className="p-1 bg-green-600 text-white rounded"
                           >
-                            <FaSave />
+                            <FaCheckCircle />
                           </button>
                         </div>
                       ) : (
-                        <div className="text-center text-green-500 text-xs font-bold flex items-center justify-center gap-1">
-                          <FaCheckCircle /> OK
-                        </div>
+                        <span className="text-green-500 font-bold text-xs">
+                          OK
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -340,6 +445,19 @@ function SolicitudDetailModal({ solicitudId, onClose }) {
               })}
             </tbody>
           </table>
+
+          {isEditing && (
+            <div className="bg-slate-700/30 p-4 rounded-xl border-2 border-dashed border-slate-600">
+              <h4 className="text-sm font-bold text-blue-300 mb-3 flex items-center gap-2">
+                <FaPlus /> Agregar Ítem Olvidado
+              </h4>
+              <AutoCompleteInput
+                items={todasMateriasPrimas}
+                onSelect={agregarNuevoItem}
+                placeholder="Buscar material para añadir a esta solicitud..."
+              />
+            </div>
+          )}
         </div>
       </motion.div>
     </div>
@@ -518,7 +636,7 @@ export default function SolicitudesPage() {
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <div className="p-4 border-b border-slate-700 bg-slate-900/50">
           <h3 className="text-white font-bold flex items-center gap-2">
-            <FaHistory className="text-blue-400" /> Historial de Solicitudes
+            <FaHistory className="text-blue-400" /> Historial
           </h3>
         </div>
         <table className="w-full text-left text-sm">
@@ -616,6 +734,7 @@ export default function SolicitudesPage() {
         {selectedSolicitudId && (
           <SolicitudDetailModal
             solicitudId={selectedSolicitudId}
+            todasMateriasPrimas={materiasPrimas}
             onClose={() => setSelectedSolicitudId(null)}
           />
         )}

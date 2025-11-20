@@ -353,12 +353,11 @@ async function sincronizarBaseDeDatos() {
 // --- RUTAS API GENERALES (HORNO) ---
 app.get("/", (req, res) => res.send("Backend Horno Funcionando"));
 
-// --- COMPRAS (ACTUALIZADO) ---
+// --- COMPRAS (ACTUALIZADO PARA EDICIÓN) ---
 app.post("/api/compras/nueva", async (req, res) => {
   const { items } = req.body;
   if (!items || items.length === 0)
     return res.status(400).json({ msg: "Lista vacía" });
-
   const client = await db.connect();
   try {
     await client.query("BEGIN");
@@ -366,7 +365,6 @@ app.post("/api/compras/nueva", async (req, res) => {
       "INSERT INTO solicitudes_compra (estado) VALUES ('PENDIENTE') RETURNING id"
     );
     const solicitudId = solRes.rows[0].id;
-
     for (const item of items) {
       await client.query(
         "INSERT INTO solicitudes_items (solicitud_id, materia_prima_id, cantidad, proveedor_recomendado) VALUES ($1, $2, $3, $4)",
@@ -390,20 +388,15 @@ app.post("/api/compras/nueva", async (req, res) => {
 
 app.get("/api/compras/historial", async (req, res) => {
   try {
-    const { rows } = await db.query(`
-            SELECT sc.id, sc.fecha_creacion, sc.estado, COUNT(si.id) as items_count 
-            FROM solicitudes_compra sc
-            JOIN solicitudes_items si ON sc.id = si.solicitud_id
-            GROUP BY sc.id, sc.fecha_creacion, sc.estado
-            ORDER BY sc.fecha_creacion DESC LIMIT 50
-        `);
+    const { rows } = await db.query(
+      `SELECT sc.id, sc.fecha_creacion, sc.estado, COUNT(si.id) as items_count FROM solicitudes_compra sc JOIN solicitudes_items si ON sc.id = si.solicitud_id GROUP BY sc.id, sc.fecha_creacion, sc.estado ORDER BY sc.fecha_creacion DESC LIMIT 50`
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// OBTENER DETALLE (Para el Modal)
 app.get("/api/compras/solicitud/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -413,34 +406,23 @@ app.get("/api/compras/solicitud/:id", async (req, res) => {
     );
     if (cabeceraRes.rows.length === 0)
       return res.status(404).json({ msg: "No existe" });
-
     const itemsRes = await db.query(
-      `
-            SELECT si.*, mp.nombre, mp.codigo 
-            FROM solicitudes_items si
-            JOIN materias_primas mp ON si.materia_prima_id = mp.id
-            WHERE si.solicitud_id = $1
-            ORDER BY mp.nombre ASC
-        `,
+      `SELECT si.*, mp.nombre, mp.codigo FROM solicitudes_items si JOIN materias_primas mp ON si.materia_prima_id = mp.id WHERE si.solicitud_id = $1 ORDER BY mp.nombre ASC`,
       [id]
     );
-
     res.json({ ...cabeceraRes.rows[0], items: itemsRes.rows });
   } catch (err) {
     res.status(500).send(err.message);
   }
 });
 
-// REGISTRAR RECEPCIÓN (Con lógica de estado global)
+// RECIBIR (Actualiza estado)
 app.put("/api/compras/item/:id/recepcion", async (req, res) => {
   const { id } = req.params;
   const { cantidad_ingresada } = req.body;
-
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-
-    // 1. Actualizar el ítem
     const itemRes = await client.query(
       "SELECT * FROM solicitudes_items WHERE id = $1",
       [id]
@@ -457,45 +439,108 @@ app.put("/api/compras/item/:id/recepcion", async (req, res) => {
       "UPDATE solicitudes_items SET cantidad_recibida = $1, estado = $2 WHERE id = $3",
       [nuevaRecibida, nuevoEstadoItem, id]
     );
-
-    // 2. Actualizar Stock Físico (Materia Prima)
     await client.query(
       "UPDATE materias_primas SET stock_actual = stock_actual + $1 WHERE id = $2",
       [cantidad_ingresada, item.materia_prima_id]
     );
 
-    // 3. Verificar Estado Global de la Solicitud
-    const solicitudId = item.solicitud_id;
-    const todosItemsRes = await client.query(
-      "SELECT estado FROM solicitudes_items WHERE solicitud_id = $1",
-      [solicitudId]
-    );
-
-    const todosCompletos = todosItemsRes.rows.every(
-      (row) => row.estado === "COMPLETO"
-    );
-    const algunoEmpezado = todosItemsRes.rows.some(
-      (row) => row.estado === "PARCIAL" || row.estado === "COMPLETO"
-    );
-
-    let nuevoEstadoSolicitud = "PENDIENTE";
-    if (todosCompletos) nuevoEstadoSolicitud = "COMPLETA";
-    else if (algunoEmpezado) nuevoEstadoSolicitud = "EN PROCESO";
-
-    await client.query(
-      "UPDATE solicitudes_compra SET estado = $1 WHERE id = $2",
-      [nuevoEstadoSolicitud, solicitudId]
-    );
-
+    await actualizarEstadoSolicitud(client, item.solicitud_id);
     await client.query("COMMIT");
-    res.json({
-      success: true,
-      nuevo_estado_item: nuevoEstadoItem,
-      nuevo_estado_solicitud: nuevoEstadoSolicitud,
-    });
+    res.json({ success: true });
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+// EDITAR ITEM (CORREGIDO Y ROBUSTO)
+app.put("/api/compras/item/:id", async (req, res) => {
+  const { id } = req.params;
+  let { cantidad, proveedor } = req.body;
+
+  // 1. VALIDACIÓN DE SEGURIDAD
+  // Si cantidad es vacía, texto no numérico o <= 0, devolvemos error controlado
+  if (!cantidad || isNaN(Number(cantidad)) || Number(cantidad) <= 0) {
+    return res
+      .status(400)
+      .json({ msg: "La cantidad debe ser un número mayor a 0." });
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 2. ACTUALIZAR
+    await client.query(
+      "UPDATE solicitudes_items SET cantidad = $1, proveedor_recomendado = $2 WHERE id = $3",
+      [Number(cantidad), proveedor || "", id]
+    );
+
+    // 3. RECALCULAR ESTADO (Importante: verificar que la función auxiliar exista)
+    const itemRes = await client.query(
+      "SELECT solicitud_id FROM solicitudes_items WHERE id = $1",
+      [id]
+    );
+    if (itemRes.rows.length > 0) {
+      await actualizarEstadoSolicitud(client, itemRes.rows[0].solicitud_id);
+    }
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("Error editando ítem:", e); // Ver el error real en consola del servidor
+    res.status(500).send(e.message);
+  } finally {
+    client.release();
+  }
+});
+
+// ELIMINAR ITEM (NUEVO)
+app.delete("/api/compras/item/:id", async (req, res) => {
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const itemRes = await client.query(
+      "SELECT solicitud_id FROM solicitudes_items WHERE id = $1",
+      [req.params.id]
+    );
+    await client.query("DELETE FROM solicitudes_items WHERE id = $1", [
+      req.params.id,
+    ]);
+
+    if (itemRes.rows.length > 0)
+      await actualizarEstadoSolicitud(client, itemRes.rows[0].solicitud_id);
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).send(e.message);
+  } finally {
+    client.release();
+  }
+});
+
+// AGREGAR ITEM A SOLICITUD EXISTENTE (NUEVO)
+app.post("/api/compras/solicitud/:id/items", async (req, res) => {
+  const { id } = req.params;
+  const { materia_prima_id, cantidad, proveedor } = req.body;
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "INSERT INTO solicitudes_items (solicitud_id, materia_prima_id, cantidad, proveedor_recomendado, estado) VALUES ($1, $2, $3, $4, 'PENDIENTE')",
+      [id, materia_prima_id, cantidad, proveedor || "-"]
+    );
+    await actualizarEstadoSolicitud(client, id);
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).send(e.message);
   } finally {
     client.release();
   }
@@ -1526,6 +1571,33 @@ async function procesarDespachosAutomaticos(client) {
       `✅ [DESPACHOS] Se procesaron ${procesados} movimientos de stock automáticos.`
     );
 }
+
+// Helper para recalcular estado de solicitud de compra
+const actualizarEstadoSolicitud = async (client, solicitudId) => {
+  const itemsRes = await client.query(
+    "SELECT estado, cantidad, cantidad_recibida FROM solicitudes_items WHERE solicitud_id = $1",
+    [solicitudId]
+  );
+  if (itemsRes.rows.length === 0) return;
+
+  const todosCompletos = itemsRes.rows.every(
+    (r) =>
+      r.estado === "COMPLETO" ||
+      Number(r.cantidad_recibida) >= Number(r.cantidad)
+  );
+  const algunoIniciado = itemsRes.rows.some(
+    (r) => Number(r.cantidad_recibida) > 0
+  );
+
+  let nuevoEstado = "PENDIENTE";
+  if (todosCompletos) nuevoEstado = "COMPLETA";
+  else if (algunoIniciado) nuevoEstado = "EN PROCESO";
+
+  await client.query(
+    "UPDATE solicitudes_compra SET estado = $1 WHERE id = $2",
+    [nuevoEstado, solicitudId]
+  );
+};
 
 // --- FUNCIÓN: Detectar despachos y descontar stock en Quintana ---
 async function procesarDespachosAutomaticos(client) {
