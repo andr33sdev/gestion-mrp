@@ -19,7 +19,6 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-
 // ============================================================
 // 1. INICIALIZACIÓN DE TABLAS (VERSIÓN CORREGIDA)
 // ============================================================
@@ -29,8 +28,12 @@ async function inicializarTablas() {
     console.log("🛠️ Verificando y actualizando estructura de Base de Datos...");
 
     // --- Tablas Base ---
-    await client.query(`CREATE TABLE IF NOT EXISTS estado_produccion (estacion_id INTEGER PRIMARY KEY, producto_actual TEXT);`);
-    await client.query(`CREATE TABLE IF NOT EXISTS registros (id SERIAL PRIMARY KEY, fecha DATE, hora TIME, accion TEXT, tipo VARCHAR(50), productos_json TEXT);`);
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS estado_produccion (estacion_id INTEGER PRIMARY KEY, producto_actual TEXT);`
+    );
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS registros (id SERIAL PRIMARY KEY, fecha DATE, hora TIME, accion TEXT, tipo VARCHAR(50), productos_json TEXT);`
+    );
 
     // --- SEMIELABORADOS (Corrección de Columnas de Stock) ---
     await client.query(`
@@ -44,22 +47,55 @@ async function inicializarTablas() {
     `);
 
     // 1. Intentar migrar nombres viejos (si existen)
-    try { await client.query(`ALTER TABLE semielaborados RENAME COLUMN stock_planta_1 TO stock_planta_26;`); } catch (e) { }
-    try { await client.query(`ALTER TABLE semielaborados RENAME COLUMN stock_planta_2 TO stock_planta_37;`); } catch (e) { }
-    try { await client.query(`ALTER TABLE semielaborados RENAME COLUMN stock_deposito TO stock_deposito_ayolas;`); } catch (e) { }
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados RENAME COLUMN stock_planta_1 TO stock_planta_26;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados RENAME COLUMN stock_planta_2 TO stock_planta_37;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados RENAME COLUMN stock_deposito TO stock_deposito_ayolas;`
+      );
+    } catch (e) {}
 
     // 2. ASEGURAR que existan las columnas nuevas (Si no existen, las crea)
-    try { await client.query(`ALTER TABLE semielaborados ADD COLUMN stock_planta_26 NUMERIC DEFAULT 0;`); } catch (e) { }
-    try { await client.query(`ALTER TABLE semielaborados ADD COLUMN stock_planta_37 NUMERIC DEFAULT 0;`); } catch (e) { }
-    try { await client.query(`ALTER TABLE semielaborados ADD COLUMN stock_deposito_ayolas NUMERIC DEFAULT 0;`); } catch (e) { }
-    try { await client.query(`ALTER TABLE semielaborados ADD COLUMN stock_deposito_quintana NUMERIC DEFAULT 0;`); } catch (e) { }
-
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados ADD COLUMN stock_planta_26 NUMERIC DEFAULT 0;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados ADD COLUMN stock_planta_37 NUMERIC DEFAULT 0;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados ADD COLUMN stock_deposito_ayolas NUMERIC DEFAULT 0;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados ADD COLUMN stock_deposito_quintana NUMERIC DEFAULT 0;`
+      );
+    } catch (e) {}
 
     // --- Resto de Tablas (Igual que antes) ---
-    await client.query(`CREATE TABLE IF NOT EXISTS materias_primas (id SERIAL PRIMARY KEY, codigo VARCHAR(100) UNIQUE NOT NULL, nombre VARCHAR(255), stock_actual NUMERIC DEFAULT 0, ultima_actualizacion TIMESTAMP DEFAULT NOW());`);
-    await client.query(`CREATE TABLE IF NOT EXISTS productos_ingenieria (nombre VARCHAR(255) PRIMARY KEY);`);
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS materias_primas (id SERIAL PRIMARY KEY, codigo VARCHAR(100) UNIQUE NOT NULL, nombre VARCHAR(255), stock_actual NUMERIC DEFAULT 0, ultima_actualizacion TIMESTAMP DEFAULT NOW());`
+    );
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS productos_ingenieria (nombre VARCHAR(255) PRIMARY KEY);`
+    );
 
-    await client.query(`CREATE TABLE IF NOT EXISTS recetas (id SERIAL PRIMARY KEY, producto_terminado VARCHAR(255) REFERENCES productos_ingenieria(nombre) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad NUMERIC DEFAULT 1, ultima_actualizacion TIMESTAMP DEFAULT NOW());`);
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS recetas (id SERIAL PRIMARY KEY, producto_terminado VARCHAR(255) REFERENCES productos_ingenieria(nombre) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad NUMERIC DEFAULT 1, ultima_actualizacion TIMESTAMP DEFAULT NOW());`
+    );
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS recetas_semielaborados (
@@ -70,18 +106,42 @@ async function inicializarTablas() {
         CONSTRAINT uq_receta_semi UNIQUE(semielaborado_id, materia_prima_id)
       );
     `);
-    try { await client.query(`ALTER TABLE recetas_semielaborados RENAME COLUMN cantidad_ok TO cantidad;`); } catch (e) { }
+    try {
+      await client.query(
+        `ALTER TABLE recetas_semielaborados RENAME COLUMN cantidad_ok TO cantidad;`
+      );
+    } catch (e) {}
 
     // Planificación
-    await client.query(`CREATE TABLE IF NOT EXISTS planes_produccion (id SERIAL PRIMARY KEY, nombre VARCHAR(255) NOT NULL, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'ABIERTO');`);
-    await client.query(`CREATE TABLE IF NOT EXISTS planes_items (id SERIAL PRIMARY KEY, plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad_requerida NUMERIC NOT NULL DEFAULT 0, cantidad_producida NUMERIC NOT NULL DEFAULT 0);`);
-    try { await client.query(`ALTER TABLE planes_items RENAME COLUMN cantidad TO cantidad_requerida;`); } catch (e) { }
-    try { await client.query(`ALTER TABLE planes_items ADD COLUMN cantidad_producida NUMERIC NOT NULL DEFAULT 0;`); } catch (e) { }
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS planes_produccion (id SERIAL PRIMARY KEY, nombre VARCHAR(255) NOT NULL, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'ABIERTO');`
+    );
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS planes_items (id SERIAL PRIMARY KEY, plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad_requerida NUMERIC NOT NULL DEFAULT 0, cantidad_producida NUMERIC NOT NULL DEFAULT 0);`
+    );
+    try {
+      await client.query(
+        `ALTER TABLE planes_items RENAME COLUMN cantidad TO cantidad_requerida;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE planes_items ADD COLUMN cantidad_producida NUMERIC NOT NULL DEFAULT 0;`
+      );
+    } catch (e) {}
 
     // Operarios y Registros
-    await client.query(`CREATE TABLE IF NOT EXISTS operarios (id SERIAL PRIMARY KEY, nombre VARCHAR(255) UNIQUE NOT NULL, activo BOOLEAN DEFAULT true);`);
-    await client.query(`CREATE TABLE IF NOT EXISTS registros_produccion (id SERIAL PRIMARY KEY, plan_item_id INTEGER REFERENCES planes_items(id) ON DELETE SET NULL, semielaborado_id INTEGER REFERENCES semielaborados(id) NOT NULL, operario_id INTEGER REFERENCES operarios(id) NOT NULL, cantidad_ok NUMERIC NOT NULL DEFAULT 0, cantidad_scrap NUMERIC NOT NULL DEFAULT 0, motivo_scrap VARCHAR(255), turno VARCHAR(50) NOT NULL DEFAULT 'Diurno', fecha_produccion TIMESTAMP NOT NULL DEFAULT NOW());`);
-    try { await client.query(`ALTER TABLE registros_produccion RENAME COLUMN cantidad TO cantidad_ok;`); } catch (e) { }
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS operarios (id SERIAL PRIMARY KEY, nombre VARCHAR(255) UNIQUE NOT NULL, activo BOOLEAN DEFAULT true);`
+    );
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS registros_produccion (id SERIAL PRIMARY KEY, plan_item_id INTEGER REFERENCES planes_items(id) ON DELETE SET NULL, semielaborado_id INTEGER REFERENCES semielaborados(id) NOT NULL, operario_id INTEGER REFERENCES operarios(id) NOT NULL, cantidad_ok NUMERIC NOT NULL DEFAULT 0, cantidad_scrap NUMERIC NOT NULL DEFAULT 0, motivo_scrap VARCHAR(255), turno VARCHAR(50) NOT NULL DEFAULT 'Diurno', fecha_produccion TIMESTAMP NOT NULL DEFAULT NOW());`
+    );
+    try {
+      await client.query(
+        `ALTER TABLE registros_produccion RENAME COLUMN cantidad TO cantidad_ok;`
+      );
+    } catch (e) {}
 
     // Logística
     await client.query(`
@@ -98,8 +158,16 @@ async function inicializarTablas() {
         chofer VARCHAR(100)
       );
     `);
-    try { await client.query(`ALTER TABLE movimientos_logistica ADD COLUMN codigo_remito VARCHAR(100);`); } catch (e) { }
-    try { await client.query(`ALTER TABLE movimientos_logistica ADD COLUMN chofer VARCHAR(100);`); } catch (e) { }
+    try {
+      await client.query(
+        `ALTER TABLE movimientos_logistica ADD COLUMN codigo_remito VARCHAR(100);`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE movimientos_logistica ADD COLUMN chofer VARCHAR(100);`
+      );
+    } catch (e) {}
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS historial_despachos (
@@ -115,25 +183,52 @@ async function inicializarTablas() {
       );
     `);
 
-    // Pedidos
-    await client.query("DROP TABLE IF EXISTS pedidos");
-    await client.query(`
-      CREATE TABLE pedidos (
-        id SERIAL PRIMARY KEY,
-        fecha TIMESTAMP,
-        periodo VARCHAR(100),
-        oc VARCHAR(100),
-        cliente VARCHAR(255),
-        modelo VARCHAR(255),
-        detalles TEXT,
-        categoria VARCHAR(100),
-        cantidad NUMERIC,
-        estado VARCHAR(100),
-        programado TIMESTAMP,
-        preparado TIMESTAMP,
-        fecha_despacho TIMESTAMP
+    // --- 6. Pedidos (LA CLAVE DEL ERROR) ---
+    // Aislamos esto para que SE EJECUTE SÍ O SÍ
+    try {
+      console.log("🔄 Recreando tabla 'pedidos'...");
+      await client.query("DROP TABLE IF EXISTS pedidos");
+      await client.query(`
+          CREATE TABLE pedidos (
+            id SERIAL PRIMARY KEY,
+            fecha TIMESTAMP,
+            periodo VARCHAR(100),
+            oc VARCHAR(100),
+            cliente VARCHAR(255),
+            modelo VARCHAR(255),
+            detalles TEXT,
+            categoria VARCHAR(100),
+            cantidad NUMERIC,
+            estado VARCHAR(100),
+            programado TIMESTAMP,
+            preparado TIMESTAMP,
+            fecha_despacho TIMESTAMP
+          );
+        `);
+      console.log("✔ Tabla 'pedidos' creada OK.");
+    } catch (e) {
+      console.error("❌ Error CRÍTICO creando tabla pedidos:", e.message);
+    }
+
+    // --- Compras ---
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS solicitudes_compra (id SERIAL PRIMARY KEY, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'PENDIENTE');`
+    );
+    await client.query(
+      `CREATE TABLE IF NOT EXISTS solicitudes_items (id SERIAL PRIMARY KEY, solicitud_id INTEGER REFERENCES solicitudes_compra(id) ON DELETE CASCADE, materia_prima_id INTEGER REFERENCES materias_primas(id), cantidad NUMERIC NOT NULL, proveedor_recomendado VARCHAR(255));`
+    );
+
+    // Columnas nuevas para recepción
+    try {
+      await client.query(
+        `ALTER TABLE solicitudes_items ADD COLUMN cantidad_recibida NUMERIC DEFAULT 0;`
       );
-    `);
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE solicitudes_items ADD COLUMN estado VARCHAR(50) DEFAULT 'PENDIENTE';`
+      );
+    } catch (e) {}
 
     console.log("✔ Tablas y columnas verificadas correctamente.");
   } catch (err) {
@@ -258,6 +353,154 @@ async function sincronizarBaseDeDatos() {
 // --- RUTAS API GENERALES (HORNO) ---
 app.get("/", (req, res) => res.send("Backend Horno Funcionando"));
 
+// --- COMPRAS (ACTUALIZADO) ---
+app.post("/api/compras/nueva", async (req, res) => {
+  const { items } = req.body;
+  if (!items || items.length === 0)
+    return res.status(400).json({ msg: "Lista vacía" });
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const solRes = await client.query(
+      "INSERT INTO solicitudes_compra (estado) VALUES ('PENDIENTE') RETURNING id"
+    );
+    const solicitudId = solRes.rows[0].id;
+
+    for (const item of items) {
+      await client.query(
+        "INSERT INTO solicitudes_items (solicitud_id, materia_prima_id, cantidad, proveedor_recomendado) VALUES ($1, $2, $3, $4)",
+        [
+          solicitudId,
+          item.materia_prima_id,
+          item.cantidad,
+          item.proveedor || "-",
+        ]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true, solicitudId });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
+app.get("/api/compras/historial", async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+            SELECT sc.id, sc.fecha_creacion, sc.estado, COUNT(si.id) as items_count 
+            FROM solicitudes_compra sc
+            JOIN solicitudes_items si ON sc.id = si.solicitud_id
+            GROUP BY sc.id, sc.fecha_creacion, sc.estado
+            ORDER BY sc.fecha_creacion DESC LIMIT 50
+        `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// OBTENER DETALLE (Para el Modal)
+app.get("/api/compras/solicitud/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const cabeceraRes = await db.query(
+      "SELECT * FROM solicitudes_compra WHERE id = $1",
+      [id]
+    );
+    if (cabeceraRes.rows.length === 0)
+      return res.status(404).json({ msg: "No existe" });
+
+    const itemsRes = await db.query(
+      `
+            SELECT si.*, mp.nombre, mp.codigo 
+            FROM solicitudes_items si
+            JOIN materias_primas mp ON si.materia_prima_id = mp.id
+            WHERE si.solicitud_id = $1
+            ORDER BY mp.nombre ASC
+        `,
+      [id]
+    );
+
+    res.json({ ...cabeceraRes.rows[0], items: itemsRes.rows });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// REGISTRAR RECEPCIÓN (Con lógica de estado global)
+app.put("/api/compras/item/:id/recepcion", async (req, res) => {
+  const { id } = req.params;
+  const { cantidad_ingresada } = req.body;
+
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. Actualizar el ítem
+    const itemRes = await client.query(
+      "SELECT * FROM solicitudes_items WHERE id = $1",
+      [id]
+    );
+    const item = itemRes.rows[0];
+
+    const nuevaRecibida =
+      Number(item.cantidad_recibida) + Number(cantidad_ingresada);
+    let nuevoEstadoItem = "PARCIAL";
+    if (nuevaRecibida >= item.cantidad) nuevoEstadoItem = "COMPLETO";
+    if (nuevaRecibida <= 0) nuevoEstadoItem = "PENDIENTE";
+
+    await client.query(
+      "UPDATE solicitudes_items SET cantidad_recibida = $1, estado = $2 WHERE id = $3",
+      [nuevaRecibida, nuevoEstadoItem, id]
+    );
+
+    // 2. Actualizar Stock Físico (Materia Prima)
+    await client.query(
+      "UPDATE materias_primas SET stock_actual = stock_actual + $1 WHERE id = $2",
+      [cantidad_ingresada, item.materia_prima_id]
+    );
+
+    // 3. Verificar Estado Global de la Solicitud
+    const solicitudId = item.solicitud_id;
+    const todosItemsRes = await client.query(
+      "SELECT estado FROM solicitudes_items WHERE solicitud_id = $1",
+      [solicitudId]
+    );
+
+    const todosCompletos = todosItemsRes.rows.every(
+      (row) => row.estado === "COMPLETO"
+    );
+    const algunoEmpezado = todosItemsRes.rows.some(
+      (row) => row.estado === "PARCIAL" || row.estado === "COMPLETO"
+    );
+
+    let nuevoEstadoSolicitud = "PENDIENTE";
+    if (todosCompletos) nuevoEstadoSolicitud = "COMPLETA";
+    else if (algunoEmpezado) nuevoEstadoSolicitud = "EN PROCESO";
+
+    await client.query(
+      "UPDATE solicitudes_compra SET estado = $1 WHERE id = $2",
+      [nuevoEstadoSolicitud, solicitudId]
+    );
+
+    await client.query("COMMIT");
+    res.json({
+      success: true,
+      nuevo_estado_item: nuevoEstadoItem,
+      nuevo_estado_solicitud: nuevoEstadoSolicitud,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).send(err.message);
+  } finally {
+    client.release();
+  }
+});
+
 app.get("/api/registros", async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -344,7 +587,9 @@ app.get("/api/pedidos-analisis", async (req, res) => {
 
     // Consultamos la tabla 'pedidos' que se sincroniza en segundo plano
     // Esto tarda milisegundos en lugar de minutos
-    const { rows } = await db.query("SELECT * FROM pedidos ORDER BY fecha DESC");
+    const { rows } = await db.query(
+      "SELECT * FROM pedidos ORDER BY fecha DESC"
+    );
 
     res.json(rows);
   } catch (err) {
@@ -1209,12 +1454,15 @@ async function procesarDespachosAutomaticos(client) {
   for (const pedido of despachados) {
     // 2. Buscar la receta de este producto terminado
     // (Asumimos que el 'modelo' del pedido coincide con 'producto_terminado' en recetas)
-    const recetaRes = await client.query(`
+    const recetaRes = await client.query(
+      `
       SELECT r.cantidad, s.nombre, s.id as semi_id
       FROM recetas r
       JOIN semielaborados s ON r.semielaborado_id = s.id
       WHERE r.producto_terminado = $1
-    `, [pedido.modelo]);
+    `,
+      [pedido.modelo]
+    );
 
     // Si no hay receta, no podemos descontar nada
     if (recetaRes.rows.length === 0) continue;
@@ -1224,50 +1472,80 @@ async function procesarDespachosAutomaticos(client) {
 
       // 3. Verificar si ya procesamos este despacho específico
       // (Usamos OC, Cliente, Modelo y Fecha como "clave única" del movimiento)
-      const existe = await client.query(`
+      const existe = await client.query(
+        `
           SELECT 1 FROM historial_despachos 
           WHERE oc = $1 AND modelo_producto = $2 AND cliente = $3 
           AND fecha_despacho = $4 AND semielaborado_nombre = $5
-       `, [pedido.oc, pedido.modelo, pedido.cliente, pedido.fecha_despacho, ing.nombre]);
+       `,
+        [
+          pedido.oc,
+          pedido.modelo,
+          pedido.cliente,
+          pedido.fecha_despacho,
+          ing.nombre,
+        ]
+      );
 
       if (existe.rowCount === 0) {
         // ¡ES NUEVO! -> Descontar de Quintana y Registrar
 
         // A. Descontar de Quintana
-        await client.query(`
+        await client.query(
+          `
             UPDATE semielaborados 
             SET stock_deposito_quintana = stock_deposito_quintana - $1 
             WHERE id = $2
-          `, [cantidadADescontar, ing.semi_id]);
+          `,
+          [cantidadADescontar, ing.semi_id]
+        );
 
         // B. Guardar en Historial
-        await client.query(`
+        await client.query(
+          `
             INSERT INTO historial_despachos (fecha_despacho, cliente, oc, modelo_producto, semielaborado_nombre, cantidad_descontada)
             VALUES ($1, $2, $3, $4, $5, $6)
-          `, [pedido.fecha_despacho, pedido.cliente, pedido.oc, pedido.modelo, ing.nombre, cantidadADescontar]);
+          `,
+          [
+            pedido.fecha_despacho,
+            pedido.cliente,
+            pedido.oc,
+            pedido.modelo,
+            ing.nombre,
+            cantidadADescontar,
+          ]
+        );
 
         procesados++;
       }
     }
   }
 
-  if (procesados > 0) console.log(`✅ [DESPACHOS] Se procesaron ${procesados} movimientos de stock automáticos.`);
+  if (procesados > 0)
+    console.log(
+      `✅ [DESPACHOS] Se procesaron ${procesados} movimientos de stock automáticos.`
+    );
 }
 
 // --- FUNCIÓN: Detectar despachos y descontar stock en Quintana ---
 async function procesarDespachosAutomaticos(client) {
   console.log("🚚 [DESPACHOS] Buscando nuevos despachos...");
-  const { rows: despachados } = await client.query("SELECT * FROM pedidos WHERE fecha_despacho IS NOT NULL");
+  const { rows: despachados } = await client.query(
+    "SELECT * FROM pedidos WHERE fecha_despacho IS NOT NULL"
+  );
   let procesados = 0;
 
   for (const pedido of despachados) {
     // Buscar receta
-    const recetaRes = await client.query(`
+    const recetaRes = await client.query(
+      `
       SELECT r.cantidad, s.nombre, s.id as semi_id
       FROM recetas r
       JOIN semielaborados s ON r.semielaborado_id = s.id
       WHERE r.producto_terminado = $1
-    `, [pedido.modelo]);
+    `,
+      [pedido.modelo]
+    );
 
     if (recetaRes.rows.length === 0) continue;
 
@@ -1275,29 +1553,54 @@ async function procesarDespachosAutomaticos(client) {
       const cantidadADescontar = Number(pedido.cantidad) * Number(ing.cantidad);
 
       // Verificar si ya se procesó este despacho
-      const existe = await client.query(`
+      const existe = await client.query(
+        `
           SELECT 1 FROM historial_despachos 
           WHERE oc = $1 AND modelo_producto = $2 AND cliente = $3 
           AND fecha_despacho = $4 AND semielaborado_nombre = $5
-       `, [pedido.oc, pedido.modelo, pedido.cliente, pedido.fecha_despacho, ing.nombre]);
+       `,
+        [
+          pedido.oc,
+          pedido.modelo,
+          pedido.cliente,
+          pedido.fecha_despacho,
+          ing.nombre,
+        ]
+      );
 
       if (existe.rowCount === 0) {
         // Descontar de Quintana
-        await client.query(`UPDATE semielaborados SET stock_deposito_quintana = stock_deposito_quintana - $1 WHERE id = $2`, [cantidadADescontar, ing.semi_id]);
+        await client.query(
+          `UPDATE semielaborados SET stock_deposito_quintana = stock_deposito_quintana - $1 WHERE id = $2`,
+          [cantidadADescontar, ing.semi_id]
+        );
         // Registrar en Historial
-        await client.query(`INSERT INTO historial_despachos (fecha_despacho, cliente, oc, modelo_producto, semielaborado_nombre, cantidad_descontada) VALUES ($1, $2, $3, $4, $5, $6)`, [pedido.fecha_despacho, pedido.cliente, pedido.oc, pedido.modelo, ing.nombre, cantidadADescontar]);
+        await client.query(
+          `INSERT INTO historial_despachos (fecha_despacho, cliente, oc, modelo_producto, semielaborado_nombre, cantidad_descontada) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            pedido.fecha_despacho,
+            pedido.cliente,
+            pedido.oc,
+            pedido.modelo,
+            ing.nombre,
+            cantidadADescontar,
+          ]
+        );
         procesados++;
       }
     }
   }
-  if (procesados > 0) console.log(`✅ [DESPACHOS] Se procesaron ${procesados} movimientos automáticos.`);
+  if (procesados > 0)
+    console.log(
+      `✅ [DESPACHOS] Se procesaron ${procesados} movimientos automáticos.`
+    );
 }
 
 // --- FUNCIÓN DE NORMALIZACIÓN DE CLAVES ---
 // Convierte "  Cliente  " -> "CLIENTE" para evitar errores de tipeo en Excel
 const normalizarHeader = (obj) => {
   const newObj = {};
-  Object.keys(obj).forEach(key => {
+  Object.keys(obj).forEach((key) => {
     const cleanKey = key.trim().toUpperCase();
     newObj[cleanKey] = obj[key];
   });
@@ -1396,7 +1699,6 @@ async function sincronizarPedidos() {
   }
 }
 
-
 // =====================================================
 // --- RUTAS DE LOGÍSTICA (CORREGIDAS: 4 UBICACIONES) ---
 // =====================================================
@@ -1426,14 +1728,14 @@ app.post("/api/logistica/enviar", async (req, res) => {
 
   // Mapa actualizado de Nombres Frontend -> Columnas Backend
   const colMap = {
-    'PLANTA_26': 'stock_planta_26',
-    'PLANTA_37': 'stock_planta_37',
-    'DEP_AYOLAS': 'stock_deposito_ayolas',
-    'DEP_QUINTANA': 'stock_deposito_quintana',
+    PLANTA_26: "stock_planta_26",
+    PLANTA_37: "stock_planta_37",
+    DEP_AYOLAS: "stock_deposito_ayolas",
+    DEP_QUINTANA: "stock_deposito_quintana",
     // Compatibilidad (por si quedó algún default viejo)
-    'PLANTA_1': 'stock_planta_26',
-    'PLANTA_2': 'stock_planta_37',
-    'DEPOSITO': 'stock_deposito_ayolas'
+    PLANTA_1: "stock_planta_26",
+    PLANTA_2: "stock_planta_37",
+    DEPOSITO: "stock_deposito_ayolas",
   };
 
   const colOrigen = colMap[origen];
@@ -1470,13 +1772,13 @@ app.post("/api/logistica/recibir", async (req, res) => {
   const { codigo_remito } = req.body;
 
   const colMap = {
-    'PLANTA_26': 'stock_planta_26',
-    'PLANTA_37': 'stock_planta_37',
-    'DEP_AYOLAS': 'stock_deposito_ayolas',
-    'DEP_QUINTANA': 'stock_deposito_quintana',
-    'PLANTA_1': 'stock_planta_26',
-    'PLANTA_2': 'stock_planta_37',
-    'DEPOSITO': 'stock_deposito_ayolas'
+    PLANTA_26: "stock_planta_26",
+    PLANTA_37: "stock_planta_37",
+    DEP_AYOLAS: "stock_deposito_ayolas",
+    DEP_QUINTANA: "stock_deposito_quintana",
+    PLANTA_1: "stock_planta_26",
+    PLANTA_2: "stock_planta_37",
+    DEPOSITO: "stock_deposito_ayolas",
   };
 
   const client = await db.connect();
@@ -1487,12 +1789,14 @@ app.post("/api/logistica/recibir", async (req, res) => {
       [codigo_remito]
     );
 
-    if (movRes.rows.length === 0) throw new Error("Remito no encontrado o ya recibido.");
+    if (movRes.rows.length === 0)
+      throw new Error("Remito no encontrado o ya recibido.");
 
     const destino = movRes.rows[0].destino;
     const colDestino = colMap[destino];
 
-    if (!colDestino) throw new Error("Destino del remito no válido en el sistema actual.");
+    if (!colDestino)
+      throw new Error("Destino del remito no válido en el sistema actual.");
 
     for (const mov of movRes.rows) {
       await client.query(
@@ -1510,7 +1814,7 @@ app.post("/api/logistica/recibir", async (req, res) => {
       success: true,
       msg: `Recibidos ${movRes.rowCount} ítems en ${destino}.`,
       origen: movRes.rows[0].origen,
-      destino
+      destino,
     });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -1533,7 +1837,13 @@ app.put("/api/logistica/stock/:id", async (req, res) => {
          stock_deposito_ayolas = $3, 
          stock_deposito_quintana = $4 
        WHERE id = $5`,
-      [Number(p26) || 0, Number(p37) || 0, Number(ayolas) || 0, Number(quintana) || 0, id]
+      [
+        Number(p26) || 0,
+        Number(p37) || 0,
+        Number(ayolas) || 0,
+        Number(quintana) || 0,
+        id,
+      ]
     );
     res.json({ success: true });
   } catch (err) {
@@ -1544,16 +1854,24 @@ app.put("/api/logistica/stock/:id", async (req, res) => {
 app.get("/api/logistica/historial", async (req, res) => {
   try {
     // AQUÍ ESTABA EL 404: Ahora está definido correctamente
-    const { rows } = await db.query("SELECT codigo_remito, origen, destino, chofer, estado, MIN(fecha_creacion) as fecha, COUNT(*) as total_items, SUM(cantidad) as total_unidades FROM movimientos_logistica GROUP BY codigo_remito, origen, destino, chofer, estado ORDER BY fecha DESC LIMIT 50");
+    const { rows } = await db.query(
+      "SELECT codigo_remito, origen, destino, chofer, estado, MIN(fecha_creacion) as fecha, COUNT(*) as total_items, SUM(cantidad) as total_unidades FROM movimientos_logistica GROUP BY codigo_remito, origen, destino, chofer, estado ORDER BY fecha DESC LIMIT 50"
+    );
     return res.json(rows);
-  } catch (e) { return res.status(500).send(e.message); }
+  } catch (e) {
+    return res.status(500).send(e.message);
+  }
 });
 
 app.get("/api/logistica/despachos-automaticos", async (req, res) => {
   try {
-    const { rows } = await db.query("SELECT * FROM historial_despachos ORDER BY fecha_despacho DESC LIMIT 100");
+    const { rows } = await db.query(
+      "SELECT * FROM historial_despachos ORDER BY fecha_despacho DESC LIMIT 100"
+    );
     return res.json(rows);
-  } catch (e) { return res.status(500).send(e.message); }
+  } catch (e) {
+    return res.status(500).send(e.message);
+  }
 });
 
 // Reemplaza la función iniciarServidor
@@ -1564,8 +1882,12 @@ async function iniciarServidor() {
 
   // Tareas en segundo plano
   console.log("🚀 Iniciando servicios background...");
-  sincronizarBaseDeDatos().then(() => setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000));
-  sincronizarPedidos().then(() => setInterval(sincronizarPedidos, 15 * 60 * 1000)); // Cada 15 min
+  sincronizarBaseDeDatos().then(() =>
+    setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000)
+  );
+  sincronizarPedidos().then(() =>
+    setInterval(sincronizarPedidos, 15 * 60 * 1000)
+  ); // Cada 15 min
 }
 
-iniciarServidor()
+iniciarServidor();
