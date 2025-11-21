@@ -1,17 +1,29 @@
+// frontend/src/pages/LoginPage.jsx
 import { useState } from "react";
-import { FaKey, FaLock } from "react-icons/fa";
+import { FaKey, FaLock, FaSpinner } from "react-icons/fa";
 
-export default function LoginPage({ onLoginSuccess, expectedPassword, title }) {
+export default function LoginPage({ onLoginAttempt, title }) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
-  const handleSubmit = (e) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (input === expectedPassword) onLoginSuccess();
-    else {
-      setError("Contraseña incorrecta");
+    setError("");
+    setLoading(true);
+
+    // Intentamos loguear con la función que nos pasa el padre (App.jsx)
+    const success = await onLoginAttempt(input);
+
+    if (success) {
+      // Si es exitoso, el componente se desmontará solo por el cambio de estado en App
+    } else {
+      setError("Clave incorrecta o error de conexión");
       setInput("");
+      setLoading(false);
     }
   };
+
   return (
     <div className="flex flex-col items-center justify-center pt-10">
       <div className="bg-slate-800 rounded-xl shadow-2xl p-8 w-full max-w-md">
@@ -33,6 +45,7 @@ export default function LoginPage({ onLoginSuccess, expectedPassword, title }) {
               className="w-full p-3 pl-10 bg-slate-900 text-white rounded-lg border border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               placeholder="********"
               autoFocus
+              disabled={loading}
             />
           </div>
           {error && (
@@ -42,9 +55,10 @@ export default function LoginPage({ onLoginSuccess, expectedPassword, title }) {
           )}
           <button
             type="submit"
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95"
+            disabled={loading}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2"
           >
-            Entrar
+            {loading ? <FaSpinner className="animate-spin" /> : "Entrar"}
           </button>
         </form>
       </div>

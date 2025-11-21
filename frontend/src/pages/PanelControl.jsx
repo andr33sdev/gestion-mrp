@@ -7,7 +7,7 @@ import {
   FaBoxOpen,
   FaTools,
 } from "react-icons/fa";
-import { PRODUCCION_API_URL, PEDIDOS_API_URL } from "../utils.js";
+import { PRODUCCION_API_URL, PEDIDOS_API_URL, authFetch } from "../utils.js";
 
 // Sub-componente de Estación (Estilizado)
 function EstacionControlPanel({
@@ -93,9 +93,8 @@ function EstacionControlPanel({
                   className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex items-center gap-3 shadow-sm animate-in fade-in slide-in-from-left-2"
                 >
                   <div
-                    className={`w-2 h-8 rounded-full ${
-                      color === "red" ? "bg-red-500" : "bg-blue-500"
-                    }`}
+                    className={`w-2 h-8 rounded-full ${color === "red" ? "bg-red-500" : "bg-blue-500"
+                      }`}
                   ></div>
                   <span className="text-gray-200 font-medium text-sm">
                     {prod}
@@ -127,13 +126,13 @@ export default function PanelControl({ onNavigate }) {
   const [sugerencias, setSugerencias] = useState([]);
 
   const fetchProduccion = async () => {
-    const res = await fetch(PRODUCCION_API_URL);
+    const res = await authFetch(PRODUCCION_API_URL);
     setProduccion(await res.json());
   };
 
   useEffect(() => {
     fetchProduccion();
-    fetch(`${PEDIDOS_API_URL}?t=${Date.now()}`)
+    authFetch(`${PEDIDOS_API_URL}?t=${Date.now()}`)
       .then((r) => r.json())
       .then((data) => {
         const modelos = new Set();
@@ -147,7 +146,7 @@ export default function PanelControl({ onNavigate }) {
 
   const handleAdd = async (estacion_id, producto) => {
     if (!producto) return;
-    await fetch(PRODUCCION_API_URL, {
+    await authFetch(PRODUCCION_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estacion_id, producto }),
@@ -159,7 +158,7 @@ export default function PanelControl({ onNavigate }) {
 
   const handleClear = async (id) => {
     if (window.confirm("¿Estás seguro de vaciar la lista de esta estación?")) {
-      await fetch(`${PRODUCCION_API_URL}/${id}`, { method: "DELETE" });
+      await authFetch(`${PRODUCCION_API_URL}/${id}`, { method: "DELETE" });
       fetchProduccion();
     }
   };

@@ -1,13 +1,12 @@
+import { useEffect, useState } from "react"; // Esto probablemente sobre, utils no suele usar hooks, pero mantenemos imports si los tenías.
+
 // --- CONSTANTES ---
 export const API_BASE_URL = "https://horno-backend.onrender.com/api";
 //export const API_BASE_URL = "http://localhost:4000/api";
 
-
 export const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 export const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
 export const PEDIDOS_API_URL = `${API_BASE_URL}/pedidos-analisis`;
-
-// Asegúrate de que estas rutas estén bien:
 export const SUGERENCIAS_PLAN_URL = `${API_BASE_URL}/planificacion/sugerencias-produccion`;
 
 export const POLLING_INTERVAL = 10000;
@@ -15,23 +14,48 @@ export const HORAS_TIMEOUT_ENFRIADO = 2;
 export const MAX_HORAS_CICLO_PROMEDIO = 4;
 export const ALARMA_WINDOW_HOURS = 24;
 
-// --- 🔐 CONTRASEÑAS ---
-export const PASS_PANEL = "accesohorno";
-export const PASS_GERENCIA = "accesodata";
+// --- FETCH CON AUTENTICACIÓN MEJORADO ---
+export async function authFetch(url, options = {}) {
+  const token = sessionStorage.getItem("api_key");
 
-// --- FUNCIÓN AUXILIAR 1: Formatear Duración ---
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+
+  if (token) {
+    headers['x-api-key'] = token;
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers
+  });
+
+  // CAMBIO CLAVE AQUÍ:
+  // Solo expulsamos si es 401 (Token inválido o no enviado).
+  // Si es 403 (Rol insuficiente), dejamos pasar la respuesta para manejarla en la UI.
+  if (response.status === 401) {
+    console.warn("⛔ Sesión expirada.");
+    sessionStorage.removeItem("api_key");
+    sessionStorage.removeItem("role");
+    window.location.reload();
+    throw new Error("Sesión expirada.");
+  }
+
+  return response;
+}
+
+// --- FUNCIONES AUXILIARES ---
 export function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s
-    .toString()
-    .padStart(2, "0")}`;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-// --- FUNCIÓN AUXILIAR 2: Obtener Estado de Estación ---
 export function getStationStatus(stationId, allRecords) {
   const lastEvent = allRecords.find(
     (reg) =>
