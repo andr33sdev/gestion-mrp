@@ -1,21 +1,15 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const {
-  leerStockSemielaborados,
-  leerMateriasPrimas,
-} = require("../google-drive");
+const { leerMateriasPrimas } = require("../google-drive");
 const XLSX = require("xlsx");
-const { normalizarTexto } = require("../utils/helpers"); // Asegúrate de que esta importación sea correcta
-
-// 1. IMPORTAR SEGURIDAD
+const { normalizarTexto } = require("../utils/helpers");
 const { protect, restrictTo } = require("../middleware/auth");
+const { sincronizarStockSemielaborados } = require("../services/syncService");
 
-// 2. PROTECCIÓN BÁSICA (Todos deben tener API Key válida)
 router.use(protect);
 
-// --- RUTAS PÚBLICAS PARA OPERARIOS Y GERENCIA (Lectura) ---
-
+// --- RUTAS DE LECTURA (Públicas para usuarios logueados) ---
 router.get("/semielaborados", async (req, res) => {
   try {
     const { rows } = await db.query(
@@ -60,9 +54,7 @@ router.get("/recetas/all", async (req, res) => {
 router.get("/recetas/:producto", async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT r.*, s.codigo, s.nombre, s.stock_actual, 
-       (SELECT TO_CHAR(MAX(ultima_actualizacion), 'DD/MM/YYYY HH24:MI') FROM recetas WHERE producto_terminado = $1) as fecha_receta 
-       FROM recetas r JOIN semielaborados s ON r.semielaborado_id = s.id WHERE r.producto_terminado = $1`,
+      `SELECT r.*, s.codigo, s.nombre, s.stock_actual, (SELECT TO_CHAR(MAX(ultima_actualizacion), 'DD/MM/YYYY HH24:MI') FROM recetas WHERE producto_terminado = $1) as fecha_receta FROM recetas r JOIN semielaborados s ON r.semielaborado_id = s.id WHERE r.producto_terminado = $1`,
       [req.params.producto]
     );
     res.json(rows);
@@ -100,76 +92,21 @@ router.get("/recetas-semielaborados/:id", async (req, res) => {
   res.json(rows);
 });
 
-// --- RUTAS RESTRINGIDAS (SOLO GERENCIA) ---
+// --- RUTAS DE ESCRITURA (SOLO GERENCIA) ---
 router.use(restrictTo("GERENCIA"));
 
-// 1. SINCRONIZAR STOCK SEMIELABORADOS (Con búsqueda inteligente de headers)
+// 1. SINCRONIZACIÓN STOCK (AHORA SIMPLIFICADA)
 router.post("/sincronizar-stock", async (req, res) => {
-  const client = await db.connect();
-  try {
-    const buffer = await leerStockSemielaborados();
-    const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-
-    let headerRowIndex = -1;
-    for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
-      const rowString = JSON.stringify(rawMatrix[i]).toUpperCase();
-      if (
-        rowString.includes("CODIGO") &&
-        (rowString.includes("STOCK") || rowString.includes("CANTIDAD"))
-      ) {
-        headerRowIndex = i;
-        break;
-      }
-    }
-    if (headerRowIndex === -1)
-      return res
-        .status(400)
-        .json({ msg: "No se encontró encabezado stock (CODIGO, STOCK)" });
-
-    const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
-    await client.query("BEGIN");
-    let count = 0;
-    for (const row of data) {
-      let codigo = null,
-        nombre = null,
-        stock = 0;
-      for (const key of Object.keys(row)) {
-        const k = normalizarTexto(key);
-        if (k === "CODIGO" || k === "CÓDIGO") codigo = row[key];
-        else if (
-          k.includes("ARTICULO") ||
-          k.includes("NOMBRE") ||
-          k.includes("DESCRIPCION")
-        )
-          nombre = row[key];
-        else if (k === "STOCK" || k === "CANTIDAD" || k === "TOTAL")
-          stock = row[key];
-      }
-      if (codigo) {
-        await client.query(
-          `INSERT INTO semielaborados (codigo, nombre, stock_actual, ultima_actualizacion)
-           VALUES ($1, $2, $3, NOW())
-           ON CONFLICT (codigo) DO UPDATE SET stock_actual = $3, nombre = $2, ultima_actualizacion = NOW()`,
-          [codigo, nombre || "Sin Nombre", Number(stock) || 0]
-        );
-        count++;
-      }
-    }
-    await client.query("COMMIT");
-    res.json({ msg: "Stock sincronizado", count });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    res.status(500).send(err.message);
-  } finally {
-    client.release();
+  const result = await sincronizarStockSemielaborados();
+  if (result.success) {
+    res.json({ msg: "Stock sincronizado correctamente", count: result.count });
+  } else {
+    res.status(500).json({ msg: "Error al sincronizar", error: result.error });
   }
 });
 
 router.post("/recetas", async (req, res) => {
   const { producto_terminado, items } = req.body;
-  if (!producto_terminado) return res.status(400).json({ msg: "Falta nombre" });
   const client = await db.connect();
   try {
     await client.query("BEGIN");
@@ -198,7 +135,6 @@ router.post("/recetas", async (req, res) => {
   }
 });
 
-// 2. SINCRONIZAR MATERIAS PRIMAS (CORREGIDO: Con búsqueda inteligente de headers)
 router.post("/sincronizar-mp", async (req, res) => {
   const client = await db.connect();
   try {
@@ -206,11 +142,8 @@ router.post("/sincronizar-mp", async (req, res) => {
     const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-    // --- AQUÍ ESTABA EL PROBLEMA: Restauramos la búsqueda de headers ---
     const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
     let headerRowIndex = -1;
-
-    // Buscamos en las primeras 20 filas
     for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
       const rowString = JSON.stringify(rawMatrix[i]).toUpperCase();
       if (
@@ -218,24 +151,18 @@ router.post("/sincronizar-mp", async (req, res) => {
         (rowString.includes("NOMBRE") || rowString.includes("DESCRIPCION"))
       ) {
         headerRowIndex = i;
-        console.log("Headers MP encontrados en fila:", i);
         break;
       }
     }
-
-    // Si no encuentra, intenta la fila 0 por defecto
     if (headerRowIndex === -1) headerRowIndex = 0;
 
     const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
-
     await client.query("BEGIN");
     let count = 0;
     for (const row of data) {
-      let codigo = null;
-      let nombre = null;
-      let stock = 0;
-
-      // Normalización flexible de columnas
+      let codigo = null,
+        nombre = null,
+        stock = 0;
       for (const key of Object.keys(row)) {
         const k = normalizarTexto(key);
         if (k === "CODIGO" || k === "ARTICULO" || k === "ID") codigo = row[key];
@@ -244,7 +171,6 @@ router.post("/sincronizar-mp", async (req, res) => {
         else if (k === "STOCK" || k === "CANTIDAD" || k === "EXISTENCIA")
           stock = row[key];
       }
-
       if (codigo) {
         await client.query(
           `INSERT INTO materias_primas (codigo, nombre, stock_actual, ultima_actualizacion)

@@ -5,7 +5,13 @@ const cors = require("cors");
 // --- SERVICIOS Y UTILIDADES ---
 const { setupAuth } = require("./google-drive");
 const { inicializarTablas } = require("./services/dbInit");
-const { sincronizarBaseDeDatos, sincronizarPedidos } = require("./services/syncService");
+
+// IMPORTANTE: Aquí importamos las 3 funciones de sincronización
+const {
+  sincronizarBaseDeDatos,
+  sincronizarPedidos,
+  sincronizarStockSemielaborados,
+} = require("./services/syncService");
 
 // --- IMPORTAR RUTAS ---
 const generalRoutes = require("./routes/general");
@@ -19,8 +25,8 @@ const logisticaRoutes = require("./routes/logistica");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// --- MIDDLEWARES BÁSICOS ---
-app.use(cors()); // Permite todas las conexiones (evita problemas de bloqueo en dev)
+// --- MIDDLEWARES ---
+app.use(cors());
 app.use(express.json());
 
 // --- ASIGNACIÓN DE RUTAS ---
@@ -42,19 +48,22 @@ async function iniciarServidor() {
     await inicializarTablas();
 
     // 3. Levantar Servidor
-    app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
+    app.listen(PORT, () =>
+      console.log(`🚀 Servidor corriendo en puerto ${PORT}`)
+    );
 
     // 4. Tareas en Segundo Plano
     console.log("⏰ Servicios background iniciados...");
 
-    // Sincronización inicial
+    // Ejecución inmediata al arrancar
     sincronizarBaseDeDatos();
     sincronizarPedidos();
+    sincronizarStockSemielaborados(); // <--- Ahora sí funcionará porque está importada
 
-    // Intervalos
+    // Cron Jobs (Intervalos)
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000); // Logs cada 2 min
-    setInterval(sincronizarPedidos, 15 * 60 * 1000);    // Pedidos cada 15 min
-
+    setInterval(sincronizarPedidos, 15 * 60 * 1000); // Pedidos cada 15 min
+    setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000); // Stock cada 15 min
   } catch (error) {
     console.error("❌ Error fatal al iniciar servidor:", error);
   }

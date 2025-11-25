@@ -1,8 +1,20 @@
 import { useEffect, useState } from "react";
 import {
-  FaChartLine, FaCogs, FaSignOutAlt, FaClipboardList,
-  FaPlusCircle, FaUsersCog, FaTruck, FaSignInAlt, FaUserTie,
-  FaHardHat, FaBars, FaTimes, FaBox, FaIndustry
+  FaChartLine,
+  FaCogs,
+  FaSignOutAlt,
+  FaClipboardList,
+  FaPlusCircle,
+  FaUsersCog,
+  FaTruck,
+  FaSignInAlt,
+  FaUserTie,
+  FaHardHat,
+  FaBars,
+  FaTimes,
+  FaBox,
+  FaIndustry,
+  FaWarehouse, // <--- Importar FaWarehouse
 } from "react-icons/fa";
 
 // Importa las páginas
@@ -16,6 +28,7 @@ import RegistrarProduccionPage from "./pages/RegistrarProduccionPage.jsx";
 import OperariosPage from "./pages/OperariosPage.jsx";
 import LogisticaPage from "./pages/LogisticaPage.jsx";
 import SolicitudesPage from "./pages/SolicitudesPage";
+import RecepcionPage from "./pages/RecepcionPage.jsx"; // <--- IMPORTAR NUEVA PAGINA
 
 import { API_BASE_URL } from "./utils.js";
 
@@ -24,23 +37,32 @@ export default function App() {
   const [loginTarget, setLoginTarget] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Estados de autenticación
   const [isAuthPanel, setIsAuthPanel] = useState(
-    !!sessionStorage.getItem("api_key") && sessionStorage.getItem("role") === "PANEL"
+    !!sessionStorage.getItem("api_key") &&
+      sessionStorage.getItem("role") === "PANEL"
   );
   const [isAuthGerencia, setIsAuthGerencia] = useState(
-    !!sessionStorage.getItem("api_key") && sessionStorage.getItem("role") === "GERENCIA"
+    !!sessionStorage.getItem("api_key") &&
+      sessionStorage.getItem("role") === "GERENCIA"
+  );
+  // --- NUEVO ESTADO DEPOSITO ---
+  const [isAuthDeposito, setIsAuthDeposito] = useState(
+    !!sessionStorage.getItem("api_key") &&
+      sessionStorage.getItem("role") === "DEPOSITO"
   );
 
-  const isLoggedAny = isAuthPanel || isAuthGerencia;
-  const canAccessShared = isLoggedAny;
+  // Lógica de permisos
+  const isLoggedAny = isAuthPanel || isAuthGerencia || isAuthDeposito;
+  const canAccessShared = isAuthPanel || isAuthGerencia; // Operario + Gerencia
   const canAccessGerencia = isAuthGerencia;
+  const canAccessDeposito = isAuthDeposito || isAuthGerencia; // Deposito + Gerencia
 
   useEffect(() => {
     const key = sessionStorage.getItem("api_key");
     const role = sessionStorage.getItem("role");
     if (key && role === "PANEL") setIsAuthPanel(true);
     if (key && role === "GERENCIA") setIsAuthGerencia(true);
+    if (key && role === "DEPOSITO") setIsAuthDeposito(true); // <---
   }, []);
 
   useEffect(() => {
@@ -49,11 +71,8 @@ export default function App() {
     return () => window.removeEventListener("popstate", onLocationChange);
   }, []);
 
-  // Redirección de seguridad
   useEffect(() => {
-    if (page === "/" && !isLoggedAny) {
-      navigate("/login");
-    }
+    if (page === "/" && !isLoggedAny) navigate("/login");
   }, [page, isLoggedAny]);
 
   useEffect(() => {
@@ -66,35 +85,30 @@ export default function App() {
     setPage(path);
   };
 
-  // --- LOGIN CON VALIDACIÓN ESTRICTA ---
   const handleLogin = async (password, roleTarget) => {
     try {
       const res = await fetch(`${API_BASE_URL}/`, {
-        headers: { 'x-api-key': password }
+        headers: { "x-api-key": password },
       });
 
       if (res.ok) {
         const data = await res.json();
-        const realRole = data.role; // Rol real de la contraseña ingresada
+        const realRole = data.role;
 
-        // AQUI ESTA LA CORRECCIÓN:
-        // Si el rol de la contraseña no coincide con el perfil que elegiste,
-        // devolvemos false (como si la contraseña estuviera mal).
-        if (realRole !== roleTarget) {
-          return false;
-        }
+        if (realRole !== roleTarget) return false;
 
         sessionStorage.setItem("api_key", password);
         sessionStorage.setItem("role", realRole);
 
         if (realRole === "PANEL") setIsAuthPanel(true);
         if (realRole === "GERENCIA") setIsAuthGerencia(true);
+        if (realRole === "DEPOSITO") setIsAuthDeposito(true); // <---
         return true;
       } else {
         return false;
       }
     } catch (err) {
-      console.error("Error de conexión", err);
+      console.error("Error", err);
       return false;
     }
   };
@@ -104,131 +118,263 @@ export default function App() {
     sessionStorage.removeItem("role");
     setIsAuthPanel(false);
     setIsAuthGerencia(false);
+    setIsAuthDeposito(false); // <---
     navigate("/login");
   };
 
   const navLinks = [
-    { path: "/planificacion", label: "Planif.", icon: <FaClipboardList />, show: canAccessShared },
-    { path: "/registrar-produccion", label: "Producir", icon: <FaPlusCircle />, show: canAccessShared },
-    { path: "/operarios", label: "Personal", icon: <FaUsersCog />, show: canAccessShared },
-    { path: "/analisis-pedidos", label: "Análisis", icon: <FaChartLine />, show: canAccessGerencia },
-    { path: "/logistica", label: "Logística", icon: <FaTruck />, show: canAccessGerencia },
-    { path: "/ingenieria", label: "Ingeniería", icon: <FaCogs />, show: canAccessGerencia },
-    { path: "/compras", label: "Compras", icon: <FaBox />, show: canAccessGerencia },
+    {
+      path: "/planificacion",
+      label: "Planif.",
+      icon: <FaClipboardList />,
+      show: canAccessShared,
+    },
+    {
+      path: "/registrar-produccion",
+      label: "Producir",
+      icon: <FaPlusCircle />,
+      show: canAccessShared,
+    },
+    {
+      path: "/operarios",
+      label: "Personal",
+      icon: <FaUsersCog />,
+      show: canAccessShared,
+    },
+    {
+      path: "/analisis-pedidos",
+      label: "Análisis",
+      icon: <FaChartLine />,
+      show: canAccessGerencia,
+    },
+    {
+      path: "/logistica",
+      label: "Logística",
+      icon: <FaTruck />,
+      show: canAccessGerencia,
+    },
+    {
+      path: "/recepcion",
+      label: "Recepción",
+      icon: <FaBox />,
+      show: canAccessDeposito,
+    }, // <--- NUEVO LINK
+    {
+      path: "/ingenieria",
+      label: "Ingeniería",
+      icon: <FaCogs />,
+      show: canAccessGerencia,
+    },
+    {
+      path: "/compras",
+      label: "Compras",
+      icon: <FaBox />,
+      show: canAccessGerencia,
+    },
   ];
 
-  // --- RENDERIZADO ---
   let component;
 
   if (page === "/login") {
     if (loginTarget) {
       component = (
         <div className="relative pt-20">
-          <button onClick={() => setLoginTarget(null)} className="absolute top-24 left-4 text-gray-400 hover:text-white text-sm underline">← Volver</button>
+          <button
+            onClick={() => setLoginTarget(null)}
+            className="absolute top-24 left-4 text-gray-400 hover:text-white text-sm underline"
+          >
+            ← Volver
+          </button>
           <LoginPage
             onLoginAttempt={async (pass) => {
               const success = await handleLogin(pass, loginTarget);
-              if (success) navigate("/");
+              if (success) {
+                // Si es depósito, lo mandamos directo a recepción, sino al home
+                if (loginTarget === "DEPOSITO") navigate("/recepcion");
+                else navigate("/");
+              }
               return success;
             }}
-            title={loginTarget === "PANEL" ? "Acceso Operario" : "Acceso Gerencia"}
+            title={`Acceso ${loginTarget}`}
           />
         </div>
       );
     } else {
       component = (
         <div className="flex flex-col items-center justify-center min-h-[80vh] animate-in fade-in zoom-in duration-500 pt-10">
-          <h2 className="text-4xl font-bold text-white mb-12 drop-shadow-lg text-center">Seleccione su Perfil</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 px-4">
-            <button onClick={() => setLoginTarget("PANEL")} className="group bg-slate-800 hover:bg-blue-600 border-2 border-slate-700 hover:border-blue-500 p-10 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-6 w-full md:w-72 transform hover:-translate-y-2">
-              <FaHardHat className="text-7xl text-blue-400 group-hover:text-white transition-colors" />
-              <span className="text-2xl font-bold text-white">Operario</span>
+          <h2 className="text-4xl font-bold text-white mb-12 drop-shadow-lg text-center">
+            Seleccione su Perfil
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
+            {" "}
+            {/* Cambiado a 3 columnas */}
+            <button
+              onClick={() => setLoginTarget("PANEL")}
+              className="group bg-slate-800 hover:bg-blue-600 border-2 border-slate-700 hover:border-blue-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
+            >
+              <FaHardHat className="text-6xl text-blue-400 group-hover:text-white transition-colors" />
+              <span className="text-xl font-bold text-white">Operario</span>
             </button>
-            <button onClick={() => setLoginTarget("GERENCIA")} className="group bg-slate-800 hover:bg-purple-600 border-2 border-slate-700 hover:border-purple-500 p-10 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-6 w-full md:w-72 transform hover:-translate-y-2">
-              <FaUserTie className="text-7xl text-purple-400 group-hover:text-white transition-colors" />
-              <span className="text-2xl font-bold text-white">Gerencia</span>
+            {/* NUEVO BOTÓN DEPOSITO */}
+            <button
+              onClick={() => setLoginTarget("DEPOSITO")}
+              className="group bg-slate-800 hover:bg-orange-600 border-2 border-slate-700 hover:border-orange-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
+            >
+              <FaWarehouse className="text-6xl text-orange-400 group-hover:text-white transition-colors" />
+              <span className="text-xl font-bold text-white">Depósito</span>
+            </button>
+            <button
+              onClick={() => setLoginTarget("GERENCIA")}
+              className="group bg-slate-800 hover:bg-purple-600 border-2 border-slate-700 hover:border-purple-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
+            >
+              <FaUserTie className="text-6xl text-purple-400 group-hover:text-white transition-colors" />
+              <span className="text-xl font-bold text-white">Gerencia</span>
             </button>
           </div>
         </div>
       );
     }
+  } else if (page === "/panel-control") {
+    component = canAccessShared ? (
+      <PanelControl onNavigate={navigate} />
+    ) : (
+      <LoginPage
+        onLoginAttempt={(pass) => handleLogin(pass, "PANEL")}
+        title="Acceso Requerido"
+      />
+    );
+  } else if (page === "/registrar-produccion") {
+    component = canAccessShared ? (
+      <RegistrarProduccionPage />
+    ) : (
+      <LoginPage
+        onLoginAttempt={(pass) => handleLogin(pass, "PANEL")}
+        title="Acceso Requerido"
+      />
+    );
   }
-
-  else if (page === "/panel-control") {
-    component = canAccessShared ? <PanelControl onNavigate={navigate} /> : <LoginPage onLoginAttempt={(pass) => handleLogin(pass, "PANEL")} title="Acceso Requerido" />;
-  }
-  else if (page === "/registrar-produccion") {
-    component = canAccessShared ? <RegistrarProduccionPage /> : <LoginPage onLoginAttempt={(pass) => handleLogin(pass, "PANEL")} title="Acceso Requerido" />;
-  }
-
-  else if (["/analisis-pedidos", "/planificacion", "/ingenieria", "/operarios", "/logistica", "/compras"].includes(page)) {
+  // RUTA RECEPCIÓN NUEVA
+  else if (page === "/recepcion") {
+    component = canAccessDeposito ? (
+      <RecepcionPage onNavigate={navigate} />
+    ) : (
+      <LoginPage
+        onLoginAttempt={(pass) => handleLogin(pass, "DEPOSITO")}
+        title="Acceso Depósito"
+      />
+    );
+  } else if (
+    [
+      "/analisis-pedidos",
+      "/planificacion",
+      "/ingenieria",
+      "/operarios",
+      "/logistica",
+      "/compras",
+    ].includes(page)
+  ) {
     const PageComp = {
       "/analisis-pedidos": AnalisisPedidos,
       "/planificacion": PlanificacionPage,
       "/ingenieria": IngenieriaProductos,
       "/operarios": OperariosPage,
       "/logistica": LogisticaPage,
-      "/compras": SolicitudesPage
+      "/compras": SolicitudesPage,
     }[page];
 
     const isSharedRoute = ["/planificacion", "/operarios"].includes(page);
     const hasAccess = isSharedRoute ? canAccessShared : canAccessGerencia;
-
-    // Si intentan entrar directo por URL sin permiso, pedimos login con el rol correspondiente a la ruta
     const requiredRole = isSharedRoute ? "PANEL" : "GERENCIA";
 
-    component = hasAccess ? <PageComp onNavigate={navigate} /> : <LoginPage onLoginAttempt={(pass) => handleLogin(pass, requiredRole)} title="Acceso Requerido" />;
-  }
-
-  else {
+    component = hasAccess ? (
+      <PageComp onNavigate={navigate} />
+    ) : (
+      <LoginPage
+        onLoginAttempt={(pass) => handleLogin(pass, requiredRole)}
+        title="Acceso Requerido"
+      />
+    );
+  } else {
     if (isLoggedAny) {
       component = <Dashboard onNavigate={navigate} />;
     } else {
-      component = null; // Redirección en useEffect
+      component = null;
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 font-sans selection:bg-blue-500 selection:text-white">
-
       {isLoggedAny && (
         <header className="fixed top-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-b border-slate-700 z-[1000] px-4 shadow-lg">
           <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
-
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigate("/")}>
+            <div
+              className="flex items-center gap-3 cursor-pointer"
+              onClick={() => navigate("/")}
+            >
               <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-2 rounded-lg">
                 <FaIndustry className="text-white text-lg" />
               </div>
-              <span className="text-xl font-bold text-white tracking-tight hidden md:block">Gestión MRP</span>
+              <span className="text-xl font-bold text-white tracking-tight hidden md:block">
+                Gestión MRP
+              </span>
             </div>
 
             <nav className="hidden lg:flex items-center gap-1 bg-slate-800/50 p-1 rounded-full border border-slate-700/50 ml-4">
-              {navLinks.filter(l => l.show).map((link) => (
-                <button
-                  key={link.path}
-                  onClick={() => navigate(link.path)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${page === link.path
-                    ? "bg-blue-600 text-white shadow-md"
-                    : "text-gray-400 hover:text-white hover:bg-slate-700"
+              {navLinks
+                .filter((l) => l.show)
+                .map((link) => (
+                  <button
+                    key={link.path}
+                    onClick={() => navigate(link.path)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                      page === link.path
+                        ? "bg-blue-600 text-white shadow-md"
+                        : "text-gray-400 hover:text-white hover:bg-slate-700"
                     }`}
-                >
-                  {link.icon}
-                  <span>{link.label}</span>
-                </button>
-              ))}
+                  >
+                    {link.icon}
+                    <span>{link.label}</span>
+                  </button>
+                ))}
             </nav>
 
             <div className="flex items-center gap-3">
-              <div className={`hidden md:flex items-center gap-3 px-3 py-1.5 rounded-lg border ${isAuthGerencia ? "bg-purple-900/20 border-purple-500/30 text-purple-200" : "bg-blue-900/20 border-blue-500/30 text-blue-200"
-                }`}>
-                {isAuthGerencia ? <FaUserTie /> : <FaHardHat />}
-                <span className="text-xs font-bold tracking-wider">{isAuthGerencia ? "GERENCIA" : "OPERARIO"}</span>
-                <button onClick={handleLogout} className="ml-2 text-gray-400 hover:text-white transition-colors" title="Salir">
+              <div
+                className={`hidden md:flex items-center gap-3 px-3 py-1.5 rounded-lg border ${
+                  isAuthGerencia
+                    ? "bg-purple-900/20 border-purple-500/30 text-purple-200"
+                    : isAuthDeposito
+                    ? "bg-orange-900/20 border-orange-500/30 text-orange-200"
+                    : "bg-blue-900/20 border-blue-500/30 text-blue-200"
+                }`}
+              >
+                {isAuthGerencia ? (
+                  <FaUserTie />
+                ) : isAuthDeposito ? (
+                  <FaWarehouse />
+                ) : (
+                  <FaHardHat />
+                )}
+                <span className="text-xs font-bold tracking-wider">
+                  {isAuthGerencia
+                    ? "GERENCIA"
+                    : isAuthDeposito
+                    ? "DEPÓSITO"
+                    : "OPERARIO"}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="ml-2 text-gray-400 hover:text-white transition-colors"
+                  title="Salir"
+                >
                   <FaSignOutAlt />
                 </button>
               </div>
 
-              <button className="lg:hidden p-2 text-gray-300 hover:text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+              <button
+                className="lg:hidden p-2 text-gray-300 hover:text-white"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              >
                 {mobileMenuOpen ? <FaTimes size={24} /> : <FaBars size={24} />}
               </button>
             </div>
@@ -239,23 +385,61 @@ export default function App() {
       {mobileMenuOpen && isLoggedAny && (
         <div className="fixed inset-0 z-[900] bg-slate-900/95 backdrop-blur-xl pt-20 px-6 animate-in slide-in-from-top-10 duration-200 lg:hidden">
           <div className="flex flex-col gap-2">
-            <div className={`flex items-center justify-between p-4 rounded-xl border mb-4 ${isAuthGerencia ? "bg-purple-900/20 border-purple-500 text-purple-200" : "bg-blue-900/20 border-blue-500 text-blue-200"}`}>
+            <div
+              className={`flex items-center justify-between p-4 rounded-xl border mb-4 ${
+                isAuthGerencia
+                  ? "bg-purple-900/20 border-purple-500 text-purple-200"
+                  : "bg-blue-900/20 border-blue-500 text-blue-200"
+              }`}
+            >
               <div className="flex items-center gap-3">
-                {isAuthGerencia ? <FaUserTie size={20} /> : <FaHardHat size={20} />}
-                <span className="font-bold">{isAuthGerencia ? "GERENCIA" : "OPERARIO"}</span>
+                {isAuthGerencia ? (
+                  <FaUserTie size={20} />
+                ) : isAuthDeposito ? (
+                  <FaWarehouse />
+                ) : (
+                  <FaHardHat size={20} />
+                )}
+                <span className="font-bold">
+                  {isAuthGerencia
+                    ? "GERENCIA"
+                    : isAuthDeposito
+                    ? "DEPÓSITO"
+                    : "OPERARIO"}
+                </span>
               </div>
-              <button onClick={handleLogout} className="text-sm underline opacity-80">Cerrar Sesión</button>
-            </div>
-            {navLinks.filter(l => l.show).map((link) => (
-              <button key={link.path} onClick={() => navigate(link.path)} className={`flex items-center gap-4 p-4 rounded-xl text-lg font-medium transition-all ${page === link.path ? "bg-slate-800 text-white border border-slate-600" : "text-gray-400 hover:bg-slate-800/50 hover:text-white"}`}>
-                <span className="text-xl">{link.icon}</span>{link.label}
+              <button
+                onClick={handleLogout}
+                className="text-sm underline opacity-80"
+              >
+                Cerrar Sesión
               </button>
-            ))}
+            </div>
+            {navLinks
+              .filter((l) => l.show)
+              .map((link) => (
+                <button
+                  key={link.path}
+                  onClick={() => navigate(link.path)}
+                  className={`flex items-center gap-4 p-4 rounded-xl text-lg font-medium transition-all ${
+                    page === link.path
+                      ? "bg-slate-800 text-white border border-slate-600"
+                      : "text-gray-400 hover:bg-slate-800/50 hover:text-white"
+                  }`}
+                >
+                  <span className="text-xl">{link.icon}</span>
+                  {link.label}
+                </button>
+              ))}
           </div>
         </div>
       )}
 
-      <div className={`px-4 md:px-8 max-w-7xl mx-auto ${isLoggedAny ? "pt-24 pb-10" : ""}`}>
+      <div
+        className={`px-4 md:px-8 max-w-7xl mx-auto ${
+          isLoggedAny ? "pt-24 pb-10" : ""
+        }`}
+      >
         {component}
       </div>
     </div>
