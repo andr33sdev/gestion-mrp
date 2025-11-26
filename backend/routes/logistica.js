@@ -1,17 +1,17 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { protect, restrictTo } = require("../middleware/auth"); // Importar middlewares
+const { protect, restrictTo } = require("../middleware/auth");
 
-// Proteger rutas (Logística suele ser para Gerencia o Depósito)
-// Puedes ajustar los roles según necesites
 router.use(protect);
 
 router.get("/stock", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     const { rows } = await db.query(
-      "SELECT id, codigo, nombre, stock_planta_26, stock_planta_37, stock_deposito_ayolas, stock_deposito_quintana FROM semielaborados ORDER BY nombre ASC"
+      `SELECT id, codigo, nombre, 
+             stock_planta_26, stock_planta_37, stock_deposito_ayolas, stock_deposito_quintana 
+             FROM semielaborados ORDER BY nombre ASC`
     );
     res.json(rows);
   } catch (err) {
@@ -19,19 +19,34 @@ router.get("/stock", async (req, res) => {
   }
 });
 
-// 2. ENVÍO (SOLO GENERA REMITO, NO DESCUENTA STOCK)
+router.get("/historial", async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+            SELECT 
+                ml.codigo_remito, ml.origen, ml.destino, ml.chofer, ml.estado, 
+                to_char(MIN(ml.fecha_creacion) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD HH24:MI:SS') as fecha_salida_arg,
+                to_char(MAX(ml.fecha_recepcion) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD HH24:MI:SS') as fecha_recepcion_arg,
+                COUNT(*) as total_items, SUM(ml.cantidad) as total_unidades,
+                json_agg(json_build_object('nombre', s.nombre, 'codigo', s.codigo, 'cantidad', ml.cantidad)) as items_detalle
+            FROM movimientos_logistica ml
+            JOIN semielaborados s ON ml.semielaborado_id = s.id
+            GROUP BY ml.codigo_remito, ml.origen, ml.destino, ml.chofer, ml.estado 
+            ORDER BY MIN(ml.fecha_creacion) DESC LIMIT 50
+        `);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// ... (Rutas enviar, recibir, reset, etc. se mantienen igual) ...
 router.post("/enviar", async (req, res) => {
   const { items, origen, destino, chofer } = req.body;
   const codigo_remito = `REM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
   const client = await db.connect();
   try {
     await client.query("BEGIN");
     for (const item of items) {
-      // --- COMENTADO: NO TOCAMOS EL STOCK ---
-      // await client.query(`UPDATE semielaborados SET ${colOrigen} = ${colOrigen} - $1 WHERE id = $2`, [item.cantidad, item.id]);
-
-      // SOLO REGISTRAMOS EL MOVIMIENTO
       await client.query(
         "INSERT INTO movimientos_logistica (semielaborado_id, cantidad, origen, destino, estado, codigo_remito, chofer) VALUES ($1, $2, $3, $4, 'EN_TRANSITO', $5, $6)",
         [item.id, item.cantidad, origen, destino, codigo_remito, chofer]
@@ -47,8 +62,6 @@ router.post("/enviar", async (req, res) => {
   }
 });
 
-// 3. RECIBIR (SOLO CAMBIA ESTADO A RECIBIDO, NO SUMA STOCK)
-// Permitimos rol DEPOSITO aquí también
 router.post(
   "/recibir",
   restrictTo("GERENCIA", "DEPOSITO", "PANEL"),
@@ -63,15 +76,9 @@ router.post(
       );
       if (movRes.rowCount === 0)
         throw new Error("Remito no válido o ya recibido");
-
       const destino = movRes.rows[0].destino;
       const origen = movRes.rows[0].origen;
-
       for (const mov of movRes.rows) {
-        // --- COMENTADO: NO TOCAMOS EL STOCK ---
-        // await client.query(`UPDATE semielaborados SET ${colDestino} = ${colDestino} + $1 WHERE id = $2`, [mov.cantidad, mov.semielaborado_id]);
-
-        // SOLO ACTUALIZAMOS EL ESTADO DEL REMITO
         await client.query(
           "UPDATE movimientos_logistica SET estado = 'RECIBIDO', fecha_recepcion = NOW() WHERE id = $1",
           [mov.id]
@@ -93,7 +100,6 @@ router.post(
   }
 );
 
-// EDICIÓN MANUAL (Esta sí la dejamos por si hay que corregir algo a mano desde la app)
 router.put("/stock/:id", restrictTo("GERENCIA"), async (req, res) => {
   const { p26, p37, ayolas, quintana } = req.body;
   try {
@@ -113,34 +119,15 @@ router.put("/stock/:id", restrictTo("GERENCIA"), async (req, res) => {
   }
 });
 
-// 5. HERRAMIENTA: RESETEAR NEGATIVOS (Limpieza de Zombis)
 router.post("/reset-negativos", restrictTo("GERENCIA"), async (req, res) => {
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-
-    // Pone a 0 cualquier columna que tenga valor negativo
-    const query = `
-            UPDATE semielaborados 
-            SET 
-                stock_planta_26 = GREATEST(0, stock_planta_26),
-                stock_planta_37 = GREATEST(0, stock_planta_37),
-                stock_deposito_ayolas = GREATEST(0, stock_deposito_ayolas),
-                stock_deposito_quintana = GREATEST(0, stock_deposito_quintana)
-            WHERE 
-                stock_planta_26 < 0 OR 
-                stock_planta_37 < 0 OR 
-                stock_deposito_ayolas < 0 OR 
-                stock_deposito_quintana < 0
-        `;
-
-    const result = await client.query(query);
+    await client.query(
+      `UPDATE semielaborados SET stock_planta_26 = GREATEST(0, stock_planta_26), stock_planta_37 = GREATEST(0, stock_planta_37), stock_deposito_ayolas = GREATEST(0, stock_deposito_ayolas), stock_deposito_quintana = GREATEST(0, stock_deposito_quintana) WHERE stock_planta_26 < 0 OR stock_planta_37 < 0 OR stock_deposito_ayolas < 0 OR stock_deposito_quintana < 0`
+    );
     await client.query("COMMIT");
-
-    res.json({
-      success: true,
-      msg: `Se corrigieron ${result.rowCount} productos con stock negativo.`,
-    });
+    res.json({ success: true, msg: "Stocks negativos corregidos." });
   } catch (e) {
     await client.query("ROLLBACK");
     res.status(500).json({ msg: e.message });
@@ -149,27 +136,135 @@ router.post("/reset-negativos", restrictTo("GERENCIA"), async (req, res) => {
   }
 });
 
-module.exports = router;
-
-router.get("/historial", async (req, res) => {
+router.post("/reset-total-db", restrictTo("GERENCIA"), async (req, res) => {
+  const client = await db.connect();
   try {
-    const { rows } = await db.query(
-      "SELECT codigo_remito, origen, destino, chofer, estado, MIN(fecha_creacion) as fecha, COUNT(*) as total_items, SUM(cantidad) as total_unidades FROM movimientos_logistica GROUP BY codigo_remito, origen, destino, chofer, estado ORDER BY fecha DESC LIMIT 50"
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE semielaborados SET stock_planta_26 = 0, stock_planta_37 = 0, stock_deposito_ayolas = 0, stock_deposito_quintana = 0`
     );
-    res.json(rows);
+    await client.query("COMMIT");
+    res.json({ success: true });
   } catch (e) {
-    res.status(500).send(e.message);
+    await client.query("ROLLBACK");
+    res.status(500).json({ msg: e.message });
+  } finally {
+    client.release();
   }
 });
 
-router.get("/despachos-automaticos", async (req, res) => {
+// ==========================================
+// --- NUEVO SISTEMA DE PEDIDOS INTERNOS ---
+// ==========================================
+
+// 1. CREAR SOLICITUD (Soporta array de ítems)
+router.post("/solicitud", async (req, res) => {
+  const { items, destino } = req.body;
+
+  if (!items || items.length === 0 || !destino) {
+    return res.status(400).json({ msg: "Faltan datos." });
+  }
+
+  const client = await db.connect();
   try {
-    const { rows } = await db.query(
-      "SELECT * FROM historial_despachos ORDER BY fecha_despacho DESC LIMIT 100"
-    );
+    await client.query("BEGIN");
+    for (const item of items) {
+      await client.query(
+        `INSERT INTO solicitudes_reposicion (semielaborado_id, cantidad, destino) 
+                 VALUES ($1, $2, $3)`,
+        [item.id, item.cantidad, destino]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ msg: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+router.get("/solicitudes/pendientes", async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+            SELECT sr.*, s.nombre, s.codigo 
+            FROM solicitudes_reposicion sr
+            JOIN semielaborados s ON sr.semielaborado_id = s.id
+            WHERE sr.estado = 'PENDIENTE'
+            ORDER BY sr.fecha_creacion DESC
+        `);
     res.json(rows);
   } catch (e) {
-    res.status(500).send(e.message);
+    res.status(500).json({ msg: e.message });
+  }
+});
+
+// 3. DESPACHAR LOTE (Varios pedidos en un solo remito)
+router.post(
+  "/solicitudes/despachar",
+  restrictTo("GERENCIA"),
+  async (req, res) => {
+    const { ids, origen, chofer } = req.body; // Lista de IDs de solicitudes
+    if (!ids || ids.length === 0)
+      return res.status(400).json({ msg: "Nada seleccionado" });
+
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const codigo_remito = `REM-${Date.now()}-${Math.floor(
+        Math.random() * 1000
+      )}`;
+
+      for (const id of ids) {
+        const solRes = await client.query(
+          "SELECT * FROM solicitudes_reposicion WHERE id = $1",
+          [id]
+        );
+        if (solRes.rowCount === 0) continue;
+        const solicitud = solRes.rows[0];
+
+        // Crear movimiento
+        await client.query(
+          `INSERT INTO movimientos_logistica (semielaborado_id, cantidad, origen, destino, estado, codigo_remito, chofer)
+                 VALUES ($1, $2, $3, $4, 'EN_TRANSITO', $5, $6)`,
+          [
+            solicitud.semielaborado_id,
+            solicitud.cantidad,
+            origen,
+            solicitud.destino,
+            codigo_remito,
+            chofer,
+          ]
+        );
+
+        // Actualizar solicitud
+        await client.query(
+          "UPDATE solicitudes_reposicion SET estado = 'DESPACHADO', fecha_despacho = NOW() WHERE id = $1",
+          [id]
+        );
+      }
+
+      await client.query("COMMIT");
+      res.json({ success: true, codigo_remito });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.status(500).json({ msg: e.message });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+router.delete("/solicitud/:id", async (req, res) => {
+  try {
+    await db.query(
+      "UPDATE solicitudes_reposicion SET estado = 'CANCELADO' WHERE id = $1",
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ msg: e.message });
   }
 });
 
