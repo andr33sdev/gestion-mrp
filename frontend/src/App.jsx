@@ -14,7 +14,8 @@ import {
   FaTimes,
   FaBox,
   FaIndustry,
-  FaWarehouse, // <--- Importar FaWarehouse
+  FaWarehouse,
+  FaCalendarAlt, // Importar icono calendario
 } from "react-icons/fa";
 
 // Importa las páginas
@@ -28,7 +29,8 @@ import RegistrarProduccionPage from "./pages/RegistrarProduccionPage.jsx";
 import OperariosPage from "./pages/OperariosPage.jsx";
 import LogisticaPage from "./pages/LogisticaPage.jsx";
 import SolicitudesPage from "./pages/SolicitudesPage";
-import RecepcionPage from "./pages/RecepcionPage.jsx"; // <--- IMPORTAR NUEVA PAGINA
+import RecepcionPage from "./pages/RecepcionPage.jsx";
+import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx"; // Importar Hoja de Ruta
 
 import { API_BASE_URL } from "./utils.js";
 
@@ -37,6 +39,7 @@ export default function App() {
   const [loginTarget, setLoginTarget] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Estados de autenticación
   const [isAuthPanel, setIsAuthPanel] = useState(
     !!sessionStorage.getItem("api_key") &&
       sessionStorage.getItem("role") === "PANEL"
@@ -45,13 +48,12 @@ export default function App() {
     !!sessionStorage.getItem("api_key") &&
       sessionStorage.getItem("role") === "GERENCIA"
   );
-  // --- NUEVO ESTADO DEPOSITO ---
   const [isAuthDeposito, setIsAuthDeposito] = useState(
     !!sessionStorage.getItem("api_key") &&
       sessionStorage.getItem("role") === "DEPOSITO"
   );
 
-  // Lógica de permisos
+  // Lógica de permisos combinada
   const isLoggedAny = isAuthPanel || isAuthGerencia || isAuthDeposito;
   const canAccessShared = isAuthPanel || isAuthGerencia; // Operario + Gerencia
   const canAccessGerencia = isAuthGerencia;
@@ -62,7 +64,7 @@ export default function App() {
     const role = sessionStorage.getItem("role");
     if (key && role === "PANEL") setIsAuthPanel(true);
     if (key && role === "GERENCIA") setIsAuthGerencia(true);
-    if (key && role === "DEPOSITO") setIsAuthDeposito(true); // <---
+    if (key && role === "DEPOSITO") setIsAuthDeposito(true);
   }, []);
 
   useEffect(() => {
@@ -71,8 +73,11 @@ export default function App() {
     return () => window.removeEventListener("popstate", onLocationChange);
   }, []);
 
+  // Redirección de seguridad
   useEffect(() => {
-    if (page === "/" && !isLoggedAny) navigate("/login");
+    if (page === "/" && !isLoggedAny) {
+      navigate("/login");
+    }
   }, [page, isLoggedAny]);
 
   useEffect(() => {
@@ -95,20 +100,23 @@ export default function App() {
         const data = await res.json();
         const realRole = data.role;
 
-        if (realRole !== roleTarget) return false;
+        // Validación estricta
+        if (realRole !== roleTarget) {
+          return false;
+        }
 
         sessionStorage.setItem("api_key", password);
         sessionStorage.setItem("role", realRole);
 
         if (realRole === "PANEL") setIsAuthPanel(true);
         if (realRole === "GERENCIA") setIsAuthGerencia(true);
-        if (realRole === "DEPOSITO") setIsAuthDeposito(true); // <---
+        if (realRole === "DEPOSITO") setIsAuthDeposito(true);
         return true;
       } else {
         return false;
       }
     } catch (err) {
-      console.error("Error", err);
+      console.error("Error de conexión", err);
       return false;
     }
   };
@@ -118,10 +126,11 @@ export default function App() {
     sessionStorage.removeItem("role");
     setIsAuthPanel(false);
     setIsAuthGerencia(false);
-    setIsAuthDeposito(false); // <---
+    setIsAuthDeposito(false);
     navigate("/login");
   };
 
+  // --- MENÚ DE NAVEGACIÓN ---
   const navLinks = [
     {
       path: "/planificacion",
@@ -141,6 +150,7 @@ export default function App() {
       icon: <FaUsersCog />,
       show: canAccessShared,
     },
+
     {
       path: "/analisis-pedidos",
       label: "Análisis",
@@ -153,12 +163,15 @@ export default function App() {
       icon: <FaTruck />,
       show: canAccessGerencia,
     },
+
+    // --- SECCIÓN NUEVA: HOJA DE RUTA ---
     {
-      path: "/recepcion",
-      label: "Recepción",
-      icon: <FaBox />,
-      show: canAccessDeposito,
-    }, // <--- NUEVO LINK
+      path: "/hoja-de-ruta",
+      label: "Hoja Ruta",
+      icon: <FaCalendarAlt />,
+      show: canAccessGerencia,
+    },
+
     {
       path: "/ingenieria",
       label: "Ingeniería",
@@ -171,10 +184,15 @@ export default function App() {
       icon: <FaBox />,
       show: canAccessGerencia,
     },
+
+    // NOTA: El botón de RECEPCIÓN se eliminó del menú principal como pediste.
+    // La ruta sigue accesible directamentes o al loguearse como DEPOSITO.
   ];
 
+  // --- RENDERIZADO DE COMPONENTES ---
   let component;
 
+  // 1. LOGIN
   if (page === "/login") {
     if (loginTarget) {
       component = (
@@ -189,7 +207,7 @@ export default function App() {
             onLoginAttempt={async (pass) => {
               const success = await handleLogin(pass, loginTarget);
               if (success) {
-                // Si es depósito, lo mandamos directo a recepción, sino al home
+                // Redirección inteligente según rol
                 if (loginTarget === "DEPOSITO") navigate("/recepcion");
                 else navigate("/");
               }
@@ -206,8 +224,6 @@ export default function App() {
             Seleccione su Perfil
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
-            {" "}
-            {/* Cambiado a 3 columnas */}
             <button
               onClick={() => setLoginTarget("PANEL")}
               className="group bg-slate-800 hover:bg-blue-600 border-2 border-slate-700 hover:border-blue-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
@@ -215,7 +231,7 @@ export default function App() {
               <FaHardHat className="text-6xl text-blue-400 group-hover:text-white transition-colors" />
               <span className="text-xl font-bold text-white">Operario</span>
             </button>
-            {/* NUEVO BOTÓN DEPOSITO */}
+
             <button
               onClick={() => setLoginTarget("DEPOSITO")}
               className="group bg-slate-800 hover:bg-orange-600 border-2 border-slate-700 hover:border-orange-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
@@ -223,6 +239,7 @@ export default function App() {
               <FaWarehouse className="text-6xl text-orange-400 group-hover:text-white transition-colors" />
               <span className="text-xl font-bold text-white">Depósito</span>
             </button>
+
             <button
               onClick={() => setLoginTarget("GERENCIA")}
               className="group bg-slate-800 hover:bg-purple-600 border-2 border-slate-700 hover:border-purple-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
@@ -234,7 +251,10 @@ export default function App() {
         </div>
       );
     }
-  } else if (page === "/panel-control") {
+  }
+
+  // 2. RUTAS OPERATIVAS
+  else if (page === "/panel-control") {
     component = canAccessShared ? (
       <PanelControl onNavigate={navigate} />
     ) : (
@@ -253,7 +273,8 @@ export default function App() {
       />
     );
   }
-  // RUTA RECEPCIÓN NUEVA
+
+  // 3. RUTA RECEPCIÓN (Oculta del menú, pero accesible)
   else if (page === "/recepcion") {
     component = canAccessDeposito ? (
       <RecepcionPage onNavigate={navigate} />
@@ -263,7 +284,22 @@ export default function App() {
         title="Acceso Depósito"
       />
     );
-  } else if (
+  }
+
+  // 4. NUEVA RUTA: HOJA DE RUTA (CALENDARIO)
+  else if (page === "/hoja-de-ruta") {
+    component = canAccessGerencia ? (
+      <HojaDeRutaPage onNavigate={navigate} />
+    ) : (
+      <LoginPage
+        onLoginAttempt={(pass) => handleLogin(pass, "GERENCIA")}
+        title="Acceso Gerencia"
+      />
+    );
+  }
+
+  // 5. RUTAS MIXTAS Y GERENCIA
+  else if (
     [
       "/analisis-pedidos",
       "/planificacion",
@@ -294,11 +330,14 @@ export default function App() {
         title="Acceso Requerido"
       />
     );
-  } else {
+  }
+
+  // 6. DASHBOARD (Solo logueados)
+  else {
     if (isLoggedAny) {
       component = <Dashboard onNavigate={navigate} />;
     } else {
-      component = null;
+      component = null; // Redirección en useEffect
     }
   }
 
@@ -389,6 +428,8 @@ export default function App() {
               className={`flex items-center justify-between p-4 rounded-xl border mb-4 ${
                 isAuthGerencia
                   ? "bg-purple-900/20 border-purple-500 text-purple-200"
+                  : isAuthDeposito
+                  ? "bg-orange-900/20 border-orange-500 text-orange-200"
                   : "bg-blue-900/20 border-blue-500 text-blue-200"
               }`}
             >
@@ -396,7 +437,7 @@ export default function App() {
                 {isAuthGerencia ? (
                   <FaUserTie size={20} />
                 ) : isAuthDeposito ? (
-                  <FaWarehouse />
+                  <FaWarehouse size={20} />
                 ) : (
                   <FaHardHat size={20} />
                 )}

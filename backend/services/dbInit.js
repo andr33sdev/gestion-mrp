@@ -154,7 +154,7 @@ async function inicializarTablas() {
             estado VARCHAR(100),
             programado TIMESTAMP,
             preparado TIMESTAMP,
-            fecha_despacho TIMESTAMP
+            fecha_despacho TEXT
           );
         `);
     } catch (e) {
@@ -189,6 +189,19 @@ async function inicializarTablas() {
         estado VARCHAR(20) DEFAULT 'PENDIENTE', -- PENDIENTE, DESPACHADO, CANCELADO
         fecha_creacion TIMESTAMP DEFAULT NOW(),
         fecha_despacho TIMESTAMP
+      );
+    `);
+
+    // --- 10. NOVEDADES DE TELEGRAM (MEMORIA PERSISTENTE) ---
+    // Guarda los cambios de fecha que llegan por el bot para que el Sync no los borre
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS novedades_pedidos (
+        id SERIAL PRIMARY KEY,
+        cliente VARCHAR(255),
+        razon_social VARCHAR(255),
+        fecha_nueva DATE,
+        mensaje_original TEXT,
+        fecha_registro TIMESTAMP DEFAULT NOW()
       );
     `);
 

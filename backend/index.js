@@ -13,6 +13,8 @@ const {
   sincronizarStockSemielaborados,
 } = require("./services/syncService");
 
+const { iniciarBotReceptor } = require("./services/telegramBotListener");
+
 // --- IMPORTAR RUTAS ---
 const generalRoutes = require("./routes/general");
 const comprasRoutes = require("./routes/compras");
@@ -59,6 +61,7 @@ async function iniciarServidor() {
     sincronizarBaseDeDatos();
     sincronizarPedidos();
     sincronizarStockSemielaborados(); // <--- Ahora sí funcionará porque está importada
+    iniciarBotReceptor();
 
     // Cron Jobs (Intervalos)
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000); // Logs cada 2 min
