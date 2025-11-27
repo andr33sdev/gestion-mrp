@@ -11,6 +11,7 @@ const {
   sincronizarBaseDeDatos,
   sincronizarPedidos,
   sincronizarStockSemielaborados,
+  sincronizarMateriasPrimas,
 } = require("./services/syncService");
 
 const { iniciarBotReceptor } = require("./services/telegramBotListener");
@@ -61,12 +62,14 @@ async function iniciarServidor() {
     sincronizarBaseDeDatos();
     sincronizarPedidos();
     sincronizarStockSemielaborados(); // <--- Ahora sí funcionará porque está importada
+    sincronizarMateriasPrimas();
     iniciarBotReceptor();
 
     // Cron Jobs (Intervalos)
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000); // Logs cada 2 min
     setInterval(sincronizarPedidos, 15 * 60 * 1000); // Pedidos cada 15 min
-    setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000); // Stock cada 15 min
+    //setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000); // Stock cada 15 min
+    //setInterval(sincronizarMateriasPrimas, 15 * 60 * 1000); // Cada 15 min
   } catch (error) {
     console.error("❌ Error fatal al iniciar servidor:", error);
   }

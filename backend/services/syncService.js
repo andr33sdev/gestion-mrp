@@ -1,16 +1,17 @@
+// backend/services/syncService.js
 const db = require("../db");
 const {
   leerArchivoHorno,
   leerArchivoPedidos,
   leerStockSemielaborados,
+  leerMateriasPrimas,
 } = require("../google-drive");
 const { parsearLog } = require("../parser");
+const { enviarAlertaStock } = require("./telegramBotListener");
 const format = require("pg-format");
 const XLSX = require("xlsx");
 
 // --- HELPERS ---
-
-// --- HELPER FECHA ---
 function parsearFechaExcel(valor) {
   if (!valor) return null;
   if (valor instanceof Date) return isNaN(valor.getTime()) ? null : valor;
@@ -55,22 +56,19 @@ function limpiarCodigo(cod) {
 function limpiarNumero(val) {
   if (val === undefined || val === null || val === "") return 0;
   if (typeof val === "number") return val;
-
   let limpio = val.toString().trim();
   if (limpio.includes(",") && limpio.includes(".")) {
     limpio = limpio.replace(/\./g, "").replace(",", ".");
   } else if (limpio.includes(",")) {
     limpio = limpio.replace(",", ".");
   }
-
   const numero = parseFloat(limpio);
   return isNaN(numero) ? 0 : numero;
 }
 
-// Helper para formatear fecha a texto YYYY-MM-DD (Para guardar en columna TEXT)
 function formatearFechaParaDB(fechaObj) {
   if (!fechaObj || !(fechaObj instanceof Date) || isNaN(fechaObj)) return null;
-  return fechaObj.toISOString().split("T")[0]; // Devuelve "2025-11-25"
+  return fechaObj.toISOString().split("T")[0];
 }
 
 // =====================================================
@@ -82,7 +80,9 @@ async function sincronizarBaseDeDatos() {
   try {
     const textoCrudo = await leerArchivoHorno();
     const registrosOriginales = parsearLog(textoCrudo);
+
     await client.query("BEGIN");
+
     const { rows: currentProdRows } = await client.query(
       "SELECT * FROM estado_produccion FOR UPDATE"
     );
@@ -90,18 +90,17 @@ async function sincronizarBaseDeDatos() {
       try {
         acc[row.estacion_id] = {
           json: row.producto_actual || "[]",
-          list: JSON.parse(row.producto_actual || "[]"),
           accion: `Estacion ${row.estacion_id}`,
         };
       } catch (e) {
         acc[row.estacion_id] = {
           json: "[]",
-          list: [],
           accion: `Estacion ${row.estacion_id}`,
         };
       }
       return acc;
     }, {});
+
     const { rows: dbTriggers } = await client.query(
       `SELECT fecha, hora, accion FROM registros WHERE tipo = 'EVENTO' AND accion LIKE 'Se inicio ciclo%'`
     );
@@ -110,54 +109,61 @@ async function sincronizarBaseDeDatos() {
         (r) => `${r.fecha.toISOString().split("T")[0]}T${r.hora}_${r.accion}`
       )
     );
+
     const newArchiveRecords = [];
     for (const reg of registrosOriginales) {
-      let stationId = null,
-        isStartCycle = false;
+      let stationId = null;
       if (reg.accion.includes("Estacion 1")) stationId = 1;
       else if (reg.accion.includes("Estacion 2")) stationId = 2;
-      if (reg.accion.includes("Se inicio ciclo")) isStartCycle = true;
-      if (stationId && isStartCycle) {
+
+      if (stationId && reg.accion.includes("Se inicio ciclo")) {
         const key = `${reg.fecha}T${reg.hora}_${reg.accion}`;
         if (!dbTriggerSet.has(key)) {
           const products = currentProduccion[stationId];
-          if (products && products.list.length > 0) {
-            const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`);
-            const archiveDateTime = new Date(triggerDateTime.getTime() - 5000);
-            newArchiveRecords.push({
-              fecha: archiveDateTime.toISOString().split("T")[0],
-              hora: archiveDateTime
-                .toTimeString()
-                .split(" ")[0]
-                .split("(")[0]
-                .trim(),
-              accion: products.accion,
-              tipo: "PRODUCCION",
-              productos_json: products.json,
-            });
-          }
+          const triggerDateTime = new Date(`${reg.fecha}T${reg.hora}`);
+          const archiveDateTime = new Date(triggerDateTime.getTime() - 5000);
+
+          newArchiveRecords.push({
+            fecha: archiveDateTime.toISOString().split("T")[0],
+            hora: archiveDateTime
+              .toTimeString()
+              .split(" ")[0]
+              .split("(")[0]
+              .trim(),
+            accion: products.accion,
+            tipo: "PRODUCCION",
+            productos_json: products.json,
+          });
         }
       }
     }
+
     const allRecordsToInsert = [...registrosOriginales, ...newArchiveRecords];
     if (allRecordsToInsert.length === 0) {
-      client.release();
-      return { success: false, msg: "Sin registros nuevos." };
+      await client.query("COMMIT");
+      return { success: true, msg: "Sin registros nuevos." };
     }
+
     await client.query("DELETE FROM registros WHERE tipo != 'PRODUCCION'");
-    const valores = allRecordsToInsert.map((r) => [
-      r.fecha,
-      r.hora,
-      r.accion,
-      r.tipo,
-      r.productos_json || null,
-    ]);
-    await client.query(
-      format(
-        "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES %L",
-        valores
-      )
-    );
+
+    const LOTE_SIZE = 1000;
+    for (let i = 0; i < allRecordsToInsert.length; i += LOTE_SIZE) {
+      const lote = allRecordsToInsert.slice(i, i + LOTE_SIZE);
+      const valores = lote.map((r) => [
+        r.fecha,
+        r.hora,
+        r.accion,
+        r.tipo,
+        r.productos_json || null,
+      ]);
+      await client.query(
+        format(
+          "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES %L",
+          valores
+        )
+      );
+    }
+
     await client.query("COMMIT");
     return { success: true, msg: "Sincronización completa." };
   } catch (err) {
@@ -169,7 +175,9 @@ async function sincronizarBaseDeDatos() {
   }
 }
 
-// --- SYNC PEDIDOS (CONVERSIÓN A TEXTO) ---
+// =====================================================
+// 2. SYNC PEDIDOS
+// =====================================================
 async function sincronizarPedidos() {
   console.log("⏳ [SYNC] Iniciando sincronización de Pedidos...");
   let workbook;
@@ -192,81 +200,83 @@ async function sincronizarPedidos() {
     const mapaNovedades = {};
     novedades.forEach((n) => {
       if (n.razon_social) {
-        const key = normalizarEncabezado(n.razon_social);
-        mapaNovedades[key] = n.fecha_nueva;
+        mapaNovedades[normalizarEncabezado(n.razon_social)] = n.fecha_nueva;
       }
     });
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    let headerRowIndex = 0;
 
-    let headerRowIndex = -1;
     for (let i = 0; i < Math.min(rawMatrix.length, 30); i++) {
       const rowString = JSON.stringify(rawMatrix[i]).toUpperCase();
       if (rowString.includes("FECHA") && rowString.includes("CLIENTE")) {
         headerRowIndex = i;
-        console.log(`   ✅ Encabezados Pedidos encontrados en fila ${i + 1}`);
         break;
       }
     }
-    if (headerRowIndex === -1) headerRowIndex = 0;
 
     const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
     const valoresInsertar = [];
     const FECHA_CORTE = new Date("2025-01-01");
 
     for (const r of data) {
-      let fecha = null;
-      let cliente = null;
-      let modelo = null;
-      let cantidad = 0;
-      let oc = null;
-      let estado = null;
-      let detalles = null;
-      let fechaDespachoObj = null; // Objeto Date temporal
+      let fecha = null,
+        cliente = null,
+        modelo = null,
+        cantidad = 0,
+        oc = null,
+        estado = null,
+        detalles = null,
+        fechaDespachoObj = null;
 
       for (const key of Object.keys(r)) {
+        // Normalizamos y QUITAMOS ESPACIOS para comparar
         const k = normalizarEncabezado(key);
+        const kSinEspacios = k.replace(/\s+/g, "");
+
         const val = r[key];
 
-        if (k === "FECHA" || k === "FECHAPEDIDO") {
+        if (kSinEspacios === "FECHA" || kSinEspacios === "FECHAPEDIDO")
           fecha = parsearFechaExcel(val);
-        } else if (k === "CLIENTE" || k === "RAZONSOCIAL") cliente = val;
-        else if (k === "MODELO" || k === "ARTICULO" || k === "PRODUCTO")
+        else if (kSinEspacios === "CLIENTE" || kSinEspacios === "RAZONSOCIAL")
+          cliente = val;
+        else if (kSinEspacios === "MODELO" || kSinEspacios === "ARTICULO")
           modelo = val;
-        else if (k === "CANTIDAD" || k === "CANT" || k === "Q")
+        else if (
+          kSinEspacios === "CANTIDAD" ||
+          kSinEspacios === "CANT" ||
+          kSinEspacios === "Q"
+        )
           cantidad = limpiarNumero(val);
-        else if (k === "OC" || k === "ORDENCOMPRA") oc = val;
-        else if (k === "ESTADO" || k === "SITUACION" || k.includes("DEMORA"))
+        else if (kSinEspacios === "OC" || kSinEspacios === "ORDENCOMPRA")
+          oc = val;
+        else if (kSinEspacios === "ESTADO" || kSinEspacios === "SITUACION")
           estado = val;
-        else if (k === "DETALLES" || k === "OBSERVACIONES" || k === "OBS")
+        else if (
+          kSinEspacios === "DETALLES" ||
+          kSinEspacios === "OBSERVACIONES"
+        )
           detalles = val;
         else if (
-          k.includes("DESPACHO") ||
-          k.includes("ENTREGA") ||
-          k === "SALIDA"
-        ) {
+          kSinEspacios.includes("DESPACHO") ||
+          kSinEspacios.includes("ENTREGA") ||
+          kSinEspacios === "SALIDA"
+        )
           fechaDespachoObj = parsearFechaExcel(val);
-        }
       }
 
       if (!fecha || fecha < FECHA_CORTE) continue;
 
       if (cliente) {
         const keyCliente = normalizarEncabezado(cliente);
-        if (mapaNovedades[keyCliente]) {
+        if (mapaNovedades[keyCliente])
           fechaDespachoObj = new Date(mapaNovedades[keyCliente]);
-        }
       }
 
-      // CONVERTIR FECHA DESPACHO A STRING (YYYY-MM-DD) O NULL
       const fechaDespachoStr = formatearFechaParaDB(fechaDespachoObj);
-
-      if (fechaDespachoStr) {
-        estado = "ENTREGADO";
-      } else {
-        if (!estado) estado = "PENDIENTE";
-      }
+      if (fechaDespachoStr) estado = "ENTREGADO";
+      else if (!estado) estado = "PENDIENTE";
 
       valoresInsertar.push([
         fecha,
@@ -287,19 +297,17 @@ async function sincronizarPedidos() {
     if (valoresInsertar.length > 0) {
       for (let i = 0; i < valoresInsertar.length; i += TAMANO_LOTE) {
         const lote = valoresInsertar.slice(i, i + TAMANO_LOTE);
-        // Insertamos fecha_despacho como string, la tabla ahora lo aceptará
-        const query = format(
-          "INSERT INTO pedidos (fecha, cliente, modelo, cantidad, oc, estado, detalles, fecha_despacho) VALUES %L",
-          lote
+        await client.query(
+          format(
+            "INSERT INTO pedidos (fecha, cliente, modelo, cantidad, oc, estado, detalles, fecha_despacho) VALUES %L",
+            lote
+          )
         );
-        await client.query(query);
       }
     }
 
     await client.query("COMMIT");
-    console.log(
-      `✅ [SYNC] Pedidos sincronizados: ${valoresInsertar.length} registros.`
-    );
+    console.log(`✅ [SYNC] Pedidos: ${valoresInsertar.length} registros.`);
   } catch (err) {
     await client.query("ROLLBACK");
     console.error("❌ [SYNC] Error Pedidos:", err.message);
@@ -308,15 +316,84 @@ async function sincronizarPedidos() {
   }
 }
 
-// --- SYNC STOCK MULTI-HOJA (MAPEO EXACTO) ---
+// =====================================================
+// 3. SYNC STOCK + ALERTAS (CON QUITA DE ESPACIOS)
+// =====================================================
 async function sincronizarStockSemielaborados() {
   const client = await db.connect();
   try {
-    console.log("\n📥 [AUTO] --- INICIO SYNC STOCK MULTI-PLANTA ---");
-
+    console.log(
+      "\n📥 [SYNC] Iniciando Sincronización Rápida de Stock y Alertas..."
+    );
     const buffer = await leerStockSemielaborados();
     const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
 
+    await client.query("BEGIN");
+
+    // --- PASO A: ALERTAS (LOTE ÚNICO) ---
+    const nombreHojaGeneral = workbook.SheetNames[0];
+    const sheetGeneral = workbook.Sheets[nombreHojaGeneral];
+
+    const rawGeneral = XLSX.utils.sheet_to_json(sheetGeneral, { header: 1 });
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(rawGeneral.length, 10); i++) {
+      if (JSON.stringify(rawGeneral[i]).toUpperCase().includes("ALERTA")) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+    const dataAlerta = XLSX.utils.sheet_to_json(sheetGeneral, {
+      range: headerRowIdx,
+    });
+    const mapaAlertas = new Map();
+
+    for (const row of dataAlerta) {
+      let codigo = null;
+      let nombre = null;
+      let a1 = 0,
+        a2 = 0,
+        a3 = 0;
+
+      for (const key of Object.keys(row)) {
+        const k = normalizarEncabezado(key);
+        const kSinEspacios = k.replace(/\s+/g, ""); // "ALERTA1"
+
+        if (kSinEspacios === "CODIGO" || kSinEspacios === "COD")
+          codigo = limpiarCodigo(row[key]);
+        else if (kSinEspacios === "ARTICULO" || kSinEspacios === "DESCRIPCION")
+          nombre = row[key];
+        else if (kSinEspacios.includes("ALERTA1") || kSinEspacios === "MINIMO")
+          a1 = limpiarNumero(row[key]);
+        else if (kSinEspacios.includes("ALERTA2") || kSinEspacios === "MEDIO")
+          a2 = limpiarNumero(row[key]);
+        else if (kSinEspacios.includes("ALERTA3") || kSinEspacios === "MAXIMO")
+          a3 = limpiarNumero(row[key]);
+      }
+      if (codigo) {
+        mapaAlertas.set(codigo, [codigo, nombre || "Sin Nombre", a1, a2, a3]);
+      }
+    }
+
+    const alertasParaInsertar = Array.from(mapaAlertas.values());
+
+    if (alertasParaInsertar.length > 0) {
+      const queryAlertas = format(
+        `INSERT INTO semielaborados (codigo, nombre, alerta_1, alerta_2, alerta_3) VALUES %L
+             ON CONFLICT (codigo) DO UPDATE SET 
+             alerta_1 = EXCLUDED.alerta_1,
+             alerta_2 = EXCLUDED.alerta_2,
+             alerta_3 = EXCLUDED.alerta_3,
+             nombre = COALESCE(EXCLUDED.nombre, semielaborados.nombre),
+             ultima_actualizacion = NOW()`,
+        alertasParaInsertar
+      );
+      await client.query(queryAlertas);
+      console.log(
+        `   ✅ Alertas actualizadas: ${alertasParaInsertar.length} productos.`
+      );
+    }
+
+    // --- PASO B: STOCK (POR LOTES POR HOJA) ---
     const sheetMapping = {
       "STOCK 26": "stock_planta_26",
       "STOCK 37": "stock_planta_37",
@@ -324,127 +401,213 @@ async function sincronizarStockSemielaborados() {
       "STOCK 33": "stock_deposito_quintana",
     };
 
-    await client.query("BEGIN");
     let totalUpdates = 0;
-    let detalles = [];
 
     for (const [sheetNameKey, dbColumn] of Object.entries(sheetMapping)) {
       const realSheetName = workbook.SheetNames.find(
         (s) => s.toUpperCase().trim() === sheetNameKey
       );
+      if (!realSheetName) continue;
 
-      if (!realSheetName) {
-        console.warn(`⚠️ [ALERTA] Hoja "${sheetNameKey}" NO encontrada.`);
-        continue;
-      }
-
-      // 1. LIMPIEZA PREVIA: Ponemos en 0 la columna de esta planta
       await client.query(`UPDATE semielaborados SET ${dbColumn} = 0`);
 
       const sheet = workbook.Sheets[realSheetName];
-
-      // 2. Buscar encabezados (Buscamos la fila que tenga CODIGO, ARTICULO y STOCK)
       const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      let headerRowIndex = -1;
-
+      let headerRowIndex = 0;
       for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
         const rowString = JSON.stringify(rawMatrix[i]).toUpperCase();
-        // TU FORMATO EXACTO: CODIGO, ARTICULO, ..., STOCK
-        if (
-          rowString.includes("CODIGO") &&
-          rowString.includes("ARTICULO") &&
-          rowString.includes("STOCK")
-        ) {
+        if (rowString.includes("CODIGO") && rowString.includes("STOCK")) {
           headerRowIndex = i;
           break;
         }
       }
 
-      if (headerRowIndex === -1) headerRowIndex = 0;
-      console.log(
-        `📄 Procesando "${realSheetName}" (Header fila ${
-          headerRowIndex + 1
-        })...`
-      );
-
       const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIndex });
-      const registrosUnicos = new Map();
+      const mapaStock = new Map();
 
       for (const row of data) {
-        let codigo = null;
-        let nombre = null;
-        let stock = null; // null indica que no se encontró valor válido
-
+        let codigo = null,
+          nombre = null,
+          stock = 0;
         for (const key of Object.keys(row)) {
           const k = normalizarEncabezado(key);
+          const kSinEspacios = k.replace(/\s+/g, "");
 
-          // --- MAPEO CORREGIDO ---
-
-          // 1. CODIGO (La columna clave)
-          if (k === "CODIGO" || k === "COD") {
+          if (kSinEspacios === "CODIGO" || kSinEspacios === "COD")
             codigo = limpiarCodigo(row[key]);
-          }
-
-          // 2. NOMBRE (Tu columna es "ARTICULO")
-          else if (k === "ARTICULO" || k === "DESCRIPCION" || k === "NOMBRE") {
+          else if (
+            kSinEspacios === "ARTICULO" ||
+            kSinEspacios === "DESCRIPCION"
+          )
             nombre = row[key];
-          }
-
-          // 3. STOCK (Tu columna es "STOCK") - Ignoramos ENTRADA y SALIDA
-          else if (k === "STOCK" || k === "SALDO" || k === "CANTIDAD") {
+          else if (kSinEspacios === "STOCK" || kSinEspacios === "SALDO")
             stock = limpiarNumero(row[key]);
-          }
         }
-
-        // FILTRO DE TÍTULOS:
-        // Una fila válida debe tener CÓDIGO y un número de STOCK (aunque sea 0).
-        // Las filas de título ("CONOS") no tienen código o no tienen stock numérico.
-        if (codigo && stock !== null) {
-          const nombreFinal = nombre || "SIN NOMBRE";
-          registrosUnicos.set(codigo, [codigo, nombreFinal, stock]);
+        if (codigo) {
+          mapaStock.set(codigo, [codigo, nombre || "Sin Nombre", stock]);
         }
       }
 
-      const valoresParaInsertar = Array.from(registrosUnicos.values());
+      const valoresHoja = Array.from(mapaStock.values());
 
-      if (valoresParaInsertar.length > 0) {
-        console.log(
-          `   ✅ Ejemplo válido: ${valoresParaInsertar[0][0]} - ${valoresParaInsertar[0][1]} -> Stock: ${valoresParaInsertar[0][2]}`
-        );
-
-        const query = format(
-          `INSERT INTO semielaborados (codigo, nombre, ${dbColumn}) 
-                 VALUES %L
+      if (valoresHoja.length > 0) {
+        const queryStock = format(
+          `INSERT INTO semielaborados (codigo, nombre, %I) VALUES %L
                  ON CONFLICT (codigo) DO UPDATE SET 
-                    ${dbColumn} = EXCLUDED.${dbColumn}, 
-                    nombre = COALESCE(EXCLUDED.nombre, semielaborados.nombre),
-                    ultima_actualizacion = NOW()`,
-          valoresParaInsertar
+                 %I = EXCLUDED.%I,
+                 nombre = COALESCE(EXCLUDED.nombre, semielaborados.nombre),
+                 ultima_actualizacion = NOW()`,
+          dbColumn,
+          valoresHoja,
+          dbColumn,
+          dbColumn
         );
-
-        await client.query(query);
-        totalUpdates += valoresParaInsertar.length;
-        detalles.push(`${realSheetName}: ${valoresParaInsertar.length}`);
+        await client.query(queryStock);
+        totalUpdates += valoresHoja.length;
       }
     }
 
+    // --- PASO C: ALERTAS TELEGRAM ---
+    const resAlertas = await client.query(`
+        SELECT codigo, nombre, alerta_1, 
+               (stock_planta_26 + stock_planta_37 + stock_deposito_ayolas + stock_deposito_quintana) as total
+        FROM semielaborados
+        WHERE alerta_1 > 0 
+          AND (stock_planta_26 + stock_planta_37 + stock_deposito_ayolas + stock_deposito_quintana) <= alerta_1
+    `);
+
+    const itemsCriticos = resAlertas.rows.map((r) => ({
+      codigo: r.codigo,
+      nombre: r.nombre,
+      total: Number(r.total),
+      minimo: Number(r.alerta_1),
+    }));
+
     await client.query("COMMIT");
     console.log(
-      `🎉 [FIN SYNC] Total procesado: ${totalUpdates}. Detalle: ${detalles.join(
-        ", "
-      )}`
+      `✅ [SYNC STOCK] Finalizado. Total registros procesados: ${totalUpdates}.`
     );
-    return { success: true, count: totalUpdates, detalles };
+
+    if (itemsCriticos.length > 0) {
+      enviarAlertaStock(itemsCriticos).catch((e) =>
+        console.error("Error Telegram Async:", e)
+      );
+    }
+
+    return {
+      success: true,
+      count: totalUpdates,
+      alertas: itemsCriticos.length,
+    };
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error("❌ [AUTO] Error Sync Stock:", err);
+    console.error("❌ Error Sync Stock:", err);
     return { success: false, error: err.message };
   } finally {
     client.release();
   }
 }
 
-async function sincronizarMateriasPrimas() {}
+// =====================================================
+// 4. SYNC MATERIAS PRIMAS (CORREGIDO + DEDUPLICADO + ESPACIOS)
+// =====================================================
+async function sincronizarMateriasPrimas() {
+  const client = await db.connect();
+  try {
+    console.log("⏳ [SYNC] Materias Primas...");
+    const buffer = await leerMateriasPrimas();
+    const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+    const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+      const str = JSON.stringify(rawMatrix[i]).toUpperCase();
+      if (str.includes("CODIGO") && str.includes("STOCK")) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    const data = XLSX.utils.sheet_to_json(sheet, { range: headerRowIdx });
+    const mapaMP = new Map();
+
+    for (const row of data) {
+      let codigo = null,
+        nombre = null,
+        stock = 0,
+        minimo = 0;
+
+      for (const key of Object.keys(row)) {
+        // Normalizar y QUITAR ESPACIOS para que "STOCK MIN" sea "STOCKMIN"
+        const k = normalizarEncabezado(key);
+        const kSinEspacios = k.replace(/\s+/g, "");
+
+        if (
+          kSinEspacios === "CODIGO" ||
+          kSinEspacios === "COD" ||
+          kSinEspacios === "ID"
+        )
+          codigo = limpiarCodigo(row[key]);
+        else if (
+          kSinEspacios === "ARTICULO" ||
+          kSinEspacios === "DESCRIPCION" ||
+          kSinEspacios === "MATERIAL" ||
+          kSinEspacios === "NOMBRE"
+        )
+          nombre = row[key];
+        else if (
+          kSinEspacios === "STOCK" ||
+          kSinEspacios === "CANTIDAD" ||
+          kSinEspacios === "EXISTENCIA"
+        )
+          stock = limpiarNumero(row[key]);
+        // AHORA SÍ DETECTARÁ "STOCK MIN" PORQUE SERÁ "STOCKMIN"
+        else if (
+          kSinEspacios === "STOCKMIN" ||
+          kSinEspacios === "MINIMO" ||
+          kSinEspacios === "MIN" ||
+          kSinEspacios.includes("STOCKMIN")
+        )
+          minimo = limpiarNumero(row[key]);
+      }
+
+      // Filtro Inteligente: Debe tener código, nombre y código no ser gigante (evita títulos de categoría)
+      if (codigo && nombre && codigo.length < 30) {
+        mapaMP.set(codigo, [codigo, nombre, stock, minimo, new Date()]);
+      }
+    }
+
+    const valoresInsertar = Array.from(mapaMP.values());
+
+    if (valoresInsertar.length > 0) {
+      await client.query("BEGIN");
+      const query = format(
+        `INSERT INTO materias_primas (codigo, nombre, stock_actual, stock_minimo, ultima_actualizacion) 
+             VALUES %L
+             ON CONFLICT (codigo) DO UPDATE SET 
+             stock_actual = EXCLUDED.stock_actual,
+             stock_minimo = EXCLUDED.stock_minimo,
+             nombre = COALESCE(EXCLUDED.nombre, materias_primas.nombre),
+             ultima_actualizacion = NOW()`,
+        valoresInsertar
+      );
+      await client.query(query);
+      await client.query("COMMIT");
+      console.log(
+        `✅ [SYNC MP] Actualizadas ${valoresInsertar.length} materias primas.`
+      );
+    }
+
+    return { success: true, count: valoresInsertar.length };
+  } catch (err) {
+    if (client) await client.query("ROLLBACK");
+    console.error("❌ Error Sync MP:", err.message);
+    return { success: false, error: err.message };
+  } finally {
+    client.release();
+  }
+}
 
 module.exports = {
   sincronizarBaseDeDatos,

@@ -19,20 +19,29 @@ async function inicializarTablas() {
         id SERIAL PRIMARY KEY,
         codigo VARCHAR(100) UNIQUE NOT NULL,
         nombre VARCHAR(255),
-        stock_actual NUMERIC DEFAULT 0, -- (Obsoleto, pero se mantiene por compatibilidad)
+        stock_actual NUMERIC DEFAULT 0,
         ultima_actualizacion TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // Migraciones seguras para las 4 plantas (try-catch silencioso por si ya existen)
+    // --- AGREGAMOS LAS COLUMNAS DE STOCK POR PLANTA (Si no existen) ---
     const columnasStock = [
       "stock_planta_26",
       "stock_planta_37",
       "stock_deposito_ayolas",
       "stock_deposito_quintana",
     ];
-
     for (const col of columnasStock) {
+      try {
+        await client.query(
+          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`
+        );
+      } catch (e) {}
+    }
+
+    // --- NUEVO: COLUMNAS DE ALERTA (Lo que pediste) ---
+    const columnasAlerta = ["alerta_1", "alerta_2", "alerta_3"];
+    for (const col of columnasAlerta) {
       try {
         await client.query(
           `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`
@@ -44,6 +53,14 @@ async function inicializarTablas() {
     await client.query(
       `CREATE TABLE IF NOT EXISTS materias_primas (id SERIAL PRIMARY KEY, codigo VARCHAR(100) UNIQUE NOT NULL, nombre VARCHAR(255), stock_actual NUMERIC DEFAULT 0, ultima_actualizacion TIMESTAMP DEFAULT NOW());`
     );
+
+    // --- NUEVO: COLUMNA DE STOCK MÍNIMO ---
+    try {
+      await client.query(
+        `ALTER TABLE materias_primas ADD COLUMN stock_minimo NUMERIC DEFAULT 0;`
+      );
+    } catch (e) {}
+
     await client.query(
       `CREATE TABLE IF NOT EXISTS productos_ingenieria (nombre VARCHAR(255) PRIMARY KEY);`
     );
@@ -64,6 +81,17 @@ async function inicializarTablas() {
         `ALTER TABLE recetas_semielaborados RENAME COLUMN cantidad_ok TO cantidad;`
       );
     } catch (e) {}
+
+    // --- NUEVO: HISTORIAL DE RECETAS ---
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS historial_recetas (
+        id SERIAL PRIMARY KEY,
+        semielaborado_id INTEGER REFERENCES semielaborados(id) ON DELETE CASCADE,
+        nombre_version VARCHAR(255),  -- Ej: "Receta Verano 2025"
+        fecha_guardado TIMESTAMP DEFAULT NOW(),
+        ingredientes_json JSONB       -- Guardamos la lista completa aquí para no complicar relaciones
+      );
+    `);
 
     // --- 4. PLANIFICACIÓN ---
     await client.query(
