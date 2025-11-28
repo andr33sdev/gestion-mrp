@@ -39,7 +39,7 @@ async function inicializarTablas() {
       } catch (e) {}
     }
 
-    // --- NUEVO: COLUMNAS DE ALERTA (Lo que pediste) ---
+    // --- COLUMNAS DE ALERTA ---
     const columnasAlerta = ["alerta_1", "alerta_2", "alerta_3"];
     for (const col of columnasAlerta) {
       try {
@@ -54,7 +54,7 @@ async function inicializarTablas() {
       `CREATE TABLE IF NOT EXISTS materias_primas (id SERIAL PRIMARY KEY, codigo VARCHAR(100) UNIQUE NOT NULL, nombre VARCHAR(255), stock_actual NUMERIC DEFAULT 0, ultima_actualizacion TIMESTAMP DEFAULT NOW());`
     );
 
-    // --- NUEVO: COLUMNA DE STOCK MÍNIMO ---
+    // --- COLUMNA DE STOCK MÍNIMO ---
     try {
       await client.query(
         `ALTER TABLE materias_primas ADD COLUMN stock_minimo NUMERIC DEFAULT 0;`
@@ -82,24 +82,25 @@ async function inicializarTablas() {
       );
     } catch (e) {}
 
-    // --- NUEVO: HISTORIAL DE RECETAS ---
+    // --- HISTORIAL DE RECETAS ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS historial_recetas (
         id SERIAL PRIMARY KEY,
         semielaborado_id INTEGER REFERENCES semielaborados(id) ON DELETE CASCADE,
-        nombre_version VARCHAR(255),  -- Ej: "Receta Verano 2025"
+        nombre_version VARCHAR(255),
         fecha_guardado TIMESTAMP DEFAULT NOW(),
-        ingredientes_json JSONB       -- Guardamos la lista completa aquí para no complicar relaciones
+        ingredientes_json JSONB
       );
     `);
 
-    // --- 4. PLANIFICACIÓN ---
+    // --- 4. PLANIFICACIÓN (ACTUALIZADO PARA GANTT) ---
     await client.query(
       `CREATE TABLE IF NOT EXISTS planes_produccion (id SERIAL PRIMARY KEY, nombre VARCHAR(255) NOT NULL, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'ABIERTO');`
     );
     await client.query(
       `CREATE TABLE IF NOT EXISTS planes_items (id SERIAL PRIMARY KEY, plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad_requerida NUMERIC NOT NULL DEFAULT 0, cantidad_producida NUMERIC NOT NULL DEFAULT 0);`
     );
+
     // Ajustes de nombres de columnas viejas
     try {
       await client.query(
@@ -109,6 +110,18 @@ async function inicializarTablas() {
     try {
       await client.query(
         `ALTER TABLE planes_items ADD COLUMN cantidad_producida NUMERIC NOT NULL DEFAULT 0;`
+      );
+    } catch (e) {}
+
+    // --- COLUMNAS NUEVAS PARA GANTT ---
+    try {
+      await client.query(
+        `ALTER TABLE planes_items ADD COLUMN fecha_inicio_estimada DATE DEFAULT CURRENT_DATE;`
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        `ALTER TABLE planes_items ADD COLUMN ritmo_turno NUMERIC DEFAULT 50;`
       );
     } catch (e) {}
 
@@ -165,7 +178,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 7. PEDIDOS (Se recrea siempre para asegurar estructura limpia del Excel) ---
+    // --- 7. PEDIDOS ---
     try {
       await client.query("DROP TABLE IF EXISTS pedidos");
       await client.query(`
@@ -207,21 +220,20 @@ async function inicializarTablas() {
       );
     } catch (e) {}
 
-    // --- 9. LOGÍSTICA INTERNA (REPOSICIÓN ENTRE PLANTAS) ---
+    // --- 9. LOGÍSTICA INTERNA ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS solicitudes_reposicion (
         id SERIAL PRIMARY KEY,
         semielaborado_id INTEGER REFERENCES semielaborados(id),
         cantidad NUMERIC NOT NULL,
-        destino VARCHAR(50), -- Quien lo pide (Ej: DEP_AYOLAS)
-        estado VARCHAR(20) DEFAULT 'PENDIENTE', -- PENDIENTE, DESPACHADO, CANCELADO
+        destino VARCHAR(50),
+        estado VARCHAR(20) DEFAULT 'PENDIENTE',
         fecha_creacion TIMESTAMP DEFAULT NOW(),
         fecha_despacho TIMESTAMP
       );
     `);
 
-    // --- 10. NOVEDADES DE TELEGRAM (MEMORIA PERSISTENTE) ---
-    // Guarda los cambios de fecha que llegan por el bot para que el Sync no los borre
+    // --- 10. NOVEDADES DE TELEGRAM ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS novedades_pedidos (
         id SERIAL PRIMARY KEY,
