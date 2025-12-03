@@ -251,6 +251,19 @@ async function inicializarTablas() {
   } finally {
     client.release();
   }
+
+  // --- 11. INTELIGENCIA COMPETENCIA ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS competencia_tracking (
+        id SERIAL PRIMARY KEY,
+        url TEXT NOT NULL,
+        alias VARCHAR(100), -- Ej: "Tanque 500L Copia"
+        sitio VARCHAR(50), -- 'MERCADOLIBRE', 'WEB_PROPIA'
+        ultimo_precio NUMERIC DEFAULT 0,
+        ultima_revision TIMESTAMP DEFAULT NOW(),
+        activo BOOLEAN DEFAULT TRUE
+      );
+    `);
 }
 
 module.exports = { inicializarTablas };

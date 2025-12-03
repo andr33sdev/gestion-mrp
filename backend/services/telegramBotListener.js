@@ -1,5 +1,6 @@
 // backend/services/telegramBotListener.js
 const TelegramBot = require("node-telegram-bot-api");
+const { escanearProducto } = require("./competenciaService");
 const db = require("../db");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -20,8 +21,14 @@ function getBot() {
       console.log("🤖 [TELEGRAM] Modo Producción (Polling Activo).");
       botInstance = new TelegramBot(token, { polling: true });
     } else {
-      console.log("🛑 [TELEGRAM] Modo Local (Polling Desactivado).");
-      botInstance = new TelegramBot(token, { polling: false });
+      // --- CAMBIO AQUÍ ---
+      console.log("⚠️ [TELEGRAM] Modo Local (FORZANDO Polling para pruebas).");
+      console.log(
+        "   (Verás errores 409 en consola, es normal mientras peleas con Render)"
+      );
+
+      // Ponemos TRUE para que tu PC escuche los mensajes
+      botInstance = new TelegramBot(token, { polling: true });
     }
   }
   return botInstance;
@@ -41,10 +48,56 @@ function iniciarBotReceptor() {
   // --- LISTENER DE MENSAJES (HOJA DE RUTA) ---
   bot.on("message", async (msg) => {
     const texto = msg.text || "";
+    console.log("📩 MENSAJE RECIBIDO:", texto); // <--- AGREGA ESTO
     const chatId = msg.chat.id;
 
     if (texto === "/start") {
       bot.sendMessage(chatId, "👋 Bot de Gestión MRP Activo.");
+      return;
+    }
+
+    // COMANDO SECRETO: /espiar [Nombre] [URL]
+    // Ejemplo: /espiar TanqueCopia https://articulo.mercadolibre...
+    if (texto.startsWith("/espiar")) {
+      const partes = texto.split(" ");
+      if (partes.length < 3) {
+        bot.sendMessage(chatId, "⚠️ Uso: /espiar [Nombre] [URL]");
+        return;
+      }
+      const url = partes.pop();
+      const alias = partes.slice(1).join(" ");
+
+      if (url.includes("http")) {
+        bot.sendMessage(chatId, "🕵️ Procesando...");
+        try {
+          const sitio = url.includes("mercadolibre")
+            ? "MERCADOLIBRE"
+            : "WEB_PROPIA";
+          const res = await db.query(
+            "INSERT INTO competencia_tracking (url, alias, sitio) VALUES ($1, $2, $3) RETURNING id, url, alias, sitio, ultimo_precio",
+            [url, alias, sitio]
+          );
+          const nuevoItem = res.rows[0];
+
+          // Escaneo inmediato
+          const resultado = await escanearProducto(nuevoItem);
+          if (resultado) {
+            bot.sendMessage(chatId, resultado, { parse_mode: "Markdown" });
+          } else {
+            // Si no hay cambio, avisar precio base
+            const check = await db.query(
+              "SELECT ultimo_precio FROM competencia_tracking WHERE id = $1",
+              [nuevoItem.id]
+            );
+            bot.sendMessage(
+              chatId,
+              `✅ Rastreo iniciado. Precio base: $${check.rows[0]?.ultimo_precio}`
+            );
+          }
+        } catch (e) {
+          bot.sendMessage(chatId, "❌ Error: " + e.message);
+        }
+      }
       return;
     }
 
@@ -189,4 +242,9 @@ async function enviarAlertaMRP(nombrePlan, materialesCriticos) {
   }
 }
 
-module.exports = { iniciarBotReceptor, enviarAlertaStock, enviarAlertaMRP };
+module.exports = {
+  iniciarBotReceptor,
+  enviarAlertaStock,
+  enviarAlertaMRP,
+  getBot,
+};

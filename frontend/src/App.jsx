@@ -30,7 +30,9 @@ import OperariosPage from "./pages/OperariosPage.jsx";
 import LogisticaPage from "./pages/LogisticaPage.jsx";
 import SolicitudesPage from "./pages/SolicitudesPage";
 import RecepcionPage from "./pages/RecepcionPage.jsx";
-import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx"; // Importar Hoja de Ruta
+import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
+
+import ChatGerencia from "./components/ChatGerencia";
 
 import { API_BASE_URL } from "./utils.js";
 
@@ -483,6 +485,8 @@ export default function App() {
       >
         {component}
       </div>
+      {/* AGREGAR ESTO AL FINAL, ANTES DE CERRAR EL DIV PRINCIPAL O ROUTER */}
+      {isLoggedAny && sessionStorage.getItem("role") === "GERENCIA" && <ChatGerencia />}
     </div>
   );
 }

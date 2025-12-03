@@ -1,3 +1,4 @@
+// backend/index.js
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -6,7 +7,7 @@ const cors = require("cors");
 const { setupAuth } = require("./google-drive");
 const { inicializarTablas } = require("./services/dbInit");
 
-// IMPORTANTE: Aquí importamos las 3 funciones de sincronización
+// IMPORTANTE: Importamos TODAS las funciones de sincronización (incluida Materias Primas)
 const {
   sincronizarBaseDeDatos,
   sincronizarPedidos,
@@ -14,7 +15,14 @@ const {
   sincronizarMateriasPrimas,
 } = require("./services/syncService");
 
-const { iniciarBotReceptor } = require("./services/telegramBotListener");
+// Importamos el bot y el getter de la instancia
+const {
+  iniciarBotReceptor,
+  getBot,
+} = require("./services/telegramBotListener");
+
+// Importamos el servicio de vigilancia de competencia
+const { vigilarCompetencia } = require("./services/competenciaService");
 
 // --- IMPORTAR RUTAS ---
 const generalRoutes = require("./routes/general");
@@ -24,6 +32,7 @@ const ingenieriaRoutes = require("./routes/ingenieria");
 const planificacionRoutes = require("./routes/planificacion");
 const operariosRoutes = require("./routes/operarios");
 const logisticaRoutes = require("./routes/logistica");
+// const iaRoutes = require("./routes/ia"); // (Descomentar si vuelves a usar la IA)
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -40,38 +49,40 @@ app.use("/api/ingenieria", ingenieriaRoutes);
 app.use("/api/planificacion", planificacionRoutes);
 app.use("/api/operarios", operariosRoutes);
 app.use("/api/logistica", logisticaRoutes);
+// app.use("/api/ia", iaRoutes); // (Descomentar si vuelves a usar la IA)
 
 // --- INICIO DEL SERVIDOR ---
 async function iniciarServidor() {
   try {
-    // 1. Autenticación Google Drive
     await setupAuth();
-
-    // 2. Inicializar Base de Datos
     await inicializarTablas();
 
-    // 3. Levantar Servidor
-    app.listen(PORT, () =>
-      console.log(`🚀 Servidor corriendo en puerto ${PORT}`)
-    );
+    app.listen(PORT, () => console.log(`🚀 Servidor en puerto ${PORT}`));
 
-    // 4. Tareas en Segundo Plano
-    console.log("⏰ Servicios background iniciados...");
+    // Servicios Background
+    console.log("⏰ Iniciando servicios...");
 
-    // Ejecución inmediata al arrancar
+    // 1. Ejecución inicial
     sincronizarBaseDeDatos();
     sincronizarPedidos();
-    sincronizarStockSemielaborados(); // <--- Ahora sí funcionará porque está importada
+    sincronizarStockSemielaborados();
     sincronizarMateriasPrimas();
     iniciarBotReceptor();
 
-    // Cron Jobs (Intervalos)
-    setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000); // Logs cada 2 min
-    setInterval(sincronizarPedidos, 15 * 60 * 1000); // Pedidos cada 15 min
-    //setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000); // Stock cada 15 min
-    //setInterval(sincronizarMateriasPrimas, 15 * 60 * 1000); // Cada 15 min
+    // 2. Cron Jobs (Intervalos)
+    setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
+    setInterval(sincronizarPedidos, 15 * 60 * 1000);
+    setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000);
+    setInterval(sincronizarMateriasPrimas, 15 * 60 * 1000);
+
+    // 3. Vigilancia Competencia (Cada 1 hora)
+    setInterval(() => {
+      const bot = getBot();
+      const adminId = process.env.TELEGRAM_ADMIN_ID;
+      if (bot && adminId) vigilarCompetencia(bot, adminId);
+    }, 60 * 60 * 1000);
   } catch (error) {
-    console.error("❌ Error fatal al iniciar servidor:", error);
+    console.error("❌ Error fatal:", error);
   }
 }
 
