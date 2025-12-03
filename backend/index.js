@@ -72,8 +72,8 @@ async function iniciarServidor() {
     // 2. Cron Jobs (Intervalos)
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
     setInterval(sincronizarPedidos, 15 * 60 * 1000);
-    setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000);
-    setInterval(sincronizarMateriasPrimas, 15 * 60 * 1000);
+    //setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000);
+    //setInterval(sincronizarMateriasPrimas, 15 * 60 * 1000);
 
     // 3. Vigilancia Competencia (Cada 1 hora)
     setInterval(() => {
