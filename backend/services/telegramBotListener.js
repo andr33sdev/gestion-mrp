@@ -1,245 +1,278 @@
 // backend/services/telegramBotListener.js
 const TelegramBot = require("node-telegram-bot-api");
 const { escanearProducto } = require("./competenciaService");
+const { agregarPedidoAlSheet } = require("../google-drive");
 const db = require("../db");
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
+// --- 1. CONFIGURACIÓN ---
+const tokenAdmin = process.env.TELEGRAM_BOT_TOKEN;
+const tokenPedidos = process.env.TELEGRAM_BOT_TOKEN_PEDIDOS;
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_ID;
 
-let botInstance = null;
+let botAdminInstance = null;
+let botPedidosInstance = null;
 
-/**
- * Obtiene la instancia del bot según el entorno.
- * Evita conflicto 409 en local.
- */
-function getBot() {
-  if (!botInstance && token) {
-    const esProduccion =
-      process.env.RENDER || process.env.NODE_ENV === "production";
+const colaDePedidos = [];
+let procesandoCola = false;
 
-    if (esProduccion) {
-      console.log("🤖 [TELEGRAM] Modo Producción (Polling Activo).");
-      botInstance = new TelegramBot(token, { polling: true });
-    } else {
-      // --- CAMBIO AQUÍ ---
-      console.log("⚠️ [TELEGRAM] Modo Local (FORZANDO Polling para pruebas).");
-      console.log(
-        "   (Verás errores 409 en consola, es normal mientras peleas con Render)"
-      );
+// --- HELPER FECHA ---
+function getPeriodo(fechaStr) {
+  if (!fechaStr) return "";
+  const partes = fechaStr.split("/");
+  if (partes.length < 3) return "";
+  const mes = partes[1];
+  const anio = partes[2];
+  return `2/${mes}/${anio}`;
+}
 
-      // Ponemos TRUE para que tu PC escuche los mensajes
-      botInstance = new TelegramBot(token, { polling: true });
+// --- PARSER ---
+function parsearMensajePedido(text) {
+  try {
+    if (
+      !text.includes("OP:") ||
+      (!text.includes("ARTICULO:") && !text.includes("ARTÍCULO:"))
+    ) {
+      return null;
     }
+    const lineas = text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l);
+    const datos = {
+      fecha: "",
+      periodo: "",
+      op_interna: "",
+      oc_cliente: "-",
+      cliente: "",
+      modelo: "",
+      detalles: "",
+      cantidad: 0,
+    };
+
+    const esML = text.includes("MARKETPLACE") || text.includes("MSHOPS");
+    if (esML) datos.detalles = "MercadoLibre";
+
+    for (let i = 0; i < lineas.length; i++) {
+      const linea = lineas[i];
+      if (linea.includes("OP:")) {
+        const matchFecha = linea.match(/(\d{2}\/\d{2}\/\d{4})/);
+        if (matchFecha) {
+          datos.fecha = matchFecha[0];
+          datos.periodo = getPeriodo(datos.fecha);
+        }
+        const matchOP = linea.match(/\d{4}-(\d+)/);
+        if (matchOP && matchOP[1])
+          datos.op_interna = parseInt(matchOP[1], 10).toString();
+      }
+      if (linea.startsWith("OCOMPRA:")) {
+        const ocRaw = linea.replace("OCOMPRA:", "").trim();
+        if (ocRaw) datos.oc_cliente = ocRaw;
+      }
+      if (linea.startsWith("ARTICULO:") || linea.startsWith("ARTÍCULO:"))
+        datos.modelo = linea.replace(/ART[IÍ]CULO:/, "").trim();
+      if (linea.startsWith("CANTIDAD:"))
+        datos.cantidad = linea.replace("CANTIDAD:", "").trim();
+      if (linea.startsWith("CLIENTE:")) {
+        let clienteSucio = linea.replace("CLIENTE:", "").trim();
+        datos.cliente = clienteSucio.replace(/^[A-Z0-9]+\s+/, "");
+      }
+    }
+    if (!datos.op_interna || !datos.modelo) return null;
+    return datos;
+  } catch (e) {
+    console.error("Error parser:", e);
+    return null;
   }
-  return botInstance;
+}
+
+// --- PROCESADOR COLA (CON SYNC FORZADO) ---
+async function procesarSiguientePedido(bot) {
+  if (procesandoCola || colaDePedidos.length === 0) return;
+  procesandoCola = true;
+  const { datos, chatId } = colaDePedidos[0];
+
+  try {
+    console.log(`⏳ Procesando OP ${datos.op_interna}...`);
+    bot.sendChatAction(chatId, "typing");
+    await agregarPedidoAlSheet(datos);
+
+    const respuesta = `✅ <b>Guardado</b>\n🆔 OP: ${datos.op_interna}\n📎 OC Cliente: ${datos.oc_cliente}\n📦 ${datos.modelo} (x${datos.cantidad})\n👤 ${datos.cliente}`;
+    bot.sendMessage(chatId, respuesta, { parse_mode: "HTML" });
+
+    console.log("↻ Forzando sincronización DB para que aparezca inmediato...");
+    // IMPORTACIÓN DINÁMICA PARA EVITAR CICLO
+    const { sincronizarPedidos } = require("./syncService");
+    await sincronizarPedidos();
+
+    colaDePedidos.shift();
+  } catch (error) {
+    console.error("❌ Error procesando cola:", error.message);
+    bot.sendMessage(chatId, `❌ Error guardando OP ${datos.op_interna}.`);
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  } finally {
+    procesandoCola = false;
+    procesarSiguientePedido(bot);
+  }
 }
 
 function iniciarBotReceptor() {
-  const bot = getBot();
-  if (!bot) return;
+  if (tokenAdmin && !botAdminInstance) {
+    botAdminInstance = new TelegramBot(tokenAdmin, { polling: true });
+    configurarBotAdmin(botAdminInstance);
+  }
+  if (tokenPedidos && !botPedidosInstance) {
+    botPedidosInstance = new TelegramBot(tokenPedidos, { polling: true });
+    configurarBotPedidos(botPedidosInstance);
+  }
+}
 
-  if (bot.options.polling === false) return;
-
-  bot.on("polling_error", (error) => {
-    if (error.code !== "EFATAL")
-      console.warn(`[TELEGRAM WARN] ${error.code || error.message}`);
-  });
-
-  // --- LISTENER DE MENSAJES (HOJA DE RUTA) ---
+// ========================================================
+//  LÓGICA BOT PEDIDOS
+// ========================================================
+function configurarBotPedidos(bot) {
   bot.on("message", async (msg) => {
     const texto = msg.text || "";
-    console.log("📩 MENSAJE RECIBIDO:", texto); // <--- AGREGA ESTO
     const chatId = msg.chat.id;
 
-    if (texto === "/start") {
-      bot.sendMessage(chatId, "👋 Bot de Gestión MRP Activo.");
+    // A. PEDIDO EQUAL
+    const datosPedido = parsearMensajePedido(texto);
+    if (datosPedido) {
+      colaDePedidos.push({ datos: datosPedido, chatId });
+      procesarSiguientePedido(bot);
       return;
     }
 
-    // COMANDO SECRETO: /espiar [Nombre] [URL]
-    // Ejemplo: /espiar TanqueCopia https://articulo.mercadolibre...
-    if (texto.startsWith("/espiar")) {
-      const partes = texto.split(" ");
-      if (partes.length < 3) {
-        bot.sendMessage(chatId, "⚠️ Uso: /espiar [Nombre] [URL]");
-        return;
-      }
-      const url = partes.pop();
-      const alias = partes.slice(1).join(" ");
+    // B. CONSULTA CLIENTE
+    if (/\d+/.test(texto)) {
+      const numeros = texto.match(/\d+/g);
+      if (!numeros) return;
+      const ordenCompra = numeros.reduce((a, b) =>
+        a.length > b.length ? a : b
+      );
+      const filtroCliente = texto
+        .replace(/\d+/g, "")
+        .replace(/[^a-zA-Z\s]/g, "")
+        .trim()
+        .toLowerCase();
 
-      if (url.includes("http")) {
-        bot.sendMessage(chatId, "🕵️ Procesando...");
-        try {
-          const sitio = url.includes("mercadolibre")
-            ? "MERCADOLIBRE"
-            : "WEB_PROPIA";
-          const res = await db.query(
-            "INSERT INTO competencia_tracking (url, alias, sitio) VALUES ($1, $2, $3) RETURNING id, url, alias, sitio, ultimo_precio",
-            [url, alias, sitio]
+      if (ordenCompra.length < 2) return;
+
+      try {
+        bot.sendChatAction(chatId, "typing");
+
+        // --- CONSULTA CORREGIDA ---
+        // 1. Quitamos 'OR op LIKE...' para que NO busque en número de OP interna
+        // 2. Usamos '=' en vez de 'LIKE' para que sea exacto (412 no trae 10412)
+        // 3. Quitamos los '%' del parámetro
+        const res = await db.query(
+          `SELECT * FROM pedidos_clientes 
+           WHERE oc_cliente = $1 
+           ORDER BY id DESC`,
+          [ordenCompra] // Sin los signos %
+        );
+
+        let encontrados = res.rows;
+
+        if (encontrados.length === 0) {
+          bot.sendMessage(
+            chatId,
+            `❌ No encontré la orden <b>${ordenCompra}</b>.`,
+            { parse_mode: "HTML" }
           );
-          const nuevoItem = res.rows[0];
+          return;
+        }
 
-          // Escaneo inmediato
-          const resultado = await escanearProducto(nuevoItem);
-          if (resultado) {
-            bot.sendMessage(chatId, resultado, { parse_mode: "Markdown" });
-          } else {
-            // Si no hay cambio, avisar precio base
-            const check = await db.query(
-              "SELECT ultimo_precio FROM competencia_tracking WHERE id = $1",
-              [nuevoItem.id]
-            );
+        // Filtro Nombre
+        if (filtroCliente.length > 2) {
+          encontrados = encontrados.filter((p) =>
+            (p.cliente || "").toLowerCase().includes(filtroCliente)
+          );
+          if (encontrados.length === 0) {
             bot.sendMessage(
               chatId,
-              `✅ Rastreo iniciado. Precio base: $${check.rows[0]?.ultimo_precio}`
+              `⚠️ Encontré la orden ${ordenCompra} pero no coincide con "${filtroCliente}".`,
+              { parse_mode: "HTML" }
             );
+            return;
           }
-        } catch (e) {
-          bot.sendMessage(chatId, "❌ Error: " + e.message);
         }
+
+        // Respuesta
+        const cabecera = encontrados[0];
+        let respuesta = `📋 <b>ESTADO DE ORDEN #${ordenCompra}</b>\n`;
+        respuesta += `🏢 <b>Cliente:</b> ${cabecera.cliente}\n\n`;
+
+        encontrados.forEach((p) => {
+          let estado = p.estado || "PENDIENTE";
+          let icono = "🕒";
+          if (estado.includes("PRODUCCION")) icono = "🏭";
+          if (estado.includes("STOCK") || estado.includes("TERMINADO"))
+            icono = "✅";
+          if (estado.includes("DESPACHADO") || estado.includes("ENVIADO"))
+            icono = "🚚";
+
+          respuesta += `${icono} <b>${p.modelo}</b> (x${p.cantidad})\n`;
+          respuesta += `   Status: <i>${estado}</i>\n`;
+          respuesta += `   ────────────────\n`;
+        });
+
+        bot.sendMessage(chatId, respuesta, { parse_mode: "HTML" });
+      } catch (error) {
+        console.error("Error DB:", error);
+        bot.sendMessage(chatId, "⚠️ Error sistema.");
       }
       return;
     }
 
-    const esHojaDeRuta =
-      (texto.includes("Hoja de Ruta") || texto.includes("Hoja De Ruta")) &&
-      texto.includes("FECHA:");
-
-    if (esHojaDeRuta) {
-      console.log(`📩 [TELEGRAM] Procesando Hoja de Ruta...`);
-      try {
-        const lineas = texto.split("\n");
-        let idCliente = "",
-          razSoc = "",
-          fechaStr = "";
-
-        lineas.forEach((l) => {
-          if (l.includes("IDCLIENTE:")) idCliente = l.split(":")[1].trim();
-          if (l.includes("RAZSOC:")) razSoc = l.split(":")[1].trim();
-          if (l.includes("FECHA:")) fechaStr = l.split(":")[1].trim();
-        });
-
-        const fechaFinal = fechaStr.replace(/\./g, "-");
-        if (!razSoc || !fechaFinal) throw new Error("Datos incompletos");
-
-        const client = await db.connect();
-        await client.query(
-          `INSERT INTO novedades_pedidos (cliente, razon_social, fecha_nueva, mensaje_original) VALUES ($1, $2, $3, $4)`,
-          [idCliente, razSoc, fechaFinal, texto]
-        );
-        client.release();
-
-        bot.sendMessage(
-          chatId,
-          `✅ **Hoja de Ruta Capturada**\nCliente: *${razSoc}*\nFecha: *${fechaFinal}*`,
-          { parse_mode: "Markdown" }
-        );
-      } catch (e) {
-        console.error("❌ Error Telegram:", e.message);
-        bot.sendMessage(chatId, "⚠️ Error al leer los datos.");
-      }
+    // C. SALUDO
+    if (["hola", "buenas"].some((w) => texto.toLowerCase().includes(w))) {
+      bot.sendMessage(
+        chatId,
+        "👋 Envíame tu <b>Número de Orden (OC)</b> para ver el estado.",
+        { parse_mode: "HTML" }
+      );
     }
+  });
+
+  bot.on("polling_error", (error) => {
+    if (error.code !== "EFATAL") console.warn(`[BOT PEDIDOS] ${error.code}`);
   });
 }
 
-// --- FUNCIÓN MEJORADA: REPORTE DE STOCK ---
+function configurarBotAdmin(bot) {
+  bot.on("message", async (msg) => {
+    const texto = msg.text || "";
+    const chatId = msg.chat.id;
+    if (texto === "/start") bot.sendMessage(chatId, "🤖 Bot Admin Activo.");
+  });
+}
+
+// ALERTAS
 async function enviarAlertaStock(itemsCriticos) {
-  const bot = getBot();
-  if (!bot) return;
-
+  if (!botAdminInstance || !ADMIN_CHAT_ID) return;
   try {
-    let targetId = ADMIN_CHAT_ID;
-    if (!targetId) {
-      console.warn("⚠️ [TELEGRAM] Faltante: TELEGRAM_ADMIN_ID en .env");
-      return;
-    }
-
-    // Configuración de paginación (Telegram soporta ~4096 chars, aprox 15-20 productos bien formateados)
-    const ITEMS_POR_MENSAJE = 15;
-
-    // Iteramos en trozos para enviar múltiples mensajes si la lista es larga (ej: 56 items)
-    for (let i = 0; i < itemsCriticos.length; i += ITEMS_POR_MENSAJE) {
-      const lote = itemsCriticos.slice(i, i + ITEMS_POR_MENSAJE);
-      const esElPrimero = i === 0;
-      const esElUltimo = i + ITEMS_POR_MENSAJE >= itemsCriticos.length;
-
-      let mensaje = "";
-
-      if (esElPrimero) {
-        mensaje += `🚨 **ALERTA DE STOCK CRÍTICO** 🚨\n`;
-        mensaje += `📉 Se detectaron *${itemsCriticos.length} productos* bajo el mínimo.\n\n`;
-      } else {
-        mensaje += `... *continuación del reporte* ...\n\n`;
-      }
-
-      lote.forEach((item) => {
-        // Cálculo visual de gravedad
-        const porcentaje =
-          item.minimo > 0 ? Math.round((item.total / item.minimo) * 100) : 0;
-        let icono = "⚠️";
-        if (porcentaje <= 25)
-          icono = "🔴"; // Muy crítico (menos del 25% del mínimo)
-        else if (porcentaje <= 50) icono = "🟠"; // Crítico medio
-
-        // Formato de Tarjeta Limpia
-        mensaje += `${icono} *${item.codigo}* (Cobertura: ${porcentaje}%)\n`;
-        mensaje += `   📦 Actual: *${item.total}* /  🎯 Mínimo: ${item.minimo}\n`;
-        mensaje += `   📝 _${item.nombre}_\n`;
-        mensaje += `   ────────────────\n`;
-      });
-
-      if (esElUltimo) {
-        mensaje += `\n✅ *Fin del reporte.*`;
-      }
-
-      // Enviamos este "trozo"
-      await bot.sendMessage(targetId, mensaje, { parse_mode: "Markdown" });
-    }
-
-    console.log(
-      `✅ Reporte de Alerta enviado (${itemsCriticos.length} items).`
+    await botAdminInstance.sendMessage(
+      ADMIN_CHAT_ID,
+      `⚠️ Alerta Stock: ${itemsCriticos.length} items bajos.`
     );
   } catch (e) {
-    console.error("Error enviando alerta Telegram:", e.message);
+    console.error(e);
+  }
+}
+async function enviarAlertaMRP(plan, items) {
+  if (!botAdminInstance || !ADMIN_CHAT_ID) return;
+  try {
+    await botAdminInstance.sendMessage(
+      ADMIN_CHAT_ID,
+      `🏭 Alerta MRP para ${plan}.`
+    );
+  } catch (e) {
+    console.error(e);
   }
 }
 
-// --- NUEVA FUNCIÓN: ALERTA DE MRP (PLANIFICACIÓN) ---
-async function enviarAlertaMRP(nombrePlan, materialesCriticos) {
-  const bot = getBot();
-  if (!bot) return;
-
-  try {
-    let targetId = ADMIN_CHAT_ID;
-    if (!targetId) {
-      // Fallback: intentar leer de DB si no hay env var
-      const res = await db.query(
-        "SELECT mensaje_original FROM novedades_pedidos LIMIT 1"
-      );
-      console.warn("⚠️ [TELEGRAM] Faltante: TELEGRAM_ADMIN_ID.");
-      return;
-    }
-
-    let mensaje = `🏭 **NUEVO PLAN DE PRODUCCIÓN**\n`;
-    mensaje += `📂 Plan: *"${nombrePlan}"*\n\n`;
-    mensaje += `⚠️ **ALERTA MRP:** Las siguientes materias primas quedarían por debajo del mínimo teórico al finalizar este plan:\n\n`;
-
-    materialesCriticos.slice(0, 15).forEach((mp) => {
-      mensaje += `🔻 *${mp.nombre}*\n`;
-      mensaje += `   Actual: ${mp.stock} | Consumo Plan: ${mp.consumo}\n`;
-      mensaje += `   📉 Final: *${mp.saldo}* (Mín: ${mp.minimo})\n`;
-      mensaje += `   ────────────────\n`;
-    });
-
-    if (materialesCriticos.length > 15) {
-      mensaje += `... y ${materialesCriticos.length - 15} materiales más.`;
-    }
-
-    await bot.sendMessage(targetId, mensaje, { parse_mode: "Markdown" });
-    console.log(`✅ Alerta MRP enviada para plan "${nombrePlan}".`);
-  } catch (e) {
-    console.error("Error enviando alerta MRP:", e.message);
-  }
+function getBot() {
+  return botAdminInstance;
 }
 
 module.exports = {

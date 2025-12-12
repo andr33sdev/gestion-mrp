@@ -1,141 +1,242 @@
 // backend/google-drive.js
 const { google } = require("googleapis");
 
-// --- 1. LEER TODAS LAS VARIABLES DE ENTORNO AQUÍ ---
-const FILE_ID = process.env.DRIVE_FILE_ID; // Log del Horno (txt)
-const PEDIDOS_FILE_ID = process.env.PEDIDOS_FILE_ID; // Excel de Pedidos
-const STOCK_FILE_ID = process.env.STOCK_SEMIELABORADOS_FILE_ID; // Excel de Stock
+// --- VARIABLES DE ENTORNO ---
+const FILE_ID = process.env.DRIVE_FILE_ID;
+const PEDIDOS_FILE_ID = process.env.PEDIDOS_FILE_ID;
+const STOCK_FILE_ID = process.env.STOCK_SEMIELABORADOS_FILE_ID;
 const MP_FILE_ID = process.env.MATERIAS_PRIMAS_FILE_ID;
 const REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const SHEET_ID_PEDIDOS = process.env.GOOGLE_SHEET_ID_PEDIDOS || PEDIDOS_FILE_ID;
 const REDIRECT_URI = "http://localhost";
 
 let drive;
+let authClient;
 
-// --- 2. CONFIGURAR AUTENTICACIÓN ---
+// --- CONFIGURAR AUTENTICACIÓN ---
 async function setupAuth() {
   try {
+    // Si ya existe, lo retornamos, PERO a veces es mejor renovar si sospechamos caché
+    if (authClient && drive) return authClient;
+
     if (!REFRESH_TOKEN || !CLIENT_ID || !CLIENT_SECRET) {
       console.error("ERROR CRÍTICO: Faltan variables de entorno de Google.");
       process.exit(1);
     }
+
     const oAuth2Client = new google.auth.OAuth2(
       CLIENT_ID,
       CLIENT_SECRET,
       REDIRECT_URI
     );
-    oAuth2Client.setCredentials({
-      refresh_token: REFRESH_TOKEN,
-    });
+    oAuth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
 
-    // Refrescamos el token inicial
+    // Forzamos la obtención del token
     await oAuth2Client.getAccessToken();
 
-    drive = google.drive({ version: "v3", auth: oAuth2Client });
-    console.log("¡Conexión con Google Drive establecida con éxito!");
+    authClient = oAuth2Client;
+
+    // Configuración global para deshabilitar caché en axios (usado por googleapis)
+    google.options({
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+      },
+    });
+
+    drive = google.drive({ version: "v3", auth: authClient });
+
+    console.log("✅ Google Auth conectado (Modo Anti-Caché Activo).");
+    return authClient;
   } catch (err) {
-    console.error("Error fatal al conectar con Google Drive:", err.message);
+    console.error("Error fatal Drive:", err.message);
     process.exit(1);
   }
 }
 
-// --- 3. FUNCIONES DE LECTURA ---
+// --- LECTURA DE ARCHIVOS ---
 
-// A. Leer Log del Horno (txt) - Siempre es descarga directa
+// 1. HORNO (TXT) - Descarga Binaria
 async function leerArchivoHorno() {
-  if (!drive) throw new Error("Drive no inicializado.");
+  if (!drive) await setupAuth();
   try {
-    const response = await drive.files.get({ fileId: FILE_ID, alt: "media" });
+    // Agregamos un timestamp aleatorio en los headers o query params si fuera URL directa
+    // Aquí usamos headers estrictos
+    const response = await drive.files.get({
+      fileId: FILE_ID,
+      alt: "media",
+      // Forzamos headers en la petición específica también
+      headers: { "Cache-Control": "no-cache" },
+    });
     return response.data;
   } catch (err) {
     console.error("Error leyendo Horno:", err.message);
-    throw new Error("No se pudo leer el archivo del Horno.");
+    throw new Error("Fallo lectura Horno");
   }
 }
 
-// B. Leer Excel de Pedidos (Puede ser binario o nativo)
+// 2. PEDIDOS (GOOGLE SHEET) - LECTURA INTELIGENTE
 async function leerArchivoPedidos() {
-  if (!drive) throw new Error("Drive no inicializado.");
-  if (!PEDIDOS_FILE_ID) throw new Error("Falta PEDIDOS_FILE_ID en .env");
-
-  return await descargarCualquierExcel(PEDIDOS_FILE_ID, "Pedidos");
-}
-
-// C. Leer Excel de Stock (Puede ser binario o nativo)
-async function leerStockSemielaborados() {
-  if (!drive) throw new Error("Drive no inicializado.");
-  if (!STOCK_FILE_ID)
-    throw new Error("Falta STOCK_SEMIELABORADOS_FILE_ID en .env");
-
-  return await descargarCualquierExcel(STOCK_FILE_ID, "Stock");
-}
-
-// --- FUNCIÓN "INTELIGENTE" (Detecta si es Sheet o Excel y actúa acorde) ---
-async function descargarCualquierExcel(fileId, label) {
-  console.log(`[${label}] Intentando leer ID: ${fileId}`);
-
   try {
-    // INTENTO 1: Usar 'export' (Para Hojas de Cálculo de Google Nativas)
-    // Esto convierte el Google Sheet a formato Excel (.xlsx) al vuelo
-    const response = await drive.files.export(
-      {
-        fileId: fileId,
-        mimeType:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-      },
-      { responseType: "arraybuffer" }
-    );
+    if (!authClient) await setupAuth();
+    const sheets = google.sheets({ version: "v4", auth: authClient });
+    const targetId = PEDIDOS_FILE_ID; // Ojo aquí, veremos cuál está tomando
 
-    console.log(`[${label}] Exportación nativa exitosa.`);
-    return response.data;
-  } catch (err) {
-    // Si el error dice que "Export only supports Google Docs", es porque es un archivo binario real (.xlsx)
-    // Así que intentamos descargarlo normalmente con 'get'
-    if (
-      err.message &&
-      (err.message.includes("Export only supports Google Docs") ||
-        err.code === 403)
-    ) {
-      console.log(
-        `[${label}] No es nativo o falló exportación. Intentando descarga binaria directa...`
+    // PASO 1: Obtener Metadatos COMPLETOS
+    const metaData = await sheets.spreadsheets.get({
+      spreadsheetId: targetId,
+      headers: { "Cache-Control": "no-cache" },
+    });
+
+    const tituloArchivo = metaData.data.properties.title; // El nombre del archivo Excel
+    const nombreHoja = metaData.data.sheets[0].properties.title; // El nombre de la pestaña 1
+
+    console.log("---------------------------------------------------");
+    console.log("🕵️‍♂️ REPORTE DE IDENTIDAD DEL ARCHIVO");
+    console.log(`🆔 ID Usado:       ${targetId}`);
+    console.log(`📄 Nombre Archivo: "${tituloArchivo}"`); // <--- ¿Coincide con el que ves en Chrome?
+    console.log(`📑 Pestaña Leída:  "${nombreHoja}" (Índice 0)`);
+    console.log(
+      `🔗 Link generado:  https://docs.google.com/spreadsheets/d/${targetId}/edit`
+    );
+    console.log("---------------------------------------------------");
+
+    // PASO 2: Leer valores forzando nueva petición
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: targetId,
+      range: `${nombreHoja}!A:Z`,
+      headers: { "Cache-Control": "no-cache" },
+    });
+
+    const rows = response.data.values;
+    // --- 🚨 BLOQUE DE DEBUG SUPREMO ---
+    console.log(
+      `🔍 [DEBUG] Filas crudas descargadas de Drive: ${rows ? rows.length : 0}`
+    );
+    if (rows && rows.length > 0) {
+      // Buscamos "Luparini" en los datos crudos recién bajados
+      const fantasmas = rows.filter((r) =>
+        JSON.stringify(r).toUpperCase().includes("LUPARINI")
       );
-      try {
-        const response = await drive.files.get(
-          {
-            fileId: fileId,
-            alt: "media",
-            supportsAllDrives: true,
-            includeItemsFromAllDrives: true,
-          },
-          { responseType: "arraybuffer" }
+
+      if (fantasmas.length > 0) {
+        console.log(
+          "❌ MALAS NOTICIAS: Google Drive TODAVÍA está enviando 'Luparini'."
         );
-        return response.data;
-      } catch (err2) {
-        console.error(
-          `[${label}] Falló también la descarga binaria:`,
-          err2.message
+        console.log("👀 Ejemplo de fila sucia:", fantasmas[0]);
+        console.log(`🔢 Total de filas infectadas: ${fantasmas.length}`);
+      } else {
+        console.log(
+          "✨ BUENAS NOTICIAS: Los datos de Google Drive vienen LIMPIOS."
         );
-        throw new Error(
-          `No se pudo leer ${label} (ni como Sheet ni como Excel).`
+        console.log(
+          "👉 CONCLUSIÓN: El problema es que NO estás borrando la tabla de tu base de datos antes de insertar."
         );
       }
     }
+    // -----------------------------------
 
-    console.error(`[${label}] Error fatal leyendo archivo:`, err.message);
-    if (err.response && err.response.data) {
-      console.error("Detalle API:", JSON.stringify(err.response.data));
-    }
-    throw new Error(`No se pudo leer el archivo de ${label}.`);
+    if (!rows || rows.length === 0) return [];
+
+    return rows;
+  } catch (err) {
+    console.error("❌ Error leyendo Pedidos (API):", err.message);
+    return [];
   }
 }
 
+// 3. STOCK Y MATERIAS PRIMAS (EXCEL BINARIO .XLSX) - Descarga Buffer
+async function descargarCualquierExcel(fileId, label) {
+  if (!drive) await setupAuth();
+  console.log(`[${label}] Descargando binario ID: ${fileId}...`);
+
+  const noCacheHeaders = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  };
+
+  try {
+    // Intentamos exportar si es nativo de Google Sheets
+    try {
+      const res = await drive.files.export(
+        {
+          fileId: fileId,
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          headers: noCacheHeaders, // Header anti-caché
+        },
+        { responseType: "arraybuffer" }
+      );
+      return res.data;
+    } catch (e) {
+      // Si falla, intentamos bajar directo (si es un .xlsx subido como archivo)
+      // OJO: Aquí es donde más se suele cachear
+      const res = await drive.files.get(
+        {
+          fileId: fileId,
+          alt: "media",
+          headers: noCacheHeaders, // Header anti-caché
+        },
+        { responseType: "arraybuffer" }
+      );
+      return res.data;
+    }
+  } catch (err) {
+    console.error(`Error leyendo ${label}:`, err.message);
+    throw err;
+  }
+}
+
+async function leerStockSemielaborados() {
+  if (!STOCK_FILE_ID) throw new Error("Falta STOCK ID");
+  return await descargarCualquierExcel(STOCK_FILE_ID, "Stock");
+}
+
 async function leerMateriasPrimas() {
-  if (!drive) throw new Error("Drive no inicializado.");
-  if (!MP_FILE_ID) throw new Error("Falta MATERIAS_PRIMAS_FILE_ID en .env");
+  if (!MP_FILE_ID) throw new Error("Falta MP ID");
   return await descargarCualquierExcel(MP_FILE_ID, "Materias Primas");
+}
+
+// --- ESCRITURA PEDIDOS ---
+async function agregarPedidoAlSheet(datos) {
+  try {
+    if (!authClient) await setupAuth();
+    const sheets = google.sheets({ version: "v4", auth: authClient });
+    const targetSheetId = SHEET_ID_PEDIDOS;
+
+    const valores = [
+      [
+        datos.fecha,
+        datos.periodo,
+        datos.op_interna,
+        datos.cliente,
+        datos.modelo,
+        datos.detalles,
+        datos.oc_cliente,
+        datos.cantidad,
+        "",
+      ],
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: targetSheetId,
+      range: "Hoja1!A:I",
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: valores },
+      headers: { "Cache-Control": "no-cache" },
+    });
+
+    console.log(`✅ Pedido OP ${datos.op_interna} guardado en Drive.`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error escribiendo en Sheet:", error.message);
+    throw error;
+  }
 }
 
 module.exports = {
@@ -144,4 +245,5 @@ module.exports = {
   leerArchivoPedidos,
   leerStockSemielaborados,
   leerMateriasPrimas,
+  agregarPedidoAlSheet,
 };

@@ -27,3 +27,44 @@
     thead { display: table-header-group; }
 }
 /* --- FIN DE ESTILOS PDF --- */
+
+/* Override para Calendario Dark Mode */
+.rbc-calendar {
+    color: #cbd5e1; /* Texto claro */
+}
+.rbc-off-range-bg {
+    background: #0f172a !important; /* Slate 900 */
+}
+.rbc-today {
+    background-color: #1e293b !important; /* Slate 800 */
+}
+.rbc-header {
+    border-bottom: 1px solid #334155 !important;
+}
+.rbc-month-view, .rbc-month-row, .rbc-day-bg {
+    border-color: #334155 !important;
+}
+.rbc-day-bg + .rbc-day-bg {
+    border-left: 1px solid #334155 !important;
+}
+.rbc-toolbar button {
+    color: white;
+    border-color: #475569 !important;
+}
+.rbc-toolbar button:hover, .rbc-toolbar button.rbc-active {
+    background-color: #3b82f6 !important;
+    border-color: #3b82f6 !important;
+}
+
+/* frontend/src/index.css */
+
+/* Ocultar scrollbar para Chrome, Safari y Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Ocultar scrollbar para IE, Edge y Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}

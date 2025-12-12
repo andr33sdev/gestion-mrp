@@ -1,3 +1,4 @@
+// frontend/src/App.jsx
 import { useEffect, useState } from "react";
 import {
   FaChartLine,
@@ -7,7 +8,6 @@ import {
   FaPlusCircle,
   FaUsersCog,
   FaTruck,
-  FaSignInAlt,
   FaUserTie,
   FaHardHat,
   FaBars,
@@ -15,7 +15,8 @@ import {
   FaBox,
   FaIndustry,
   FaWarehouse,
-  FaCalendarAlt, // Importar icono calendario
+  FaCalendarAlt,
+  FaTools, // <--- Icono Mantenimiento
 } from "react-icons/fa";
 
 // Importa las páginas
@@ -31,9 +32,11 @@ import LogisticaPage from "./pages/LogisticaPage.jsx";
 import SolicitudesPage from "./pages/SolicitudesPage";
 import RecepcionPage from "./pages/RecepcionPage.jsx";
 import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
+import CentroComando from "./pages/CentroComando";
+import MantenimientoPage from "./pages/MantenimientoPage"; // <--- NUEVA PÁGINA
 
+// Componentes Globales
 import ChatGerencia from "./components/ChatGerencia";
-
 import { API_BASE_URL } from "./utils.js";
 
 export default function App() {
@@ -54,21 +57,30 @@ export default function App() {
     !!sessionStorage.getItem("api_key") &&
       sessionStorage.getItem("role") === "DEPOSITO"
   );
+  const [isAuthMantenimiento, setIsAuthMantenimiento] = useState(
+    !!sessionStorage.getItem("api_key") &&
+      sessionStorage.getItem("role") === "MANTENIMIENTO"
+  );
 
   // Lógica de permisos combinada
-  const isLoggedAny = isAuthPanel || isAuthGerencia || isAuthDeposito;
+  const isLoggedAny =
+    isAuthPanel || isAuthGerencia || isAuthDeposito || isAuthMantenimiento;
   const canAccessShared = isAuthPanel || isAuthGerencia; // Operario + Gerencia
   const canAccessGerencia = isAuthGerencia;
-  const canAccessDeposito = isAuthDeposito || isAuthGerencia; // Deposito + Gerencia
+  const canAccessDeposito = isAuthDeposito || isAuthGerencia;
+  const canAccessMantenimiento = isAuthMantenimiento || isAuthGerencia; // <--- Nuevo Permiso
 
+  // Recuperar sesión al cargar
   useEffect(() => {
     const key = sessionStorage.getItem("api_key");
     const role = sessionStorage.getItem("role");
     if (key && role === "PANEL") setIsAuthPanel(true);
     if (key && role === "GERENCIA") setIsAuthGerencia(true);
     if (key && role === "DEPOSITO") setIsAuthDeposito(true);
+    if (key && role === "MANTENIMIENTO") setIsAuthMantenimiento(true);
   }, []);
 
+  // Manejo de navegación (SPA)
   useEffect(() => {
     const onLocationChange = () => setPage(window.location.pathname);
     window.addEventListener("popstate", onLocationChange);
@@ -82,6 +94,7 @@ export default function App() {
     }
   }, [page, isLoggedAny]);
 
+  // Cerrar menús al cambiar de página
   useEffect(() => {
     setLoginTarget(null);
     setMobileMenuOpen(false);
@@ -102,7 +115,7 @@ export default function App() {
         const data = await res.json();
         const realRole = data.role;
 
-        // Validación estricta
+        // Validación estricta de rol
         if (realRole !== roleTarget) {
           return false;
         }
@@ -113,6 +126,7 @@ export default function App() {
         if (realRole === "PANEL") setIsAuthPanel(true);
         if (realRole === "GERENCIA") setIsAuthGerencia(true);
         if (realRole === "DEPOSITO") setIsAuthDeposito(true);
+        if (realRole === "MANTENIMIENTO") setIsAuthMantenimiento(true);
         return true;
       } else {
         return false;
@@ -129,6 +143,7 @@ export default function App() {
     setIsAuthPanel(false);
     setIsAuthGerencia(false);
     setIsAuthDeposito(false);
+    setIsAuthMantenimiento(false);
     navigate("/login");
   };
 
@@ -152,7 +167,12 @@ export default function App() {
       icon: <FaUsersCog />,
       show: canAccessShared,
     },
-
+    {
+      path: "/mantenimiento", // <--- NUEVO LINK
+      label: "Mantenim.",
+      icon: <FaTools />,
+      show: canAccessMantenimiento,
+    },
     {
       path: "/analisis-pedidos",
       label: "Análisis",
@@ -165,15 +185,18 @@ export default function App() {
       icon: <FaTruck />,
       show: canAccessGerencia,
     },
-
-    // --- SECCIÓN NUEVA: HOJA DE RUTA ---
     {
       path: "/hoja-de-ruta",
       label: "Hoja Ruta",
       icon: <FaCalendarAlt />,
       show: canAccessGerencia,
     },
-
+    {
+      path: "/calendario",
+      label: "C. Comando",
+      icon: <FaIndustry />,
+      show: canAccessGerencia,
+    },
     {
       path: "/ingenieria",
       label: "Ingeniería",
@@ -186,9 +209,6 @@ export default function App() {
       icon: <FaBox />,
       show: canAccessGerencia,
     },
-
-    // NOTA: El botón de RECEPCIÓN se eliminó del menú principal como pediste.
-    // La ruta sigue accesible directamentes o al loguearse como DEPOSITO.
   ];
 
   // --- RENDERIZADO DE COMPONENTES ---
@@ -209,8 +229,9 @@ export default function App() {
             onLoginAttempt={async (pass) => {
               const success = await handleLogin(pass, loginTarget);
               if (success) {
-                // Redirección inteligente según rol
                 if (loginTarget === "DEPOSITO") navigate("/recepcion");
+                else if (loginTarget === "MANTENIMIENTO")
+                  navigate("/mantenimiento");
                 else navigate("/");
               }
               return success;
@@ -225,10 +246,11 @@ export default function App() {
           <h2 className="text-4xl font-bold text-white mb-12 drop-shadow-lg text-center">
             Seleccione su Perfil
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-4">
+          {/* GRID RESPONSIVE: 1 col movil, 2 cols tablet, 4 cols desktop */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
             <button
               onClick={() => setLoginTarget("PANEL")}
-              className="group bg-slate-800 hover:bg-blue-600 border-2 border-slate-700 hover:border-blue-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
+              className="group bg-slate-800 hover:bg-blue-600 border-2 border-slate-700 hover:border-blue-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
             >
               <FaHardHat className="text-6xl text-blue-400 group-hover:text-white transition-colors" />
               <span className="text-xl font-bold text-white">Operario</span>
@@ -236,15 +258,23 @@ export default function App() {
 
             <button
               onClick={() => setLoginTarget("DEPOSITO")}
-              className="group bg-slate-800 hover:bg-orange-600 border-2 border-slate-700 hover:border-orange-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
+              className="group bg-slate-800 hover:bg-orange-600 border-2 border-slate-700 hover:border-orange-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
             >
               <FaWarehouse className="text-6xl text-orange-400 group-hover:text-white transition-colors" />
               <span className="text-xl font-bold text-white">Depósito</span>
             </button>
 
             <button
+              onClick={() => setLoginTarget("MANTENIMIENTO")}
+              className="group bg-slate-800 hover:bg-red-600 border-2 border-slate-700 hover:border-red-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
+            >
+              <FaTools className="text-6xl text-red-400 group-hover:text-white transition-colors" />
+              <span className="text-xl font-bold text-white">Técnico</span>
+            </button>
+
+            <button
               onClick={() => setLoginTarget("GERENCIA")}
-              className="group bg-slate-800 hover:bg-purple-600 border-2 border-slate-700 hover:border-purple-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-60 transform hover:-translate-y-2"
+              className="group bg-slate-800 hover:bg-purple-600 border-2 border-slate-700 hover:border-purple-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
             >
               <FaUserTie className="text-6xl text-purple-400 group-hover:text-white transition-colors" />
               <span className="text-xl font-bold text-white">Gerencia</span>
@@ -255,7 +285,7 @@ export default function App() {
     }
   }
 
-  // 2. RUTAS OPERATIVAS
+  // 2. RUTAS OPERATIVAS (Panel)
   else if (page === "/panel-control") {
     component = canAccessShared ? (
       <PanelControl onNavigate={navigate} />
@@ -276,7 +306,7 @@ export default function App() {
     );
   }
 
-  // 3. RUTA RECEPCIÓN (Oculta del menú, pero accesible)
+  // 3. RUTA RECEPCIÓN (Depósito)
   else if (page === "/recepcion") {
     component = canAccessDeposito ? (
       <RecepcionPage onNavigate={navigate} />
@@ -288,19 +318,19 @@ export default function App() {
     );
   }
 
-  // 4. NUEVA RUTA: HOJA DE RUTA (CALENDARIO)
-  else if (page === "/hoja-de-ruta") {
-    component = canAccessGerencia ? (
-      <HojaDeRutaPage onNavigate={navigate} />
+  // 4. RUTA MANTENIMIENTO (Nuevo)
+  else if (page === "/mantenimiento") {
+    component = canAccessMantenimiento ? (
+      <MantenimientoPage />
     ) : (
       <LoginPage
-        onLoginAttempt={(pass) => handleLogin(pass, "GERENCIA")}
-        title="Acceso Gerencia"
+        onLoginAttempt={(pass) => handleLogin(pass, "MANTENIMIENTO")}
+        title="Acceso Mantenimiento"
       />
     );
   }
 
-  // 5. RUTAS MIXTAS Y GERENCIA
+  // 5. RUTAS GERENCIALES Y MIXTAS
   else if (
     [
       "/analisis-pedidos",
@@ -309,6 +339,8 @@ export default function App() {
       "/operarios",
       "/logistica",
       "/compras",
+      "/hoja-de-ruta",
+      "/calendario",
     ].includes(page)
   ) {
     const PageComp = {
@@ -318,6 +350,8 @@ export default function App() {
       "/operarios": OperariosPage,
       "/logistica": LogisticaPage,
       "/compras": SolicitudesPage,
+      "/hoja-de-ruta": HojaDeRutaPage,
+      "/calendario": CentroComando,
     }[page];
 
     const isSharedRoute = ["/planificacion", "/operarios"].includes(page);
@@ -334,14 +368,78 @@ export default function App() {
     );
   }
 
-  // 6. DASHBOARD (Solo logueados)
+  // 6. DASHBOARD (Home)
   else {
     if (isLoggedAny) {
       component = <Dashboard onNavigate={navigate} />;
     } else {
-      component = null; // Redirección en useEffect
+      component = null;
     }
   }
+
+  // --- RENDERIZADO DEL HEADER ---
+  const renderUserBadge = () => {
+    let icon = <FaHardHat />;
+    let text = "OPERARIO";
+    let style = "bg-blue-900/20 border-blue-500/30 text-blue-200";
+
+    if (isAuthGerencia) {
+      icon = <FaUserTie />;
+      text = "GERENCIA";
+      style = "bg-purple-900/20 border-purple-500/30 text-purple-200";
+    } else if (isAuthDeposito) {
+      icon = <FaWarehouse />;
+      text = "DEPÓSITO";
+      style = "bg-orange-900/20 border-orange-500/30 text-orange-200";
+    } else if (isAuthMantenimiento) {
+      icon = <FaTools />;
+      text = "MANTENIMIENTO";
+      style = "bg-red-900/20 border-red-500/30 text-red-200";
+    }
+
+    return (
+      <div
+        className={`hidden md:flex items-center gap-3 px-3 py-1.5 rounded-lg border ${style}`}
+      >
+        {icon}
+        <span className="text-xs font-bold tracking-wider">{text}</span>
+        <button
+          onClick={handleLogout}
+          className="ml-2 text-gray-400 hover:text-white transition-colors"
+          title="Salir"
+        >
+          <FaSignOutAlt />
+        </button>
+      </div>
+    );
+  };
+
+  const renderMobileBadge = () => {
+    // Misma lógica para el menú móvil
+    if (isAuthGerencia)
+      return {
+        style: "bg-purple-900/20 border-purple-500 text-purple-200",
+        icon: <FaUserTie size={20} />,
+        text: "GERENCIA",
+      };
+    if (isAuthDeposito)
+      return {
+        style: "bg-orange-900/20 border-orange-500 text-orange-200",
+        icon: <FaWarehouse size={20} />,
+        text: "DEPÓSITO",
+      };
+    if (isAuthMantenimiento)
+      return {
+        style: "bg-red-900/20 border-red-500 text-red-200",
+        icon: <FaTools size={20} />,
+        text: "MANTENIMIENTO",
+      };
+    return {
+      style: "bg-blue-900/20 border-blue-500 text-blue-200",
+      icon: <FaHardHat size={20} />,
+      text: "OPERARIO",
+    };
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 text-gray-100 font-sans selection:bg-blue-500 selection:text-white">
@@ -380,38 +478,7 @@ export default function App() {
             </nav>
 
             <div className="flex items-center gap-3">
-              <div
-                className={`hidden md:flex items-center gap-3 px-3 py-1.5 rounded-lg border ${
-                  isAuthGerencia
-                    ? "bg-purple-900/20 border-purple-500/30 text-purple-200"
-                    : isAuthDeposito
-                    ? "bg-orange-900/20 border-orange-500/30 text-orange-200"
-                    : "bg-blue-900/20 border-blue-500/30 text-blue-200"
-                }`}
-              >
-                {isAuthGerencia ? (
-                  <FaUserTie />
-                ) : isAuthDeposito ? (
-                  <FaWarehouse />
-                ) : (
-                  <FaHardHat />
-                )}
-                <span className="text-xs font-bold tracking-wider">
-                  {isAuthGerencia
-                    ? "GERENCIA"
-                    : isAuthDeposito
-                    ? "DEPÓSITO"
-                    : "OPERARIO"}
-                </span>
-                <button
-                  onClick={handleLogout}
-                  className="ml-2 text-gray-400 hover:text-white transition-colors"
-                  title="Salir"
-                >
-                  <FaSignOutAlt />
-                </button>
-              </div>
-
+              {renderUserBadge()}
               <button
                 className="lg:hidden p-2 text-gray-300 hover:text-white"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -426,38 +493,26 @@ export default function App() {
       {mobileMenuOpen && isLoggedAny && (
         <div className="fixed inset-0 z-[900] bg-slate-900/95 backdrop-blur-xl pt-20 px-6 animate-in slide-in-from-top-10 duration-200 lg:hidden">
           <div className="flex flex-col gap-2">
-            <div
-              className={`flex items-center justify-between p-4 rounded-xl border mb-4 ${
-                isAuthGerencia
-                  ? "bg-purple-900/20 border-purple-500 text-purple-200"
-                  : isAuthDeposito
-                  ? "bg-orange-900/20 border-orange-500 text-orange-200"
-                  : "bg-blue-900/20 border-blue-500 text-blue-200"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                {isAuthGerencia ? (
-                  <FaUserTie size={20} />
-                ) : isAuthDeposito ? (
-                  <FaWarehouse size={20} />
-                ) : (
-                  <FaHardHat size={20} />
-                )}
-                <span className="font-bold">
-                  {isAuthGerencia
-                    ? "GERENCIA"
-                    : isAuthDeposito
-                    ? "DEPÓSITO"
-                    : "OPERARIO"}
-                </span>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="text-sm underline opacity-80"
-              >
-                Cerrar Sesión
-              </button>
-            </div>
+            {(() => {
+              const badge = renderMobileBadge();
+              return (
+                <div
+                  className={`flex items-center justify-between p-4 rounded-xl border mb-4 ${badge.style}`}
+                >
+                  <div className="flex items-center gap-3">
+                    {badge.icon}
+                    <span className="font-bold">{badge.text}</span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="text-sm underline opacity-80"
+                  >
+                    Cerrar Sesión
+                  </button>
+                </div>
+              );
+            })()}
+
             {navLinks
               .filter((l) => l.show)
               .map((link) => (
@@ -485,8 +540,11 @@ export default function App() {
       >
         {component}
       </div>
-      {/* AGREGAR ESTO AL FINAL, ANTES DE CERRAR EL DIV PRINCIPAL O ROUTER */}
-      {isLoggedAny && sessionStorage.getItem("role") === "GERENCIA" && <ChatGerencia />}
+
+      {/* CHATBOT GERENCIAL */}
+      {isLoggedAny && sessionStorage.getItem("role") === "GERENCIA" && (
+        <ChatGerencia />
+      )}
     </div>
   );
 }

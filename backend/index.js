@@ -7,7 +7,7 @@ const cors = require("cors");
 const { setupAuth } = require("./google-drive");
 const { inicializarTablas } = require("./services/dbInit");
 
-// IMPORTANTE: Importamos TODAS las funciones de sincronización (incluida Materias Primas)
+// IMPORTANTE: Importamos TODAS las funciones de sincronización
 const {
   sincronizarBaseDeDatos,
   sincronizarPedidos,
@@ -32,7 +32,9 @@ const ingenieriaRoutes = require("./routes/ingenieria");
 const planificacionRoutes = require("./routes/planificacion");
 const operariosRoutes = require("./routes/operarios");
 const logisticaRoutes = require("./routes/logistica");
-// const iaRoutes = require("./routes/ia"); // (Descomentar si vuelves a usar la IA)
+const analisisRoutes = require("./routes/analisis");
+const iaRoutes = require("./routes/ia");
+const mantenimientoRoutes = require("./routes/mantenimiento");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -41,7 +43,7 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// --- ASIGNACIÓN DE RUTAS ---
+// --- ASIGNACIÓN DE RUTAS DE LA API ---
 app.use("/api", generalRoutes);
 app.use("/api/compras", comprasRoutes);
 app.use("/api/produccion", produccionRoutes);
@@ -49,7 +51,9 @@ app.use("/api/ingenieria", ingenieriaRoutes);
 app.use("/api/planificacion", planificacionRoutes);
 app.use("/api/operarios", operariosRoutes);
 app.use("/api/logistica", logisticaRoutes);
-// app.use("/api/ia", iaRoutes); // (Descomentar si vuelves a usar la IA)
+app.use("/api/analisis", analisisRoutes);
+app.use("/api/ia", iaRoutes);
+app.use("/api/mantenimiento", mantenimientoRoutes);
 
 // --- INICIO DEL SERVIDOR ---
 async function iniciarServidor() {

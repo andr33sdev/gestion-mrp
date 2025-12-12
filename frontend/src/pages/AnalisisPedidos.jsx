@@ -7,6 +7,8 @@ import {
   FaCogs,
   FaSync,
   FaExclamationTriangle,
+  FaRocket,
+  FaHourglassHalf,
 } from "react-icons/fa";
 import {
   BarChart,
@@ -24,6 +26,8 @@ import { PEDIDOS_API_URL, API_BASE_URL, authFetch } from "../utils.js";
 import SearchBar from "../components/analisis/SearchBar";
 import ConsumptionView from "../components/analisis/ConsumptionView";
 import DetailModal from "../components/analisis/DetailModal";
+import TendenciasView from "../components/analisis/TendenciasView";
+import InsumosRunway from "../components/analisis/InsumosRunway";
 
 const RECETAS_ALL_URL = `${API_BASE_URL}/ingenieria/recetas/all`;
 const STOCK_SEMIS_URL = `${API_BASE_URL}/ingenieria/semielaborados`;
@@ -35,9 +39,11 @@ export default function AnalisisPedidos() {
   const [datosRecetas, setDatosRecetas] = useState({});
   const [datosStock, setDatosStock] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState(null); // Estado para errores
+  const [errorMsg, setErrorMsg] = useState(null);
 
+  // Vistas: DASHBOARD | CONSUMO | TENDENCIAS
   const [view, setView] = useState("DASHBOARD");
+
   const [modoVista, setModoVista] = useState("PRODUCTOS");
   const [busqueda, setBusqueda] = useState("");
   const [sugerencias, setSugerencias] = useState([]);
@@ -46,14 +52,12 @@ export default function AnalisisPedidos() {
 
   const [modalPage, setModalPage] = useState(1);
   const [historialFilter, setHistorialFilter] = useState("TODOS");
+
   const MODAL_ITEMS_PER_PAGE = 5;
 
-  // Función de carga extraída para poder reusarla en el botón "Reintentar"
   const cargarDatos = () => {
     setLoading(true);
     setErrorMsg(null);
-
-    // Usamos timestamps para evitar caché del navegador
     const t = Date.now();
 
     Promise.all([
@@ -83,7 +87,6 @@ export default function AnalisisPedidos() {
       });
   };
 
-  // Cargar al montar
   useEffect(() => {
     cargarDatos();
   }, []);
@@ -111,7 +114,6 @@ export default function AnalisisPedidos() {
       normalizedRecetas[normalizeKey(key)] = datosRecetas[key];
     });
 
-    // SUMA DE 4 DEPÓSITOS
     const stockMap = {};
     datosStock.forEach((s) => {
       const totalReal =
@@ -157,7 +159,6 @@ export default function AnalisisPedidos() {
     datosPedidos.forEach((row) => {
       const dStr = row.FECHA || row.Fecha || row.fecha;
       if (!dStr) return;
-
       const d = new Date(dStr);
       if (isNaN(d.getTime())) return;
 
@@ -181,7 +182,6 @@ export default function AnalisisPedidos() {
 
       if (d.getFullYear() >= 2025) {
         const isML = detalles.includes("mercadolibre");
-
         if (oc) {
           uniqueOrders.add(oc);
           if (isML) uniqueMLOrders.add(oc);
@@ -275,7 +275,6 @@ export default function AnalisisPedidos() {
       ...Object.keys(consumoTotal2025),
       ...Object.keys(consumoUltimos6Meses),
     ]);
-
     const consumoData = Array.from(allSemiKeys)
       .map((key) => {
         const data2025 = consumoTotal2025[key] || {
@@ -285,27 +284,19 @@ export default function AnalisisPedidos() {
           usedIn: {},
         };
         const data6M = consumoUltimos6Meses[key] || { total: 0 };
-
         const realName = data2025.name || data6M.name || key;
         const stock = stockMap[key] || 0;
-
         const promedioDiario = data6M.total / daysInPeriod;
         const promedioMensual = promedioDiario * 30;
         const diasRestantes =
           promedioDiario > 0 ? stock / promedioDiario : 9999;
-
         const chartData = monthNames
           .slice(0, currentMonth + 1)
-          .map((mes, i) => ({
-            mes: mes,
-            consumo: data2025.months[i] || 0,
-          }));
-
+          .map((mes, i) => ({ mes: mes, consumo: data2025.months[i] || 0 }));
         const usedInChart = Object.entries(data2025.usedIn)
           .map(([name, value]) => ({ name, value }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 5);
-
         return {
           name: realName,
           value: data2025.total,
@@ -323,7 +314,6 @@ export default function AnalisisPedidos() {
     const missingData = Object.values(missingRecipesMap).sort(
       (a, b) => b.count - a.count
     );
-
     const filteredRaw = datosPedidos.filter((row) => {
       const d = new Date(row.FECHA || row.Fecha || row.fecha);
       return !isNaN(d) && d.getFullYear() >= 2025;
@@ -374,14 +364,12 @@ export default function AnalisisPedidos() {
     setMostrarSugerencias(false);
     setModalPage(1);
     setHistorialFilter("TODOS");
-
     const rows = analysisData.raw.filter(
       (r) =>
         (modoVista === "PRODUCTOS"
           ? r.MODELO || r.Modelo || r.modelo
           : r.CLIENTE || r.Cliente || r.cliente) === name
     );
-
     let total = 0;
     const pieMap = {};
     const monthNames = [
@@ -400,7 +388,6 @@ export default function AnalisisPedidos() {
     ];
     const prodMonthMap = {};
     monthNames.forEach((m) => (prodMonthMap[m] = 0));
-
     const history = rows
       .sort(
         (a, b) =>
@@ -414,9 +401,7 @@ export default function AnalisisPedidos() {
           modoVista === "CLIENTES"
             ? r.MODELO || r.Modelo || r.modelo || ""
             : r.CLIENTE || r.Cliente || r.cliente || "";
-
         pieMap[key] = (pieMap[key] || 0) + cant;
-
         const d = new Date(r.FECHA || r.Fecha || r.fecha);
         if (!isNaN(d)) {
           const mName = monthNames[d.getMonth()];
@@ -435,16 +420,13 @@ export default function AnalisisPedidos() {
             .includes("mercadolibre"),
         };
       });
-
     const topPie = Object.entries(pieMap)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
-
     const salesChart = monthNames
       .slice(0, new Date().getMonth() + 1)
       .map((m) => ({ mes: m, ventas: prodMonthMap[m] }));
-
     setSelectedItem({
       name,
       total,
@@ -461,8 +443,6 @@ export default function AnalisisPedidos() {
         <FaSpinner className="animate-spin mr-3" /> Cargando datos...
       </div>
     );
-
-  // --- MANEJO DE ERRORES ---
   if (errorMsg)
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center text-white p-6">
@@ -477,7 +457,6 @@ export default function AnalisisPedidos() {
         </button>
       </div>
     );
-
   if (!analysisData)
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center text-white p-6">
@@ -499,6 +478,7 @@ export default function AnalisisPedidos() {
   const data = isCli ? analysisData.cli : analysisData.prod;
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A28DFF"];
 
+  // Lógica Modal Detalle
   let modalHistory = [],
     totalPages = 0,
     dynamicChartData = [];
@@ -515,6 +495,7 @@ export default function AnalisisPedidos() {
       (modalPage - 1) * MODAL_ITEMS_PER_PAGE,
       modalPage * MODAL_ITEMS_PER_PAGE
     );
+    // ...chart logic same as before...
     const monthNames = [
       "Ene",
       "Feb",
@@ -548,29 +529,51 @@ export default function AnalisisPedidos() {
 
   return (
     <div className="animate-in fade-in duration-500 relative">
-      <div className="flex items-center border-b border-slate-700 mb-6">
+      {/* --- TABS DE NAVEGACIÓN PRINCIPAL --- */}
+      <div className="flex items-center border-b border-slate-700 mb-6 gap-2">
         <button
           onClick={() => setView("DASHBOARD")}
-          className={`py-3 px-6 font-bold flex items-center gap-2 ${
+          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
             view === "DASHBOARD"
-              ? "text-white border-b-2 border-blue-500"
+              ? "text-white border-b-2 border-blue-500 bg-slate-800/50"
               : "text-gray-500 hover:text-gray-300"
           }`}
         >
-          <FaChartLine /> Dashboard de Ventas
+          <FaChartLine /> Dashboard
         </button>
         <button
           onClick={() => setView("CONSUMO")}
-          className={`py-3 px-6 font-bold flex items-center gap-2 ${
+          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
             view === "CONSUMO"
-              ? "text-white border-b-2 border-purple-500"
+              ? "text-white border-b-2 border-purple-500 bg-slate-800/50"
               : "text-gray-500 hover:text-gray-300"
           }`}
         >
-          <FaCogs /> Consumo de Semielaborados
+          <FaCogs /> Consumo
+        </button>
+        <button
+          onClick={() => setView("TENDENCIAS")}
+          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
+            view === "TENDENCIAS"
+              ? "text-white border-b-2 border-orange-500 bg-slate-800/50"
+              : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <FaRocket className="text-orange-500" /> Tendencias & IA
+        </button>
+        <button
+          onClick={() => setView("RUNWAY")}
+          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
+            view === "RUNWAY"
+              ? "text-white border-b-2 border-amber-500 bg-slate-800/50"
+              : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <FaHourglassHalf className="text-amber-500" /> Reloj de Insumos
         </button>
       </div>
 
+      {/* --- VISTA 1: DASHBOARD --- */}
       {view === "DASHBOARD" && (
         <>
           <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-6">
@@ -707,6 +710,7 @@ export default function AnalisisPedidos() {
               </p>
             </div>
           </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
             <div className="bg-slate-800 p-6 rounded-xl shadow-lg h-[400px]">
               <h3 className="text-xl font-bold mb-4 text-gray-200">
@@ -769,8 +773,15 @@ export default function AnalisisPedidos() {
         </>
       )}
 
+      {/* --- VISTA 2: CONSUMO --- */}
       {view === "CONSUMO" && <ConsumptionView analysisData={analysisData} />}
 
+      {/* --- VISTA 3: TENDENCIAS & IA (NUEVO) --- */}
+      {view === "TENDENCIAS" && <TendenciasView />}
+      {/* --- VISTA 4: RUNWAY INSUMOS (NUEVO) --- */}
+      {view === "RUNWAY" && <InsumosRunway />}
+
+      {/* --- MODAL DETALLE (Igual que antes) --- */}
       {selectedItem && (
         <DetailModal
           selectedItem={selectedItem}

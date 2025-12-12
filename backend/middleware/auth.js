@@ -28,6 +28,10 @@ const protect = (req, res, next) => {
     return next();
   }
 
+  if (apiKey === process.env.API_KEY_MANTENIMIENTO) {
+    return res.json({ role: "MANTENIMIENTO" }); // Es personal de mantenimiento
+  }
+
   // Si no coincide con ninguna
   return res.status(403).json({ msg: "⛔ Credencial incorrecta" });
 };
