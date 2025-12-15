@@ -7,7 +7,6 @@ const cors = require("cors");
 const { setupAuth } = require("./google-drive");
 const { inicializarTablas } = require("./services/dbInit");
 
-// IMPORTANTE: Importamos TODAS las funciones de sincronización
 const {
   sincronizarBaseDeDatos,
   sincronizarPedidos,
@@ -15,13 +14,13 @@ const {
   sincronizarMateriasPrimas,
 } = require("./services/syncService");
 
-// Importamos el bot y el getter de la instancia
+// IMPORTANTE: Traemos el check de mantenimiento
 const {
   iniciarBotReceptor,
   getBot,
+  checkAlertasMantenimiento, // <--- NUEVO IMPORT
 } = require("./services/telegramBotListener");
 
-// Importamos el servicio de vigilancia de competencia
 const { vigilarCompetencia } = require("./services/competenciaService");
 
 // --- IMPORTAR RUTAS ---
@@ -39,11 +38,9 @@ const mantenimientoRoutes = require("./routes/mantenimiento");
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// --- MIDDLEWARES ---
 app.use(cors());
 app.use(express.json());
 
-// --- ASIGNACIÓN DE RUTAS DE LA API ---
 app.use("/api", generalRoutes);
 app.use("/api/compras", comprasRoutes);
 app.use("/api/produccion", produccionRoutes);
@@ -55,7 +52,6 @@ app.use("/api/analisis", analisisRoutes);
 app.use("/api/ia", iaRoutes);
 app.use("/api/mantenimiento", mantenimientoRoutes);
 
-// --- INICIO DEL SERVIDOR ---
 async function iniciarServidor() {
   try {
     await setupAuth();
@@ -63,27 +59,30 @@ async function iniciarServidor() {
 
     app.listen(PORT, () => console.log(`🚀 Servidor en puerto ${PORT}`));
 
-    // Servicios Background
     console.log("⏰ Iniciando servicios...");
 
-    // 1. Ejecución inicial
     sincronizarBaseDeDatos();
     sincronizarPedidos();
-    sincronizarStockSemielaborados();
-    sincronizarMateriasPrimas();
+    // sincronizarStockSemielaborados();
+    // sincronizarMateriasPrimas();
     iniciarBotReceptor();
 
-    // 2. Cron Jobs (Intervalos)
+    // INTERVALOS
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
     setInterval(sincronizarPedidos, 15 * 60 * 1000);
-    //setInterval(sincronizarStockSemielaborados, 15 * 60 * 1000);
-    //setInterval(sincronizarMateriasPrimas, 15 * 60 * 1000);
 
-    // 3. Vigilancia Competencia (Cada 1 hora)
+    // Vigilancia Competencia (Cada 1 hora)
     setInterval(() => {
       const bot = getBot();
       const adminId = process.env.TELEGRAM_ADMIN_ID;
       if (bot && adminId) vigilarCompetencia(bot, adminId);
+    }, 60 * 60 * 1000);
+
+    // --- NUEVO: VIGILANCIA MANTENIMIENTO ---
+    // Revisar tickets viejos cada 1 hora
+    setInterval(() => {
+      console.log("🔧 Chequeando alertas mantenimiento 24h...");
+      checkAlertasMantenimiento();
     }, 60 * 60 * 1000);
   } catch (error) {
     console.error("❌ Error fatal:", error);

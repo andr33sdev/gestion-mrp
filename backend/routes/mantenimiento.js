@@ -2,8 +2,12 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+// Importamos la función de notificación
+const {
+  notificarNuevoTicketMantenimiento,
+} = require("../services/telegramBotListener");
 
-// 1. Obtener Tickets
+// 1. Obtener Tickets (IGUAL)
 router.get("/", async (req, res) => {
   try {
     const result = await db.query(`
@@ -22,14 +26,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-// 2. Crear Ticket (ACTUALIZADO: Recibe creado_por manual)
+// 2. Crear Ticket (MODIFICADO para notificar)
 router.post("/", async (req, res) => {
   const { maquina, titulo, descripcion, prioridad, tipo, creado_por } =
     req.body;
   try {
-    await db.query(
+    const nuevo = await db.query(
       `INSERT INTO tickets_mantenimiento (maquina, titulo, descripcion, prioridad, tipo, creado_por)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
         maquina,
         titulo,
@@ -39,13 +43,19 @@ router.post("/", async (req, res) => {
         creado_por || "Anónimo",
       ]
     );
+
+    // --- ENVIAR NOTIFICACIÓN TELEGRAM ---
+    if (nuevo.rows.length > 0) {
+      notificarNuevoTicketMantenimiento(nuevo.rows[0]);
+    }
+
     res.json({ success: true });
   } catch (e) {
     res.status(500).send(e.message);
   }
 });
 
-// 3. Cambiar Estado
+// 3. Cambiar Estado (IGUAL)
 router.put("/:id/estado", async (req, res) => {
   const { nuevo_estado, notas, tecnico } = req.body;
   const { id } = req.params;
@@ -67,7 +77,7 @@ router.put("/:id/estado", async (req, res) => {
   }
 });
 
-// 4. ELIMINAR TICKET (NUEVO)
+// 4. ELIMINAR TICKET (IGUAL)
 router.delete("/:id", async (req, res) => {
   try {
     await db.query("DELETE FROM tickets_mantenimiento WHERE id = $1", [

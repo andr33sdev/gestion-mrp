@@ -8,22 +8,6 @@ const { protect, restrictTo } = require("../middleware/auth");
 router.use(protect);
 
 // --- RUTAS OPERATIVAS (ACCESIBLES POR OPERARIO Y GERENCIA) ---
-// RUTA DE EMERGENCIA PARA ACTUALIZAR DB
-router.get("/fix-db-structure", async (req, res) => {
-  try {
-    await db.query(
-      "ALTER TABLE programacion_maquinas ADD COLUMN IF NOT EXISTS unidades_por_ciclo INTEGER DEFAULT 1;"
-    );
-    await db.query(
-      "ALTER TABLE programacion_maquinas ADD COLUMN IF NOT EXISTS brazo VARCHAR(50) DEFAULT 'Estación 1';"
-    );
-    res.send(
-      "✅ Tablas actualizadas correctamente: Se agregaron 'unidades_por_ciclo' y 'brazo'."
-    );
-  } catch (e) {
-    res.status(500).send("Error actualizando: " + e.message);
-  }
-});
 
 // Ver estado actual del horno
 router.get("/", async (req, res) => {

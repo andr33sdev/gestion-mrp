@@ -4,7 +4,6 @@ import { Scanner } from "@yudiel/react-qr-scanner";
 import QRCode from "qrcode";
 import {
   FaTruck,
-  FaSearch,
   FaArrowRight,
   FaCheckCircle,
   FaTimes,
@@ -14,7 +13,6 @@ import {
   FaFilePdf,
   FaUserTie,
   FaHistory,
-  FaClock,
   FaBoxOpen,
   FaEdit,
   FaSave,
@@ -32,43 +30,8 @@ import {
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
-
-// --- COMPONENTES UI ---
-const Tab = ({ label, active, onClick, icon }) => (
-  <button
-    onClick={onClick}
-    className={`px-4 md:px-6 py-4 font-bold transition-all border-b-2 flex items-center gap-2 text-sm md:text-base ${
-      active
-        ? "border-blue-500 text-white bg-white/5"
-        : "border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
-    }`}
-  >
-    {icon} <span className="hidden md:inline">{label}</span>
-  </button>
-);
-
-const Badge = ({ tipo, texto }) => {
-  const styles = {
-    RECIBIDO: "bg-green-500/20 text-green-400 border-green-500/50",
-    EN_CAMINO:
-      "bg-orange-500/20 text-orange-400 border-orange-500/50 animate-pulse",
-    PENDIENTE: "bg-slate-600/40 text-gray-300 border-gray-500",
-  };
-  const statusKey = texto.includes("RECIBIDO")
-    ? "RECIBIDO"
-    : texto.includes("TRANSITO") || texto.includes("CAMINO")
-    ? "EN_CAMINO"
-    : "PENDIENTE";
-  return (
-    <span
-      className={`px-3 py-1 rounded-full text-xs font-bold uppercase border flex items-center gap-1 w-fit ${
-        styles[statusKey] || styles.PENDIENTE
-      }`}
-    >
-      {statusKey === "RECIBIDO" ? <FaCheckCircle /> : <FaTruck />} {texto}
-    </span>
-  );
-};
+import Badge from "../components/common/Badge";
+import Tab from "../components/common/Tab";
 
 const generarPDFRemito = (datos) => {
   const doc = new jsPDF();

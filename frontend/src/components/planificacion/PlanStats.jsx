@@ -1,242 +1,241 @@
-import React, { useMemo } from "react";
+import React from "react";
 import { motion } from "framer-motion";
 import {
-  ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  ResponsiveContainer,
+  Cell,
+  PieChart,
+  Pie,
   Legend,
 } from "recharts";
 import {
-  FaBoxes,
-  FaCheckCircle,
-  FaHourglassHalf,
-  FaUsers,
-  FaTimes, // Icono para cerrar
-  FaChartPie, // Icono para el título
+  FaTimes,
+  FaChartPie,
+  FaTrophy,
+  FaLayerGroup,
+  FaPercentage,
 } from "react-icons/fa";
 
-// --- NUEVO SUB-COMPONENTE: StatCard (para los KPIs) ---
-function StatCard({ title, value, icon, colorClass = "text-blue-300" }) {
-  return (
-    <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-700">
-      <div className="flex items-center gap-3">
-        <div className={`text-2xl ${colorClass}`}>{icon}</div>
-        <h3 className="text-sm font-bold text-gray-400 uppercase">{title}</h3>
-      </div>
-      <p className={`text-4xl font-extrabold text-white mt-2 ${colorClass}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-// --- COMPONENTE PRINCIPAL (AHORA ES UN MODAL) ---
 export default function PlanStats({ items, operarios, onClose }) {
-  // 1. Cálculo de KPIs
-  const { totalRequerido, totalProducido, totalPendiente, progresoGeneral } =
-    useMemo(() => {
-      let req = 0;
-      let prod = 0;
-      items.forEach((item) => {
-        req += item.cantidad;
-        prod += item.producido;
-      });
-      const progreso = req > 0 ? (prod / req) * 100 : 0;
-      return {
-        totalRequerido: req,
-        totalProducido: prod,
-        totalPendiente: Math.max(0, req - prod), // Aseguramos que no sea negativo
-        progresoGeneral: progreso,
-      };
-    }, [items]);
+  // --- 1. CÁLCULOS GLOBALES ---
+  const totalMeta = items.reduce((acc, i) => acc + Number(i.cantidad), 0);
+  const totalHecho = items.reduce((acc, i) => acc + Number(i.producido), 0);
+  const porcentajeGlobal =
+    totalMeta > 0 ? ((totalHecho / totalMeta) * 100).toFixed(1) : 0;
 
-  // 2. Datos para los gráficos
-  const barData = useMemo(
-    () =>
-      items.map((item) => ({
-        name:
-          item.semielaborado.nombre.substring(0, 20) +
-          (item.semielaborado.nombre.length > 20 ? "..." : ""),
-        Pendiente: Math.max(0, item.cantidad - item.producido),
-        Producido: item.producido,
-      })),
-    [items]
-  );
+  // --- 2. PREPARACIÓN DATOS GRÁFICO BARRAS (AVANCE) ---
+  const dataAvance = items.map((i) => {
+    const hecho = Number(i.producido);
+    const meta = Number(i.cantidad);
+    const falta = Math.max(0, meta - hecho);
+    const pct = meta > 0 ? (hecho / meta) * 100 : 0;
 
-  const operarioData = operarios; // Los datos ya vienen listos
+    return {
+      name: i.semielaborado.nombre,
+      codigo: i.semielaborado.codigo,
+      Hecho: hecho,
+      Falta: falta,
+      Meta: meta,
+      pct: pct,
+      isComplete: hecho >= meta,
+    };
+  });
+
+  // --- 3. PREPARACIÓN DATOS OPERARIOS (TORTA) ---
+  const dataOperarios = operarios.map((op) => ({
+    name: op.nombre,
+    value: Number(op.total_producido),
+  }));
+
+  const COLORS_PIE = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[100] p-4"
-      onClick={onClose} // Cierra al hacer clic en el fondo
-    >
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
       <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden border border-slate-600 flex flex-col"
-        onClick={(e) => e.stopPropagation()} // Evita que el clic en el modal lo cierre
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-slate-900 w-full max-w-5xl rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
       >
-        {/* --- Header del Modal --- */}
-        <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-800 sticky top-0 z-10">
-          <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-            <FaChartPie className="text-blue-400" />
-            Estadísticas del Plan
+        {/* HEADER */}
+        <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <FaChartPie className="text-purple-500" /> Estadísticas del Plan
           </h2>
           <button
             onClick={onClose}
-            className="text-2xl text-gray-400 hover:text-white"
+            className="text-gray-400 hover:text-white transition-colors"
           >
-            <FaTimes />
+            <FaTimes size={24} />
           </button>
         </div>
 
-        {/* --- Contenido del Modal (con scroll) --- */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-          <div className="flex flex-col gap-6">
-            {/* --- FILA 1: KPI CARDS --- */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatCard
-                title="Progreso"
-                value={`${progresoGeneral.toFixed(0)}%`}
-                icon={<FaCheckCircle />}
-                colorClass="text-green-400"
-              />
-              <StatCard
-                title="Total Requerido"
-                value={totalRequerido}
-                icon={<FaBoxes />}
-                colorClass="text-blue-300"
-              />
-              <StatCard
-                title="Total Producido"
-                value={totalProducido}
-                icon={<FaUsers />}
-                colorClass="text-white"
-              />
-              <StatCard
-                title="Pendiente"
-                value={totalPendiente}
-                icon={<FaHourglassHalf />}
-                colorClass="text-yellow-400"
-              />
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
+          {/* --- SECCIÓN 1: KPIs GLOBALES (TARJETAS) --- */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg flex items-center gap-4">
+              <div className="p-3 bg-blue-900/30 rounded-lg text-blue-400">
+                <FaLayerGroup size={24} />
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase font-bold">
+                  Meta Total
+                </p>
+                <p className="text-2xl font-bold text-white">{totalMeta}</p>
+              </div>
             </div>
 
-            {/* --- FILA 2: GRÁFICOS DE BARRAS --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* --- GRÁFICO MEJORADO: BARRAS HORIZONTALES --- */}
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-                <h3 className="text-gray-300 font-bold text-sm mb-4">
-                  Producción por Operario
-                </h3>
-                {operarioData && operarioData.length > 0 ? (
-                  <ResponsiveContainer
-                    width="100%"
-                    height={Math.max(150, operarioData.length * 40)} // Altura dinámica
-                  >
-                    <BarChart
-                      data={operarioData}
-                      layout="vertical" // <-- BARRAS HORIZONTALES
-                      margin={{ top: 0, right: 30, left: 20, bottom: 0 }}
-                    >
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#475569"
-                        horizontal={false} // Líneas de guía verticales
-                      />
-                      <XAxis type="number" stroke="#9ca3af" />
-                      <YAxis
-                        dataKey="nombre" // <-- Nombres en el eje Y
-                        type="category"
-                        stroke="#9ca3af"
-                        fontSize={10}
-                        axisLine={false}
-                        tickLine={false}
-                        width={100}
-                        interval={0} // Asegura que se vean todos los nombres
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#1f2937",
-                          border: "none",
-                          borderRadius: "8px",
-                        }}
-                      />
-                      <Bar
-                        dataKey="total_producido"
-                        name="Unidades"
-                        fill="#8b5cf6" // Púrpura
-                        radius={[0, 4, 4, 0]} // Barras horizontales
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-40 text-gray-500 text-sm italic">
-                    Sin producción registrada por operarios.
-                  </div>
-                )}
+            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg flex items-center gap-4">
+              <div className="p-3 bg-green-900/30 rounded-lg text-green-400">
+                <FaTrophy size={24} />
               </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase font-bold">
+                  Producido
+                </p>
+                <p className="text-2xl font-bold text-white">{totalHecho}</p>
+              </div>
+            </div>
 
-              {/* Gráfico 2: Avance por Ítem (También Horizontal) */}
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 min-h-[300px]">
-                <h3 className="text-gray-300 font-bold text-sm mb-4">
-                  Avance por Ítem
-                </h3>
-                <ResponsiveContainer
-                  width="100%"
-                  height={Math.max(150, barData.length * 40)} // Altura dinámica
+            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg flex items-center gap-4">
+              <div className="p-3 bg-purple-900/30 rounded-lg text-purple-400">
+                <FaPercentage size={24} />
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 uppercase font-bold">
+                  Avance Global
+                </p>
+                <p className="text-2xl font-bold text-white">
+                  {porcentajeGlobal}%
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* --- SECCIÓN 2: GRÁFICO VISUAL DE BARRAS APILADAS --- */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* COLUMNA IZQUIERDA: AVANCE POR ÍTEM (El que querías mejorar) */}
+            <div className="lg:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col h-[400px]">
+              <h3 className="text-lg font-bold text-white mb-4">
+                Avance por Ítem
+              </h3>
+
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  layout="vertical"
+                  data={dataAvance}
+                  margin={{ top: 5, right: 30, left: 10, bottom: 5 }}
                 >
-                  <BarChart
-                    data={barData}
-                    layout="vertical" // <-- BARRAS HORIZONTALES
-                    margin={{ top: 0, right: 20, left: 20, bottom: 20 }}
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#334155"
+                    horizontal={false}
+                  />
+
+                  {/* Eje Y con Nombres Claros */}
+                  <YAxis
+                    dataKey="codigo"
+                    type="category"
+                    width={80}
+                    tick={{ fill: "#94a3b8", fontSize: 11, fontWeight: "bold" }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+
+                  {/* Eje X Oculto para limpieza */}
+                  <XAxis type="number" hide />
+
+                  <Tooltip
+                    cursor={{ fill: "transparent" }}
+                    contentStyle={{
+                      backgroundColor: "#0f172a",
+                      borderColor: "#334155",
+                      borderRadius: "8px",
+                    }}
+                    itemStyle={{ color: "#fff" }}
+                    formatter={(value, name) => [
+                      value,
+                      name === "Hecho" ? "Producido" : "Pendiente",
+                    ]}
+                  />
+
+                  {/* BARRA 1: LO HECHO (Verde si completo, Azul si en proceso) */}
+                  <Bar
+                    dataKey="Hecho"
+                    stackId="a"
+                    radius={[4, 0, 0, 4]}
+                    barSize={24}
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="#475569"
-                      horizontal={false} // Líneas de guía verticales
-                    />
-                    <XAxis type="number" stroke="#9ca3af" />
-                    <YAxis
-                      dataKey="name" // <-- Nombres en el eje Y
-                      type="category"
-                      stroke="#9ca3af"
-                      fontSize={10}
-                      axisLine={false}
-                      tickLine={false}
-                      width={100}
-                      interval={0} // Asegura que se vean todos los nombres
-                    />
+                    {dataAvance.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.isComplete ? "#22c55e" : "#3b82f6"}
+                      />
+                    ))}
+                  </Bar>
+
+                  {/* BARRA 2: LO QUE FALTA (Gris oscuro para dar efecto de fondo) */}
+                  <Bar
+                    dataKey="Falta"
+                    stackId="a"
+                    fill="#1e293b"
+                    radius={[0, 4, 4, 0]}
+                    barSize={24}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* COLUMNA DERECHA: RENDIMIENTO OPERARIOS */}
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col h-[400px]">
+              <h3 className="text-lg font-bold text-white mb-2">
+                Rendimiento Operarios
+              </h3>
+              {dataOperarios.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={dataOperarios}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {dataOperarios.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS_PIE[index % COLORS_PIE.length]}
+                        />
+                      ))}
+                    </Pie>
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: "#1f2937",
-                        border: "none",
+                        backgroundColor: "#0f172a",
+                        borderColor: "#334155",
                         borderRadius: "8px",
                       }}
+                      itemStyle={{ color: "#fff" }}
                     />
                     <Legend
                       verticalAlign="bottom"
-                      wrapperStyle={{ paddingTop: "15px" }}
+                      height={36}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: "12px", color: "#cbd5e1" }}
                     />
-                    <Bar
-                      dataKey="Producido"
-                      stackId="a"
-                      fill="#10B981"
-                      radius={[4, 0, 0, 4]} // Barras horizontales
-                    />
-                    <Bar
-                      dataKey="Pendiente"
-                      stackId="a"
-                      fill="#374151"
-                      radius={[0, 4, 4, 0]} // Barras horizontales
-                    />
-                  </BarChart>
+                  </PieChart>
                 </ResponsiveContainer>
-              </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-gray-500 text-sm italic">
+                  Sin datos de producción aún.
+                </div>
+              )}
             </div>
           </div>
         </div>

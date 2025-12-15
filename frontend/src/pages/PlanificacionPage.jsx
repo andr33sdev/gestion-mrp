@@ -4,10 +4,11 @@ import { API_BASE_URL, authFetch } from "../utils.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
+import { hasRole } from "../auth/authHelper";
+
 // Componentes
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 import PlanCard from "../components/planificacion/PlanCard";
-import PlanItemCard from "../components/planificacion/PlanItemCard";
 import PlanStats from "../components/planificacion/PlanStats";
 import TabButton from "../components/planificacion/TabButton";
 import PlanGanttModal from "../components/planificacion/PlanGanttModal";
@@ -28,6 +29,11 @@ import {
   FaFire,
   FaCogs,
   FaCalendarAlt,
+  FaEdit,
+  FaCheckCircle,
+  FaBoxOpen,
+  FaClock,
+  FaPlay,
 } from "react-icons/fa";
 
 export default function PlanificacionPage({ onNavigate }) {
@@ -301,7 +307,6 @@ export default function PlanificacionPage({ onNavigate }) {
       const planDetalle = await resPlan.json();
       setCurrentPlanNombre(planDetalle.nombre);
 
-      // Aseguramos formato correcto de items
       const itemsFormateados = planDetalle.items.map((i) => ({
         ...i,
         fecha_inicio_estimada:
@@ -322,8 +327,7 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   const handleCreateNew = () => {
-    const role = sessionStorage.getItem("role");
-    if (role !== "GERENCIA") {
+    if (!hasRole("GERENCIA")) {
       alert("⛔ ACCESO DENEGADO");
       return;
     }
@@ -338,10 +342,8 @@ export default function PlanificacionPage({ onNavigate }) {
     setActiveTab("items");
   };
 
-  // --- BLOQUEO DE SEGURIDAD: AGREGAR ITEM ---
   const handleAddItem = (semielaborado) => {
-    const role = sessionStorage.getItem("role");
-    if (role !== "GERENCIA") {
+    if (!hasRole("GERENCIA")) {
       alert("⛔ ACCESO DENEGADO");
       return;
     }
@@ -364,7 +366,6 @@ export default function PlanificacionPage({ onNavigate }) {
           };
           return nuevosItems;
         } else {
-          // --- AQUÍ AÑADIMOS DEFAULTS PARA GANTT ---
           return [
             ...prev,
             {
@@ -381,11 +382,9 @@ export default function PlanificacionPage({ onNavigate }) {
     }
   };
 
-  // --- BLOQUEO DE SEGURIDAD: EDITAR ITEM ---
   const handleEditItem = (indexToEdit, newQuantity) => {
-    const role = sessionStorage.getItem("role");
-    if (role !== "GERENCIA") {
-      alert("⛔ ACCESO DENEGADO:\n\nSolo Gerencia puede editar las metas.");
+    if (!hasRole("GERENCIA")) {
+      alert("⛔ ACCESO DENEGADO");
       return;
     }
 
@@ -396,19 +395,14 @@ export default function PlanificacionPage({ onNavigate }) {
     });
   };
 
-  // --- BLOQUEO DE SEGURIDAD: ELIMINAR ITEM ---
   const handleRemoveItem = (index) => {
-    const role = sessionStorage.getItem("role");
-    if (role !== "GERENCIA") {
-      alert(
-        "⛔ ACCESO DENEGADO:\n\nSolo Gerencia puede quitar ítems del plan."
-      );
+    if (!hasRole("GERENCIA")) {
+      alert("⛔ ACCESO DENEGADO");
       return;
     }
     setCurrentPlanItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // --- FUNCIÓN DE GUARDADO CORREGIDA ---
   const handleSavePlan = async () => {
     const role = sessionStorage.getItem("role");
     if (role !== "GERENCIA") {
@@ -423,7 +417,6 @@ export default function PlanificacionPage({ onNavigate }) {
   const guardarPlanEnBD = async (itemsAGuardar) => {
     setIsSaving(true);
     try {
-      // AQUÍ ESTABA EL PROBLEMA: Enviamos todos los datos necesarios
       const body = {
         nombre: currentPlanNombre,
         items: itemsAGuardar.map((i) => ({
@@ -457,7 +450,6 @@ export default function PlanificacionPage({ onNavigate }) {
 
       const data = await res.json();
 
-      // Recargamos la lista maestra
       const all = await authFetch(`${API_BASE_URL}/planificacion`).then((r) =>
         r.json()
       );
@@ -467,10 +459,7 @@ export default function PlanificacionPage({ onNavigate }) {
         setSelectedPlanId(data.planId);
       }
 
-      // Actualizamos estado local
       setCurrentPlanItems(itemsAGuardar);
-
-      // Si venía del Gantt, no mostramos alerta intrusiva, solo log
       console.log("Plan guardado correctamente.");
     } catch (e) {
       alert("Error: " + e.message);
@@ -479,7 +468,6 @@ export default function PlanificacionPage({ onNavigate }) {
     }
   };
 
-  // --- BLOQUEO DE SEGURIDAD: CAMBIAR ESTADO ---
   const handleToggleEstado = async () => {
     const role = sessionStorage.getItem("role");
     if (role !== "GERENCIA") {
@@ -515,15 +503,11 @@ export default function PlanificacionPage({ onNavigate }) {
     }
   };
 
-  // --- CALLBACK DEL GANTT ---
   const handleUpdateFromGantt = (updatedItems) => {
-    // 1. Cerramos modal
     setShowGanttModal(false);
-    // 2. Actualizamos estado local y guardamos
     guardarPlanEnBD(updatedItems);
   };
 
-  // --- BLOQUEO DE SEGURIDAD: ELIMINAR PLAN ---
   const handleDeletePlan = async () => {
     const role = sessionStorage.getItem("role");
     if (role !== "GERENCIA") {
@@ -568,31 +552,31 @@ export default function PlanificacionPage({ onNavigate }) {
       >
         {/* KARDEX */}
         <motion.div className="bg-slate-800 rounded-xl flex flex-col border border-slate-700 shadow-lg overflow-hidden">
-          <div className="p-4 bg-slate-800/50 border-b border-slate-700 z-10 flex justify-between items-center">
-            <div className="flex items-center gap-4">
+          <div className="p-4 bg-slate-800/50 border-b border-slate-700 z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
               <h2 className="text-xl font-bold text-white flex items-center gap-3">
                 <FaClipboardList className="text-blue-400" /> Planes de
                 Producción
               </h2>
-              <div className="flex gap-2 ml-4 pl-4 border-l border-slate-600">
+              <div className="flex gap-2 w-full md:w-auto md:ml-4 md:pl-4 md:border-l md:border-slate-600 justify-start md:justify-start">
                 <button
                   onClick={() => onNavigate("/")}
                   className="text-xs bg-slate-700 hover:bg-orange-600 text-gray-300 hover:text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
                 >
-                  <FaFire /> Horno N°2
+                  <FaFire /> <span className="hidden sm:inline">Horno N°2</span>
                 </button>
                 <button
                   onClick={() => onNavigate("/panel-control")}
                   className="text-xs bg-slate-700 hover:bg-blue-600 text-gray-300 hover:text-white px-3 py-1.5 rounded-lg flex items-center gap-2 transition-colors"
                 >
-                  <FaCogs /> Panel H2
+                  <FaCogs /> <span className="hidden sm:inline">Panel H2</span>
                 </button>
               </div>
             </div>
 
             <motion.button
               onClick={handleCreateNew}
-              className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 shadow-lg"
+              className="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg"
             >
               <FaPlus /> Crear Plan
             </motion.button>
@@ -628,7 +612,7 @@ export default function PlanificacionPage({ onNavigate }) {
               animate={{ opacity: 1, y: 0 }}
               className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg flex flex-col overflow-hidden"
             >
-              <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row justify-between items-center gap-3">
+              <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                 <input
                   type="text"
                   value={currentPlanNombre}
@@ -636,13 +620,13 @@ export default function PlanificacionPage({ onNavigate }) {
                   className="w-full md:w-1/3 bg-transparent border-0 border-b-2 border-slate-700 focus:border-blue-500 px-1 py-2 text-xl font-bold text-white focus:outline-none"
                   disabled={isPlanCerrado || isSaving}
                 />
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
                   <button
                     onClick={generarPDF}
                     disabled={isPlanNuevo}
                     className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all disabled:opacity-50"
                   >
-                    <FaPrint /> PDF
+                    <FaPrint /> <span className="hidden sm:inline">PDF</span>
                   </button>
                   {/* --- BOTÓN NUEVO CRONOGRAMA --- */}
                   <button
@@ -650,7 +634,8 @@ export default function PlanificacionPage({ onNavigate }) {
                     disabled={isPlanNuevo || currentPlanItems.length === 0}
                     className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white shadow-lg transition-all disabled:opacity-50"
                   >
-                    <FaCalendarAlt /> Cronograma
+                    <FaCalendarAlt />{" "}
+                    <span className="hidden sm:inline">Cronograma</span>
                   </button>
                   {/* Botones Guardar, Eliminar, etc... */}
                   <button
@@ -661,7 +646,9 @@ export default function PlanificacionPage({ onNavigate }) {
                     }`}
                   >
                     {isPlanCerrado ? <FaLock /> : <FaLockOpen />}{" "}
-                    {isPlanCerrado ? "Cerrado" : "Abierto"}
+                    <span className="hidden sm:inline">
+                      {isPlanCerrado ? "Cerrado" : "Abierto"}
+                    </span>
                   </button>
                   <button
                     onClick={handleDeletePlan}
@@ -680,13 +667,13 @@ export default function PlanificacionPage({ onNavigate }) {
                     ) : (
                       <FaSave />
                     )}{" "}
-                    Guardar
+                    <span className="hidden sm:inline">Guardar</span>
                   </button>
                 </div>
               </div>
 
               <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex border-b border-slate-700 bg-slate-800/50">
+                <div className="flex border-b border-slate-700 bg-slate-800/50 overflow-x-auto">
                   <TabButton
                     icon={<FaTasks />}
                     label="Items"
@@ -712,7 +699,7 @@ export default function PlanificacionPage({ onNavigate }) {
                     onClick={() => setShowStatsModal(true)}
                   />
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
                   {activeTab === "items" && (
                     <div>
                       <AutoCompleteInput
@@ -721,101 +708,238 @@ export default function PlanificacionPage({ onNavigate }) {
                         placeholder="Buscar semielaborado..."
                         disabled={isPlanCerrado || isSaving}
                       />
-                      <ul className="space-y-3 mt-6">
-                        {currentPlanItems.map((item, i) => (
-                          <PlanItemCard
-                            key={i}
-                            item={item}
-                            onRemove={() => handleRemoveItem(i)}
-                            onEdit={(qty) => handleEditItem(i, qty)}
-                            isPlanCerrado={isPlanCerrado}
-                          />
-                        ))}
-                      </ul>
+
+                      {/* --- DISEÑO DE DASHBOARD VISUAL --- */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
+                        {currentPlanItems.map((item, i) => {
+                          const percent =
+                            item.cantidad > 0
+                              ? (item.producido / item.cantidad) * 100
+                              : 0;
+                          const isDone = item.producido >= item.cantidad;
+
+                          // Estado Lógico y Visual
+                          let statusText = "PENDIENTE";
+                          let statusColor = "bg-gray-600";
+                          let cardBorder = "border-gray-600";
+                          let bgGradient = "from-gray-800/50 to-gray-900/50";
+
+                          if (percent > 0 && percent < 100) {
+                            statusText = "EN CURSO";
+                            statusColor = "bg-blue-600";
+                            cardBorder = "border-blue-600";
+                            bgGradient = "from-blue-900/20 to-slate-900/50";
+                          } else if (isDone) {
+                            statusText = "COMPLETO";
+                            statusColor = "bg-green-600";
+                            cardBorder = "border-green-600";
+                            bgGradient = "from-green-900/20 to-slate-900/50";
+                          }
+
+                          return (
+                            <motion.div
+                              layout
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              key={i}
+                              className={`relative rounded-xl border-t-4 ${cardBorder} bg-gradient-to-br ${bgGradient} shadow-lg p-4 flex flex-col justify-between overflow-hidden group`}
+                            >
+                              {/* Cabecera */}
+                              <div className="flex justify-between items-start mb-3">
+                                <div className="min-w-0 pr-2">
+                                  <h4
+                                    className="font-bold text-white text-base truncate leading-tight"
+                                    title={item.semielaborado.nombre}
+                                  >
+                                    {item.semielaborado.nombre}
+                                  </h4>
+                                  <span className="text-[10px] text-gray-400 font-mono mt-1 block">
+                                    {item.semielaborado.codigo}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                  <span
+                                    className={`text-[9px] font-bold text-white px-2 py-0.5 rounded-full ${statusColor} shadow-sm tracking-wide`}
+                                  >
+                                    {statusText}
+                                  </span>
+                                  {!isPlanCerrado && (
+                                    <div className="flex gap-1">
+                                      <button
+                                        onClick={() => {
+                                          const newQty = prompt(
+                                            "Nueva meta:",
+                                            item.cantidad
+                                          );
+                                          if (newQty && !isNaN(newQty))
+                                            handleEditItem(i, Number(newQty));
+                                        }}
+                                        className="text-gray-400 hover:text-blue-400 transition-colors p-1"
+                                        title="Editar Cantidad"
+                                      >
+                                        <FaEdit size={12} />
+                                      </button>
+                                      <button
+                                        onClick={() => handleRemoveItem(i)}
+                                        className="text-gray-400 hover:text-red-400 transition-colors p-1"
+                                        title="Eliminar Ítem"
+                                      >
+                                        <FaTrash size={12} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Cuerpo - Datos Grandes */}
+                              <div className="flex items-end justify-between mt-2 mb-3">
+                                <div className="flex flex-col">
+                                  <span className="text-[10px] uppercase text-gray-500 font-bold tracking-wider">
+                                    Meta
+                                  </span>
+                                  <span className="text-2xl font-mono font-bold text-white">
+                                    {item.cantidad}
+                                  </span>
+                                </div>
+
+                                {/* Separador Visual */}
+                                <div className="h-8 w-px bg-slate-700 mx-2 mb-1"></div>
+
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[10px] uppercase text-gray-500 font-bold tracking-wider">
+                                    Real
+                                  </span>
+                                  <span
+                                    className={`text-2xl font-mono font-bold ${
+                                      isDone
+                                        ? "text-green-400"
+                                        : "text-blue-400"
+                                    }`}
+                                  >
+                                    {item.producido}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Barra de Progreso */}
+                              <div className="relative w-full h-3 bg-slate-800 rounded-full overflow-hidden shadow-inner">
+                                <div
+                                  className={`absolute top-0 left-0 h-full transition-all duration-700 ease-out ${
+                                    isDone ? "bg-green-500" : "bg-blue-500"
+                                  }`}
+                                  style={{
+                                    width: `${Math.min(100, percent)}%`,
+                                  }}
+                                />
+                              </div>
+                              <div className="text-right mt-1">
+                                <span className="text-[10px] font-bold text-gray-400">
+                                  {percent.toFixed(0)}% Completado
+                                </span>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+
+                        {currentPlanItems.length === 0 && (
+                          <div className="col-span-full h-40 flex flex-col items-center justify-center text-gray-500 border-2 border-dashed border-slate-700 rounded-xl bg-slate-800/30">
+                            <FaBoxOpen size={32} className="mb-2 opacity-50" />
+                            <p className="text-sm font-medium">
+                              Plan vacío. Agrega ítems arriba.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {activeTab === "produccion" && (
                     <div className="overflow-hidden bg-slate-800/50 border border-slate-700 rounded-xl shadow-xl backdrop-blur-sm">
-                      <table className="w-full text-sm text-left border-collapse">
-                        <thead className="text-xs text-gray-400 uppercase bg-slate-900/60 tracking-wider font-semibold">
-                          <tr>
-                            <th className="px-6 py-4">Fecha</th>
-                            <th className="px-6 py-4">Operario</th>
-                            <th className="px-6 py-4">Producto</th>
-                            <th className="px-6 py-4 text-right text-emerald-400">
-                              OK
-                            </th>
-                            <th className="px-6 py-4 text-right text-rose-400">
-                              Scrap
-                            </th>
-                            <th className="px-6 py-4">Detalles</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700/50">
-                          {historialProduccion.map((reg) => (
-                            <tr key={reg.id} className="hover:bg-white/5">
-                              <td className="px-6 py-4 text-white">
-                                {new Date(
-                                  reg.fecha_produccion
-                                ).toLocaleDateString()}
-                              </td>
-                              <td className="px-6 py-4 text-gray-300">
-                                {reg.operario}
-                              </td>
-                              <td className="px-6 py-4 text-blue-300">
-                                {reg.semielaborado}
-                              </td>
-                              <td className="px-6 py-4 text-right font-bold text-emerald-400">
-                                {reg.cantidad}
-                              </td>
-                              <td className="px-6 py-4 text-right font-bold text-rose-400">
-                                {reg.scrap || "-"}
-                              </td>
-                              <td className="px-6 py-4 text-xs text-gray-500">
-                                {reg.motivo}
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left border-collapse min-w-[600px]">
+                          <thead className="text-xs text-gray-400 uppercase bg-slate-900/60 tracking-wider font-semibold">
+                            <tr>
+                              <th className="px-4 md:px-6 py-4">Fecha</th>
+                              <th className="px-4 md:px-6 py-4">Operario</th>
+                              <th className="px-4 md:px-6 py-4">Producto</th>
+                              <th className="px-4 md:px-6 py-4 text-right text-emerald-400">
+                                OK
+                              </th>
+                              <th className="px-4 md:px-6 py-4 text-right text-rose-400">
+                                Scrap
+                              </th>
+                              <th className="px-4 md:px-6 py-4">Detalles</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-700/50">
+                            {historialProduccion.map((reg) => (
+                              <tr key={reg.id} className="hover:bg-white/5">
+                                <td className="px-4 md:px-6 py-4 text-white">
+                                  {new Date(
+                                    reg.fecha_produccion
+                                  ).toLocaleDateString()}
+                                </td>
+                                <td className="px-4 md:px-6 py-4 text-gray-300">
+                                  {reg.operario}
+                                </td>
+                                <td className="px-4 md:px-6 py-4 text-blue-300">
+                                  {reg.semielaborado}
+                                </td>
+                                <td className="px-4 md:px-6 py-4 text-right font-bold text-emerald-400">
+                                  {reg.cantidad}
+                                </td>
+                                <td className="px-4 md:px-6 py-4 text-right font-bold text-rose-400">
+                                  {reg.scrap || "-"}
+                                </td>
+                                <td className="px-4 md:px-6 py-4 text-xs text-gray-500">
+                                  {reg.motivo}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                   {activeTab === "mrp" && (
                     <div className="overflow-hidden border border-slate-700 rounded-lg">
-                      <table className="w-full text-sm text-left">
-                        <thead className="text-xs text-gray-400 uppercase bg-slate-700">
-                          <tr>
-                            <th className="px-4 py-3">Materia Prima</th>
-                            <th className="px-4 py-3 text-right">Necesario</th>
-                            <th className="px-4 py-3 text-right">Stock</th>
-                            <th className="px-4 py-3 text-right">Balance</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700">
-                          {explosion.map((mp) => (
-                            <tr key={mp.id} className="hover:bg-slate-700/50">
-                              <td className="px-4 py-3 text-white">
-                                {mp.nombre}
-                              </td>
-                              <td className="px-4 py-3 text-right text-yellow-300">
-                                {mp.necesario}
-                              </td>
-                              <td className="px-4 py-3 text-right text-blue-300">
-                                {mp.stock}
-                              </td>
-                              <td
-                                className={`px-4 py-3 text-right font-bold ${
-                                  mp.balance < 0
-                                    ? "text-red-400"
-                                    : "text-green-400"
-                                }`}
-                              >
-                                {mp.balance}
-                              </td>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left min-w-[500px]">
+                          <thead className="text-xs text-gray-400 uppercase bg-slate-700">
+                            <tr>
+                              <th className="px-4 py-3">Materia Prima</th>
+                              <th className="px-4 py-3 text-right">
+                                Necesario
+                              </th>
+                              <th className="px-4 py-3 text-right">Stock</th>
+                              <th className="px-4 py-3 text-right">Balance</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-700">
+                            {explosion.map((mp) => (
+                              <tr key={mp.id} className="hover:bg-slate-700/50">
+                                <td className="px-4 py-3 text-white">
+                                  {mp.nombre}
+                                </td>
+                                <td className="px-4 py-3 text-right text-yellow-300">
+                                  {mp.necesario}
+                                </td>
+                                <td className="px-4 py-3 text-right text-blue-300">
+                                  {mp.stock}
+                                </td>
+                                <td
+                                  className={`px-4 py-3 text-right font-bold ${
+                                    mp.balance < 0
+                                      ? "text-red-400"
+                                      : "text-green-400"
+                                  }`}
+                                >
+                                  {mp.balance}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>

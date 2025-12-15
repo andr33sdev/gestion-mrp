@@ -5,38 +5,36 @@ import {
   FaCheckCircle,
   FaRunning,
   FaPlus,
-  FaClock,
   FaUserMd,
   FaTrash,
   FaTimes,
-  FaStickyNote,
   FaUser,
 } from "react-icons/fa";
 import { API_BASE_URL, authFetch } from "../utils";
 import { motion, AnimatePresence } from "framer-motion";
 import Loader from "../components/Loader";
 
-// --- HELPERS ---
-const getTimeDifference = (start, end) => {
-  if (!start) return 0;
-  const startTime = new Date(start);
-  const endTime = end ? new Date(end) : new Date();
-  const diffMs = endTime - startTime;
-  return Math.max(0, Math.floor(diffMs / 60000));
-};
-
+// --- HELPER DE FORMATO ---
 const formatDuration = (minutes) => {
-  if (isNaN(minutes) || minutes < 0) return "0 min";
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const val = parseFloat(minutes);
+  if (isNaN(val) || val <= 0) return "0 min";
+
+  const rounded = Math.round(val);
+
+  // Si es menor a 1 minuto pero mayor a 0 (ej: 0.5)
+  if (rounded === 0 && val > 0) return "< 1 min";
+
+  if (rounded < 60) return `${rounded} min`;
+
+  const h = Math.floor(rounded / 60);
+  const m = rounded % 60;
   return `${h}h ${m}m`;
 };
 
-// --- COMPONENTES INTERNOS (EXTRAÍDOS PARA RENDIMIENTO) ---
+// --- COMPONENTES INTERNOS ---
 
-// 1. Tarjeta de Ticket (Ahora recibe 'now' y se actualiza en vivo)
-const TicketCard = ({ t, now, onClick, onAttend, onSolve }) => {
+// 1. Tarjeta de Ticket (AHORA USA 100% VALORES DE DB)
+const TicketCard = ({ t, onClick, onAttend, onSolve }) => {
   const priorityColor =
     t.prioridad === "ALTA"
       ? "border-l-red-500"
@@ -44,27 +42,9 @@ const TicketCard = ({ t, now, onClick, onAttend, onSolve }) => {
       ? "border-l-amber-500"
       : "border-l-blue-500";
 
-  let tiempoRespuesta = 0;
-  let tiempoReparacion = 0;
-
-  // Cálculo en vivo usando la prop 'now'
-  if (t.estado === "PENDIENTE") {
-    tiempoRespuesta = getTimeDifference(t.fecha_creacion, now);
-  } else {
-    tiempoRespuesta = getTimeDifference(
-      t.fecha_creacion,
-      t.fecha_inicio_revision
-    );
-  }
-
-  if (t.estado === "EN_REVISION") {
-    tiempoReparacion = getTimeDifference(t.fecha_inicio_revision, now);
-  } else if (t.estado === "SOLUCIONADO") {
-    tiempoReparacion = getTimeDifference(
-      t.fecha_inicio_revision,
-      t.fecha_solucion
-    );
-  }
+  // Leemos directamente lo que calculó la base de datos (igual que el modal)
+  const tiempoRespuesta = t.minutos_respuesta_calc || 0;
+  const tiempoReparacion = t.minutos_reparacion_calc || 0;
 
   return (
     <div
@@ -90,7 +70,6 @@ const TicketCard = ({ t, now, onClick, onAttend, onSolve }) => {
       <div className="mt-2 pt-2 border-t border-slate-700/50 flex justify-between items-center text-xs font-mono">
         <div className="flex flex-col">
           <span className="text-[9px] text-gray-500 uppercase">Respuesta</span>
-          {/* Aquí usamos el valor calculado dinámicamente */}
           <span
             className={`font-bold ${
               t.estado === "PENDIENTE"
@@ -144,7 +123,7 @@ const TicketCard = ({ t, now, onClick, onAttend, onSolve }) => {
   );
 };
 
-// --- MODALES (Igual que antes, resumidos aquí) ---
+// --- MODALES ---
 const ReportModal = ({ isOpen, onClose, onSave }) => {
   const [form, setForm] = useState({
     maquina: "Horno 1",
@@ -263,12 +242,11 @@ const SolveModal = ({ ticket, onClose, onSolve }) => {
 
 const DetailModal = ({ ticket, onClose, onDelete }) => {
   if (!ticket) return null;
-  const tResp = ticket.minutos_respuesta_calc
-    ? Math.round(ticket.minutos_respuesta_calc)
-    : 0;
-  const tRep = ticket.minutos_reparacion_calc
-    ? Math.round(ticket.minutos_reparacion_calc)
-    : 0;
+
+  // Modal usa los mismos campos de la DB
+  const tResp = ticket.minutos_respuesta_calc;
+  const tRep = ticket.minutos_reparacion_calc;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
       <motion.div
@@ -353,13 +331,11 @@ export default function MantenimientoPage() {
   const [mttrResponse, setMttrResponse] = useState(0);
   const [mttrRepair, setMttrRepair] = useState(0);
 
-  // RELOJ MAESTRO PARA ACTUALIZAR TARJETAS
-  const [now, setNow] = useState(new Date());
-
+  // Polling de datos cada 1 minuto para refrescar los cálculos de DB
   useEffect(() => {
-    // Actualiza el estado 'now' cada 30 segundos
-    const interval = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(interval);
+    loadTickets();
+    const dataInterval = setInterval(loadTickets, 60000);
+    return () => clearInterval(dataInterval);
   }, []);
 
   const loadTickets = async () => {
@@ -372,16 +348,16 @@ export default function MantenimientoPage() {
         if (solved.length > 0) {
           const avgResp =
             solved.reduce(
-              (acc, t) => acc + (t.minutos_respuesta_calc || 0),
+              (acc, t) => acc + (parseFloat(t.minutos_respuesta_calc) || 0),
               0
             ) / solved.length;
           const avgRep =
             solved.reduce(
-              (acc, t) => acc + (t.minutos_reparacion_calc || 0),
+              (acc, t) => acc + (parseFloat(t.minutos_reparacion_calc) || 0),
               0
             ) / solved.length;
-          setMttrResponse(Math.round(avgResp));
-          setMttrRepair(Math.round(avgRep));
+          setMttrResponse(avgResp);
+          setMttrRepair(avgRep);
         }
       }
     } catch (e) {
@@ -389,10 +365,6 @@ export default function MantenimientoPage() {
     }
     setLoading(false);
   };
-
-  useEffect(() => {
-    loadTickets();
-  }, []);
 
   const handleCreate = async (form) => {
     setIsReportOpen(false);
@@ -486,7 +458,6 @@ export default function MantenimientoPage() {
                 <TicketCard
                   key={t.id}
                   t={t}
-                  now={now}
                   onClick={setDetailTarget}
                   onAttend={handleAttend}
                 />
@@ -495,7 +466,7 @@ export default function MantenimientoPage() {
         </div>
         <div className="bg-slate-900/50 rounded-xl p-3 border border-slate-800 flex flex-col h-full">
           <h3 className="text-amber-400 font-bold mb-3 flex items-center gap-2 text-sm uppercase tracking-wider">
-            <FaRunning /> En Taller
+            <FaRunning /> En Proceso
           </h3>
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             {tickets
@@ -504,7 +475,6 @@ export default function MantenimientoPage() {
                 <TicketCard
                   key={t.id}
                   t={t}
-                  now={now}
                   onClick={setDetailTarget}
                   onSolve={setSolveTarget}
                 />
@@ -519,12 +489,7 @@ export default function MantenimientoPage() {
             {tickets
               .filter((t) => t.estado === "SOLUCIONADO")
               .map((t) => (
-                <TicketCard
-                  key={t.id}
-                  t={t}
-                  now={now}
-                  onClick={setDetailTarget}
-                />
+                <TicketCard key={t.id} t={t} onClick={setDetailTarget} />
               ))}
           </div>
         </div>

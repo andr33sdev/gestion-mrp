@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"; // Esto probablemente sobre, utils no suele usar hooks, pero mantenemos imports si los tenías.
+import { getAuthData, logout } from "./auth/authHelper";
 
 // --- CONSTANTES ---
 export const API_BASE_URL = "https://horno-backend.onrender.com/api";
@@ -16,20 +17,20 @@ export const ALARMA_WINDOW_HOURS = 24;
 
 // --- FETCH CON AUTENTICACIÓN MEJORADO ---
 export async function authFetch(url, options = {}) {
-  const token = sessionStorage.getItem("api_key");
+  const { token } = getAuthData();
 
   const headers = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...options.headers,
   };
 
   if (token) {
-    headers['x-api-key'] = token;
+    headers["x-api-key"] = token;
   }
 
   const response = await fetch(url, {
     ...options,
-    headers
+    headers,
   });
 
   // CAMBIO CLAVE AQUÍ:
@@ -37,9 +38,7 @@ export async function authFetch(url, options = {}) {
   // Si es 403 (Rol insuficiente), dejamos pasar la respuesta para manejarla en la UI.
   if (response.status === 401) {
     console.warn("⛔ Sesión expirada.");
-    sessionStorage.removeItem("api_key");
-    sessionStorage.removeItem("role");
-    window.location.reload();
+    logout();
     throw new Error("Sesión expirada.");
   }
 
@@ -53,7 +52,9 @@ export function formatDuration(ms) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s
+    .toString()
+    .padStart(2, "0")}`;
 }
 
 export function getStationStatus(stationId, allRecords) {

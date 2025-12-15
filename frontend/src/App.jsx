@@ -1,5 +1,13 @@
-// frontend/src/App.jsx
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Link,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
 import {
   FaChartLine,
   FaCogs,
@@ -16,10 +24,12 @@ import {
   FaIndustry,
   FaWarehouse,
   FaCalendarAlt,
-  FaTools, // <--- Icono Mantenimiento
+  FaTools,
+  FaChevronRight,
+  FaChevronLeft,
 } from "react-icons/fa";
 
-// Importa las páginas
+// Importación de Páginas
 import Dashboard from "./pages/Dashboard.jsx";
 import PanelControl from "./pages/PanelControl.jsx";
 import IngenieriaProductos from "./pages/IngenieriaProductos.jsx";
@@ -33,518 +43,555 @@ import SolicitudesPage from "./pages/SolicitudesPage";
 import RecepcionPage from "./pages/RecepcionPage.jsx";
 import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
 import CentroComando from "./pages/CentroComando";
-import MantenimientoPage from "./pages/MantenimientoPage"; // <--- NUEVA PÁGINA
+import MantenimientoPage from "./pages/MantenimientoPage";
 
 // Componentes Globales
 import ChatGerencia from "./components/ChatGerencia";
-import { API_BASE_URL } from "./utils.js";
+import { getAuthData, hasRole, logout } from "./auth/authHelper";
 
-export default function App() {
-  const [page, setPage] = useState(window.location.pathname);
-  const [loginTarget, setLoginTarget] = useState(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+// --- CONFIGURACIÓN DEL MENÚ ---
+const NAV_LINKS = [
+  {
+    path: "/",
+    label: "Dashboard Vivo",
+    icon: <FaChartLine />,
+    roles: ["GERENCIA", "PANEL", "DEPOSITO", "MANTENIMIENTO", "OPERARIO"],
+  },
+  {
+    path: "/planificacion",
+    label: "Planificación",
+    icon: <FaClipboardList />,
+    roles: ["GERENCIA", "PANEL"],
+  },
+  {
+    path: "/calendario",
+    label: "Centro Comando",
+    icon: <FaIndustry />,
+    roles: ["GERENCIA"],
+  },
+  {
+    path: "/registrar-produccion",
+    label: "Registrar Prod.",
+    icon: <FaPlusCircle />,
+    roles: ["GERENCIA", "PANEL", "OPERARIO"],
+  },
+  {
+    path: "/panel-control",
+    label: "Control Hornos",
+    icon: <FaCogs />,
+    roles: ["GERENCIA", "PANEL"],
+  },
+  {
+    path: "/operarios",
+    label: "Personal",
+    icon: <FaUsersCog />,
+    roles: ["GERENCIA", "PANEL"],
+  },
+  {
+    path: "/mantenimiento",
+    label: "Mantenimiento",
+    icon: <FaTools />,
+    // AQUI AGREGAMOS "PANEL" ADEMÁS DE "OPERARIO" PARA ASEGURARNOS
+    roles: ["GERENCIA", "MANTENIMIENTO", "OPERARIO", "PANEL"],
+  },
+  {
+    path: "/analisis-pedidos",
+    label: "Inteligencia",
+    icon: <FaChartLine />,
+    roles: ["GERENCIA"],
+  },
+  {
+    path: "/logistica",
+    label: "Logística Stock",
+    icon: <FaTruck />,
+    roles: ["GERENCIA"],
+  },
+  {
+    path: "/hoja-de-ruta",
+    label: "Hoja de Ruta",
+    icon: <FaCalendarAlt />,
+    roles: ["GERENCIA"],
+  },
+  {
+    path: "/ingenieria",
+    label: "Ingeniería",
+    icon: <FaCogs />,
+    roles: ["GERENCIA"],
+  },
+  {
+    path: "/compras",
+    label: "Compras",
+    icon: <FaBox />,
+    roles: ["GERENCIA"],
+  },
+  {
+    path: "/recepcion",
+    label: "Recepción",
+    icon: <FaWarehouse />,
+    roles: ["GERENCIA", "DEPOSITO"],
+  },
+];
 
-  // Estados de autenticación
-  const [isAuthPanel, setIsAuthPanel] = useState(
-    !!sessionStorage.getItem("api_key") &&
-      sessionStorage.getItem("role") === "PANEL"
+// --- COMPONENTE: RUTA PROTEGIDA ---
+const ProtectedRoute = ({ children, allowedRoles }) => {
+  const { token, role } = getAuthData();
+
+  if (!token || !role) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(role) && role !== "GERENCIA") {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+// --- HELPER: LOGO COMPARTIDO ---
+const Logo = ({ subtext = "v2.5 PRO", showText = true }) => (
+  <div className="flex items-center gap-3">
+    <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2 rounded-lg shadow-lg">
+      <FaIndustry className="text-white text-lg" />
+    </div>
+    {showText && (
+      <div className="leading-none">
+        <h1 className="text-lg font-bold text-white tracking-tight">
+          Gestión MRP
+        </h1>
+        <p className="text-[10px] text-gray-500 font-mono mt-0.5">{subtext}</p>
+      </div>
+    )}
+  </div>
+);
+
+// --- COMPONENTE 1: SIDEBAR ESCRITORIO (IZQUIERDA) ---
+const DesktopSidebar = ({
+  links,
+  isCollapsed,
+  setIsCollapsed,
+  handleLogout,
+  userBadge,
+}) => {
+  const location = useLocation();
+  return (
+    <aside
+      className={`hidden lg:flex flex-col border-r border-slate-800 bg-slate-900 transition-all duration-300 relative ${
+        isCollapsed ? "w-20" : "w-64"
+      }`}
+    >
+      {/* BOTÓN SOLAPA */}
+      <button
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="absolute -right-3 top-8 z-50 w-6 h-6 rounded-full bg-slate-900 text-gray-400 hover:text-white border border-slate-700 shadow-lg flex items-center justify-center transition-colors hover:border-blue-500 hover:bg-slate-800"
+      >
+        {isCollapsed ? (
+          <FaChevronRight size={10} />
+        ) : (
+          <FaChevronLeft size={10} />
+        )}
+      </button>
+
+      {/* HEADER */}
+      <div
+        className={`h-16 flex items-center ${
+          isCollapsed ? "justify-center" : "px-6"
+        } border-b border-slate-800`}
+      >
+        <Logo showText={!isCollapsed} />
+      </div>
+
+      {/* NAV */}
+      <nav className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+        {!isCollapsed && (
+          <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 px-2">
+            Navegación
+          </div>
+        )}
+        {links.map((link) => {
+          const isActive = location.pathname === link.path;
+          return (
+            <Link
+              key={link.path}
+              to={link.path}
+              title={isCollapsed ? link.label : ""}
+              className={`group flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 ${
+                isActive
+                  ? "bg-blue-600 text-white shadow-lg shadow-blue-900/20 font-bold"
+                  : "text-gray-400 hover:bg-slate-800 hover:text-white"
+              } ${isCollapsed ? "justify-center" : ""}`}
+            >
+              <span className="text-xl">{link.icon}</span>
+              {!isCollapsed && (
+                <span className="flex-1 truncate">{link.label}</span>
+              )}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* FOOTER */}
+      <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+        <div
+          className={`flex items-center gap-3 mb-3 ${
+            isCollapsed ? "justify-center" : ""
+          }`}
+        >
+          <div
+            className={`p-2 rounded-lg bg-slate-800 border border-slate-700 ${userBadge.color}`}
+          >
+            {userBadge.icon}
+          </div>
+          {!isCollapsed && (
+            <div className="overflow-hidden">
+              <p className="text-xs text-gray-500 font-bold uppercase">
+                Perfil
+              </p>
+              <p className="text-sm font-bold text-white truncate">
+                {userBadge.text}
+              </p>
+            </div>
+          )}
+        </div>
+        <button
+          onClick={handleLogout}
+          className={`w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-red-900/30 text-gray-400 hover:text-red-400 py-2 rounded-lg text-xs font-bold transition-all border border-slate-700 hover:border-red-900/50 ${
+            isCollapsed ? "px-0" : "px-4"
+          }`}
+          title="Cerrar Sesión"
+        >
+          <FaSignOutAlt size={16} /> {!isCollapsed && "SALIR"}
+        </button>
+      </div>
+    </aside>
   );
-  const [isAuthGerencia, setIsAuthGerencia] = useState(
-    !!sessionStorage.getItem("api_key") &&
-      sessionStorage.getItem("role") === "GERENCIA"
+};
+
+// --- COMPONENTE 2: MENÚ MÓVIL (DRAWER DESLIZANTE) ---
+const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
+  const location = useLocation();
+  return (
+    <>
+      {/* Backdrop oscuro */}
+      <div
+        className={`fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
+          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+        onClick={onClose}
+      />
+
+      {/* Drawer Panel */}
+      <div
+        className={`fixed inset-y-0 left-0 z-[70] w-72 bg-slate-900 border-r border-slate-800 shadow-2xl transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
+          isOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Header Móvil */}
+        <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900">
+          <Logo />
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white p-1"
+          >
+            <FaTimes size={20} />
+          </button>
+        </div>
+
+        {/* User Card Móvil */}
+        <div className="p-4 bg-slate-800/50 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div
+              className={`p-2.5 rounded-full border bg-slate-800 ${userBadge.color} border-slate-700`}
+            >
+              {userBadge.icon}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-bold uppercase">
+                Sesión activa
+              </p>
+              <p className="text-sm font-bold text-white">{userBadge.text}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Links Móvil */}
+        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
+          {links.map((link) => {
+            const isActive = location.pathname === link.path;
+            return (
+              <Link
+                key={link.path}
+                to={link.path}
+                onClick={onClose}
+                className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
+                  isActive
+                    ? "bg-blue-600 text-white font-bold shadow-lg"
+                    : "text-gray-300 hover:bg-slate-800 hover:text-white"
+                }`}
+              >
+                <span className="text-xl opacity-80">{link.icon}</span>
+                <span className="text-sm">{link.label}</span>
+                {isActive && (
+                  <FaChevronRight className="ml-auto text-xs opacity-60" />
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Footer Móvil */}
+        <div className="p-4 border-t border-slate-800">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 bg-red-900/20 text-red-400 hover:bg-red-900/30 py-3 rounded-xl text-sm font-bold transition-all border border-red-900/30"
+          >
+            <FaSignOutAlt /> Cerrar Sesión
+          </button>
+        </div>
+      </div>
+    </>
   );
-  const [isAuthDeposito, setIsAuthDeposito] = useState(
-    !!sessionStorage.getItem("api_key") &&
-      sessionStorage.getItem("role") === "DEPOSITO"
-  );
-  const [isAuthMantenimiento, setIsAuthMantenimiento] = useState(
-    !!sessionStorage.getItem("api_key") &&
-      sessionStorage.getItem("role") === "MANTENIMIENTO"
-  );
+};
 
-  // Lógica de permisos combinada
-  const isLoggedAny =
-    isAuthPanel || isAuthGerencia || isAuthDeposito || isAuthMantenimiento;
-  const canAccessShared = isAuthPanel || isAuthGerencia; // Operario + Gerencia
-  const canAccessGerencia = isAuthGerencia;
-  const canAccessDeposito = isAuthDeposito || isAuthGerencia;
-  const canAccessMantenimiento = isAuthMantenimiento || isAuthGerencia; // <--- Nuevo Permiso
+// --- COMPONENTE: LAYOUT PRINCIPAL ---
+const Layout = ({ children }) => {
+  const navigate = useNavigate();
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Estado Móvil
+  const [isCollapsed, setIsCollapsed] = useState(false); // Estado Escritorio
 
-  // Recuperar sesión al cargar
-  useEffect(() => {
-    const key = sessionStorage.getItem("api_key");
-    const role = sessionStorage.getItem("role");
-    if (key && role === "PANEL") setIsAuthPanel(true);
-    if (key && role === "GERENCIA") setIsAuthGerencia(true);
-    if (key && role === "DEPOSITO") setIsAuthDeposito(true);
-    if (key && role === "MANTENIMIENTO") setIsAuthMantenimiento(true);
-  }, []);
-
-  // Manejo de navegación (SPA)
-  useEffect(() => {
-    const onLocationChange = () => setPage(window.location.pathname);
-    window.addEventListener("popstate", onLocationChange);
-    return () => window.removeEventListener("popstate", onLocationChange);
-  }, []);
-
-  // Redirección de seguridad
-  useEffect(() => {
-    if (page === "/" && !isLoggedAny) {
-      navigate("/login");
-    }
-  }, [page, isLoggedAny]);
-
-  // Cerrar menús al cambiar de página
-  useEffect(() => {
-    setLoginTarget(null);
-    setMobileMenuOpen(false);
-  }, [page]);
-
-  const navigate = (path) => {
-    window.history.pushState({}, "", path);
-    setPage(path);
-  };
-
-  const handleLogin = async (password, roleTarget) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/`, {
-        headers: { "x-api-key": password },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const realRole = data.role;
-
-        // Validación estricta de rol
-        if (realRole !== roleTarget) {
-          return false;
-        }
-
-        sessionStorage.setItem("api_key", password);
-        sessionStorage.setItem("role", realRole);
-
-        if (realRole === "PANEL") setIsAuthPanel(true);
-        if (realRole === "GERENCIA") setIsAuthGerencia(true);
-        if (realRole === "DEPOSITO") setIsAuthDeposito(true);
-        if (realRole === "MANTENIMIENTO") setIsAuthMantenimiento(true);
-        return true;
-      } else {
-        return false;
-      }
-    } catch (err) {
-      console.error("Error de conexión", err);
-      return false;
-    }
-  };
+  const { role } = getAuthData();
 
   const handleLogout = () => {
-    sessionStorage.removeItem("api_key");
-    sessionStorage.removeItem("role");
-    setIsAuthPanel(false);
-    setIsAuthGerencia(false);
-    setIsAuthDeposito(false);
-    setIsAuthMantenimiento(false);
+    logout();
     navigate("/login");
   };
 
-  // --- MENÚ DE NAVEGACIÓN ---
-  const navLinks = [
-    {
-      path: "/planificacion",
-      label: "Planif.",
-      icon: <FaClipboardList />,
-      show: canAccessShared,
-    },
-    {
-      path: "/registrar-produccion",
-      label: "Producir",
-      icon: <FaPlusCircle />,
-      show: canAccessShared,
-    },
-    {
-      path: "/operarios",
-      label: "Personal",
-      icon: <FaUsersCog />,
-      show: canAccessShared,
-    },
-    {
-      path: "/mantenimiento", // <--- NUEVO LINK
-      label: "Mantenim.",
-      icon: <FaTools />,
-      show: canAccessMantenimiento,
-    },
-    {
-      path: "/analisis-pedidos",
-      label: "Análisis",
-      icon: <FaChartLine />,
-      show: canAccessGerencia,
-    },
-    {
-      path: "/logistica",
-      label: "Logística",
-      icon: <FaTruck />,
-      show: canAccessGerencia,
-    },
-    {
-      path: "/hoja-de-ruta",
-      label: "Hoja Ruta",
-      icon: <FaCalendarAlt />,
-      show: canAccessGerencia,
-    },
-    {
-      path: "/calendario",
-      label: "C. Comando",
-      icon: <FaIndustry />,
-      show: canAccessGerencia,
-    },
-    {
-      path: "/ingenieria",
-      label: "Ingeniería",
-      icon: <FaCogs />,
-      show: canAccessGerencia,
-    },
-    {
-      path: "/compras",
-      label: "Compras",
-      icon: <FaBox />,
-      show: canAccessGerencia,
-    },
-  ];
-
-  // --- RENDERIZADO DE COMPONENTES ---
-  let component;
-
-  // 1. LOGIN
-  if (page === "/login") {
-    if (loginTarget) {
-      component = (
-        <div className="relative pt-20">
-          <button
-            onClick={() => setLoginTarget(null)}
-            className="absolute top-24 left-4 text-gray-400 hover:text-white text-sm underline"
-          >
-            ← Volver
-          </button>
-          <LoginPage
-            onLoginAttempt={async (pass) => {
-              const success = await handleLogin(pass, loginTarget);
-              if (success) {
-                if (loginTarget === "DEPOSITO") navigate("/recepcion");
-                else if (loginTarget === "MANTENIMIENTO")
-                  navigate("/mantenimiento");
-                else navigate("/");
-              }
-              return success;
-            }}
-            title={`Acceso ${loginTarget}`}
-          />
-        </div>
-      );
-    } else {
-      component = (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] animate-in fade-in zoom-in duration-500 pt-10">
-          <h2 className="text-4xl font-bold text-white mb-12 drop-shadow-lg text-center">
-            Seleccione su Perfil
-          </h2>
-          {/* GRID RESPONSIVE: 1 col movil, 2 cols tablet, 4 cols desktop */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
-            <button
-              onClick={() => setLoginTarget("PANEL")}
-              className="group bg-slate-800 hover:bg-blue-600 border-2 border-slate-700 hover:border-blue-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
-            >
-              <FaHardHat className="text-6xl text-blue-400 group-hover:text-white transition-colors" />
-              <span className="text-xl font-bold text-white">Operario</span>
-            </button>
-
-            <button
-              onClick={() => setLoginTarget("DEPOSITO")}
-              className="group bg-slate-800 hover:bg-orange-600 border-2 border-slate-700 hover:border-orange-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
-            >
-              <FaWarehouse className="text-6xl text-orange-400 group-hover:text-white transition-colors" />
-              <span className="text-xl font-bold text-white">Depósito</span>
-            </button>
-
-            <button
-              onClick={() => setLoginTarget("MANTENIMIENTO")}
-              className="group bg-slate-800 hover:bg-red-600 border-2 border-slate-700 hover:border-red-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
-            >
-              <FaTools className="text-6xl text-red-400 group-hover:text-white transition-colors" />
-              <span className="text-xl font-bold text-white">Técnico</span>
-            </button>
-
-            <button
-              onClick={() => setLoginTarget("GERENCIA")}
-              className="group bg-slate-800 hover:bg-purple-600 border-2 border-slate-700 hover:border-purple-500 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full md:w-56 transform hover:-translate-y-2"
-            >
-              <FaUserTie className="text-6xl text-purple-400 group-hover:text-white transition-colors" />
-              <span className="text-xl font-bold text-white">Gerencia</span>
-            </button>
-          </div>
-        </div>
-      );
-    }
-  }
-
-  // 2. RUTAS OPERATIVAS (Panel)
-  else if (page === "/panel-control") {
-    component = canAccessShared ? (
-      <PanelControl onNavigate={navigate} />
-    ) : (
-      <LoginPage
-        onLoginAttempt={(pass) => handleLogin(pass, "PANEL")}
-        title="Acceso Requerido"
-      />
-    );
-  } else if (page === "/registrar-produccion") {
-    component = canAccessShared ? (
-      <RegistrarProduccionPage />
-    ) : (
-      <LoginPage
-        onLoginAttempt={(pass) => handleLogin(pass, "PANEL")}
-        title="Acceso Requerido"
-      />
-    );
-  }
-
-  // 3. RUTA RECEPCIÓN (Depósito)
-  else if (page === "/recepcion") {
-    component = canAccessDeposito ? (
-      <RecepcionPage onNavigate={navigate} />
-    ) : (
-      <LoginPage
-        onLoginAttempt={(pass) => handleLogin(pass, "DEPOSITO")}
-        title="Acceso Depósito"
-      />
-    );
-  }
-
-  // 4. RUTA MANTENIMIENTO (Nuevo)
-  else if (page === "/mantenimiento") {
-    component = canAccessMantenimiento ? (
-      <MantenimientoPage />
-    ) : (
-      <LoginPage
-        onLoginAttempt={(pass) => handleLogin(pass, "MANTENIMIENTO")}
-        title="Acceso Mantenimiento"
-      />
-    );
-  }
-
-  // 5. RUTAS GERENCIALES Y MIXTAS
-  else if (
-    [
-      "/analisis-pedidos",
-      "/planificacion",
-      "/ingenieria",
-      "/operarios",
-      "/logistica",
-      "/compras",
-      "/hoja-de-ruta",
-      "/calendario",
-    ].includes(page)
-  ) {
-    const PageComp = {
-      "/analisis-pedidos": AnalisisPedidos,
-      "/planificacion": PlanificacionPage,
-      "/ingenieria": IngenieriaProductos,
-      "/operarios": OperariosPage,
-      "/logistica": LogisticaPage,
-      "/compras": SolicitudesPage,
-      "/hoja-de-ruta": HojaDeRutaPage,
-      "/calendario": CentroComando,
-    }[page];
-
-    const isSharedRoute = ["/planificacion", "/operarios"].includes(page);
-    const hasAccess = isSharedRoute ? canAccessShared : canAccessGerencia;
-    const requiredRole = isSharedRoute ? "PANEL" : "GERENCIA";
-
-    component = hasAccess ? (
-      <PageComp onNavigate={navigate} />
-    ) : (
-      <LoginPage
-        onLoginAttempt={(pass) => handleLogin(pass, requiredRole)}
-        title="Acceso Requerido"
-      />
-    );
-  }
-
-  // 6. DASHBOARD (Home)
-  else {
-    if (isLoggedAny) {
-      component = <Dashboard onNavigate={navigate} />;
-    } else {
-      component = null;
-    }
-  }
-
-  // --- RENDERIZADO DEL HEADER ---
-  const renderUserBadge = () => {
-    let icon = <FaHardHat />;
-    let text = "OPERARIO";
-    let style = "bg-blue-900/20 border-blue-500/30 text-blue-200";
-
-    if (isAuthGerencia) {
-      icon = <FaUserTie />;
-      text = "GERENCIA";
-      style = "bg-purple-900/20 border-purple-500/30 text-purple-200";
-    } else if (isAuthDeposito) {
-      icon = <FaWarehouse />;
-      text = "DEPÓSITO";
-      style = "bg-orange-900/20 border-orange-500/30 text-orange-200";
-    } else if (isAuthMantenimiento) {
-      icon = <FaTools />;
-      text = "MANTENIMIENTO";
-      style = "bg-red-900/20 border-red-500/30 text-red-200";
-    }
-
-    return (
-      <div
-        className={`hidden md:flex items-center gap-3 px-3 py-1.5 rounded-lg border ${style}`}
-      >
-        {icon}
-        <span className="text-xs font-bold tracking-wider">{text}</span>
-        <button
-          onClick={handleLogout}
-          className="ml-2 text-gray-400 hover:text-white transition-colors"
-          title="Salir"
-        >
-          <FaSignOutAlt />
-        </button>
-      </div>
-    );
+  // Configuración del Badge de Usuario
+  let userBadge = {
+    icon: <FaHardHat />,
+    text: "OPERARIO",
+    color: "text-blue-400",
   };
-
-  const renderMobileBadge = () => {
-    // Misma lógica para el menú móvil
-    if (isAuthGerencia)
-      return {
-        style: "bg-purple-900/20 border-purple-500 text-purple-200",
-        icon: <FaUserTie size={20} />,
-        text: "GERENCIA",
-      };
-    if (isAuthDeposito)
-      return {
-        style: "bg-orange-900/20 border-orange-500 text-orange-200",
-        icon: <FaWarehouse size={20} />,
-        text: "DEPÓSITO",
-      };
-    if (isAuthMantenimiento)
-      return {
-        style: "bg-red-900/20 border-red-500 text-red-200",
-        icon: <FaTools size={20} />,
-        text: "MANTENIMIENTO",
-      };
-    return {
-      style: "bg-blue-900/20 border-blue-500 text-blue-200",
-      icon: <FaHardHat size={20} />,
-      text: "OPERARIO",
+  if (role === "GERENCIA")
+    userBadge = {
+      icon: <FaUserTie />,
+      text: "GERENCIA",
+      color: "text-purple-400",
     };
-  };
+  else if (role === "DEPOSITO")
+    userBadge = {
+      icon: <FaWarehouse />,
+      text: "DEPÓSITO",
+      color: "text-orange-400",
+    };
+  else if (role === "MANTENIMIENTO")
+    userBadge = { icon: <FaTools />, text: "TÉCNICO", color: "text-red-400" };
+
+  // Filtrar links permitidos
+  const allowedLinks = NAV_LINKS.filter(
+    (link) => link.roles.includes(role) || role === "GERENCIA"
+  );
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 font-sans selection:bg-blue-500 selection:text-white">
-      {isLoggedAny && (
-        <header className="fixed top-0 left-0 right-0 h-16 bg-slate-900/90 backdrop-blur-md border-b border-slate-700 z-[1000] px-4 shadow-lg">
-          <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
-            <div
-              className="flex items-center gap-3 cursor-pointer"
-              onClick={() => navigate("/")}
+    <div className="flex h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden selection:bg-blue-500 selection:text-white">
+      {/* 1. SIDEBAR DE ESCRITORIO (Fijo) */}
+      <DesktopSidebar
+        links={allowedLinks}
+        isCollapsed={isCollapsed}
+        setIsCollapsed={setIsCollapsed}
+        handleLogout={handleLogout}
+        userBadge={userBadge}
+      />
+
+      {/* 2. MENÚ MÓVIL (Off-canvas) */}
+      <MobileMenu
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        links={allowedLinks}
+        handleLogout={handleLogout}
+        userBadge={userBadge}
+      />
+
+      {/* 3. ÁREA PRINCIPAL */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-950 relative">
+        {/* HEADER MÓVIL (Solo visible en LG y menor) */}
+        <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 lg:hidden shrink-0 z-30 shadow-md">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 text-gray-300 hover:text-white bg-slate-800 rounded-lg border border-slate-700 active:bg-slate-700"
             >
-              <div className="bg-gradient-to-br from-blue-600 to-purple-600 p-2 rounded-lg">
-                <FaIndustry className="text-white text-lg" />
-              </div>
-              <span className="text-xl font-bold text-white tracking-tight hidden md:block">
-                Gestión MRP
-              </span>
-            </div>
-
-            <nav className="hidden lg:flex items-center gap-1 bg-slate-800/50 p-1 rounded-full border border-slate-700/50 ml-4">
-              {navLinks
-                .filter((l) => l.show)
-                .map((link) => (
-                  <button
-                    key={link.path}
-                    onClick={() => navigate(link.path)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                      page === link.path
-                        ? "bg-blue-600 text-white shadow-md"
-                        : "text-gray-400 hover:text-white hover:bg-slate-700"
-                    }`}
-                  >
-                    {link.icon}
-                    <span>{link.label}</span>
-                  </button>
-                ))}
-            </nav>
-
-            <div className="flex items-center gap-3">
-              {renderUserBadge()}
-              <button
-                className="lg:hidden p-2 text-gray-300 hover:text-white"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              >
-                {mobileMenuOpen ? <FaTimes size={24} /> : <FaBars size={24} />}
-              </button>
-            </div>
+              <FaBars size={20} />
+            </button>
+            <span className="font-bold text-white text-lg">Gestión MRP</span>
+          </div>
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border border-slate-600 bg-slate-800 ${userBadge.color}`}
+          >
+            {userBadge.icon}
           </div>
         </header>
-      )}
 
-      {mobileMenuOpen && isLoggedAny && (
-        <div className="fixed inset-0 z-[900] bg-slate-900/95 backdrop-blur-xl pt-20 px-6 animate-in slide-in-from-top-10 duration-200 lg:hidden">
-          <div className="flex flex-col gap-2">
-            {(() => {
-              const badge = renderMobileBadge();
-              return (
-                <div
-                  className={`flex items-center justify-between p-4 rounded-xl border mb-4 ${badge.style}`}
-                >
-                  <div className="flex items-center gap-3">
-                    {badge.icon}
-                    <span className="font-bold">{badge.text}</span>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="text-sm underline opacity-80"
-                  >
-                    Cerrar Sesión
-                  </button>
-                </div>
-              );
-            })()}
-
-            {navLinks
-              .filter((l) => l.show)
-              .map((link) => (
-                <button
-                  key={link.path}
-                  onClick={() => navigate(link.path)}
-                  className={`flex items-center gap-4 p-4 rounded-xl text-lg font-medium transition-all ${
-                    page === link.path
-                      ? "bg-slate-800 text-white border border-slate-600"
-                      : "text-gray-400 hover:bg-slate-800/50 hover:text-white"
-                  }`}
-                >
-                  <span className="text-xl">{link.icon}</span>
-                  {link.label}
-                </button>
-              ))}
-          </div>
-        </div>
-      )}
-
-      <div
-        className={`px-4 md:px-8 max-w-7xl mx-auto ${
-          isLoggedAny ? "pt-24 pb-10" : ""
-        }`}
-      >
-        {component}
+        {/* CONTENIDO SCROLLABLE */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth custom-scrollbar">
+          <div className="max-w-[1600px] mx-auto">{children}</div>
+        </main>
       </div>
-
-      {/* CHATBOT GERENCIAL */}
-      {isLoggedAny && sessionStorage.getItem("role") === "GERENCIA" && (
-        <ChatGerencia />
-      )}
     </div>
+  );
+};
+
+// --- APP ---
+export default function App() {
+  const isAuthGerencia = sessionStorage.getItem("role") === "GERENCIA";
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+
+        {/* Rutas Privadas */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Dashboard />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rutas Específicas */}
+        <Route
+          path="/panel-control"
+          element={
+            <ProtectedRoute allowedRoles={["PANEL", "GERENCIA"]}>
+              <Layout>
+                <PanelControl />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/registrar-produccion"
+          element={
+            <ProtectedRoute allowedRoles={["PANEL", "GERENCIA", "OPERARIO"]}>
+              <Layout>
+                <RegistrarProduccionPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recepcion"
+          element={
+            <ProtectedRoute allowedRoles={["DEPOSITO", "GERENCIA"]}>
+              <Layout>
+                <RecepcionPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        {/* MODIFICADO: MANTENIMIENTO ACCESIBLE A OPERARIOS Y PANEL */}
+        <Route
+          path="/mantenimiento"
+          element={
+            <ProtectedRoute
+              allowedRoles={["MANTENIMIENTO", "GERENCIA", "OPERARIO", "PANEL"]}
+            >
+              <Layout>
+                <MantenimientoPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/planificacion"
+          element={
+            <ProtectedRoute allowedRoles={["PANEL", "GERENCIA"]}>
+              <Layout>
+                <PlanificacionPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/operarios"
+          element={
+            <ProtectedRoute allowedRoles={["PANEL", "GERENCIA"]}>
+              <Layout>
+                <OperariosPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Rutas Gerencia */}
+        <Route
+          path="/analisis-pedidos"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <AnalisisPedidos />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/logistica"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <LogisticaPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/hoja-de-ruta"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <HojaDeRutaPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/calendario"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <CentroComando />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ingenieria"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <IngenieriaProductos />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/compras"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <SolicitudesPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+
+      {isAuthGerencia && <ChatGerencia />}
+    </BrowserRouter>
   );
 }

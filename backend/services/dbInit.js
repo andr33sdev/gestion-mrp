@@ -275,22 +275,31 @@ async function inicializarTablas() {
   await client.query(`
       CREATE TABLE IF NOT EXISTS tickets_mantenimiento (
         id SERIAL PRIMARY KEY,
-        maquina VARCHAR(100) NOT NULL, -- Ej: 'Horno 1', 'Extrusora 2'
-        titulo VARCHAR(255) NOT NULL, -- Ej: 'Fuga de aceite'
+        maquina VARCHAR(100) NOT NULL,
+        titulo VARCHAR(255) NOT NULL,
         descripcion TEXT,
-        prioridad VARCHAR(20) DEFAULT 'MEDIA', -- 'ALTA', 'MEDIA', 'BAJA'
-        tipo VARCHAR(20) DEFAULT 'CORRECTIVO', -- 'CORRECTIVO' (Rotura), 'PREVENTIVO'
-        estado VARCHAR(20) DEFAULT 'PENDIENTE', -- 'PENDIENTE', 'EN_REVISION', 'SOLUCIONADO'
-        
+        prioridad VARCHAR(20) DEFAULT 'MEDIA',
+        tipo VARCHAR(20) DEFAULT 'CORRECTIVO',
+        estado VARCHAR(20) DEFAULT 'PENDIENTE',
         creado_por VARCHAR(100),
-        asignado_a VARCHAR(100), -- El técnico
-        solucion_notas TEXT, -- Cómo lo arregló
-        
+        asignado_a VARCHAR(100),
+        solucion_notas TEXT,
         fecha_creacion TIMESTAMP DEFAULT NOW(),
-        fecha_inicio_revision TIMESTAMP, -- Cuando pone "Atender"
-        fecha_solucion TIMESTAMP -- Cuando pone "Cerrar"
+        fecha_inicio_revision TIMESTAMP,
+        fecha_solucion TIMESTAMP,
+        alerta_24h_enviada BOOLEAN DEFAULT FALSE -- <--- NUEVO CAMPO
       );
     `);
+
+  // MIGRACIÓN AUTOMÁTICA: Si la tabla ya existe, agregamos la columna
+  try {
+    await client.query(
+      "ALTER TABLE tickets_mantenimiento ADD COLUMN IF NOT EXISTS alerta_24h_enviada BOOLEAN DEFAULT FALSE;"
+    );
+  } catch (e) {
+    // Ignorar si ya existe
+  }
+  console.log("✔ Tablas verificadas y actualizadas correctamente.");
 }
 
 module.exports = { inicializarTablas };

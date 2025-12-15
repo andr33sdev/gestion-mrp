@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require("../db");
 const { protect, restrictTo } = require("../middleware/auth");
 const { enviarAlertaMRP } = require("../services/telegramBotListener");
+const { getPlanById } = require("../controllers/planificacionController");
 
 router.use(protect);
 
@@ -23,47 +24,7 @@ router.get("/abiertos", async (req, res) => {
 });
 
 // GET DETALLE DEL PLAN (CORREGIDO)
-router.get("/:id", async (req, res) => {
-  const { id } = req.params;
-  const planRes = await db.query(
-    "SELECT * FROM planes_produccion WHERE id=$1",
-    [id]
-  );
-  if (planRes.rowCount === 0) return res.status(404).send("No existe");
-  const plan = planRes.rows[0];
-
-  // AQUI AGREGAMOS fecha y ritmo a la consulta
-  const itemsRes = await db.query(
-    `
-        SELECT 
-            pi.id as plan_item_id, 
-            pi.cantidad_requerida,
-            pi.fecha_inicio_estimada, 
-            pi.ritmo_turno,
-            COALESCE((SELECT SUM(rp.cantidad_ok) FROM registros_produccion rp WHERE rp.plan_item_id = pi.id), 0) as cantidad_producida,
-            s.id, s.nombre, s.codigo
-        FROM planes_items pi 
-        JOIN semielaborados s ON pi.semielaborado_id = s.id 
-        WHERE pi.plan_id = $1
-        ORDER BY pi.id ASC
-    `,
-    [id]
-  );
-
-  plan.items = itemsRes.rows.map((i) => ({
-    ...i,
-    semielaborado: { id: i.id, nombre: i.nombre, codigo: i.codigo },
-    cantidad: Number(i.cantidad_requerida),
-    producido: Number(i.cantidad_producida),
-    // Aseguramos valores por defecto
-    ritmo_turno: Number(i.ritmo_turno) || 50,
-    fecha_inicio_estimada: i.fecha_inicio_estimada
-      ? new Date(i.fecha_inicio_estimada).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0],
-  }));
-
-  res.json(plan);
-});
+router.get("/:id", getPlanById);
 
 router.get("/:id/operarios", async (req, res) => {
   const { rows } = await db.query(

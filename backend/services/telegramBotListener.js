@@ -7,10 +7,14 @@ const db = require("../db");
 // --- 1. CONFIGURACIÓN ---
 const tokenAdmin = process.env.TELEGRAM_BOT_TOKEN;
 const tokenPedidos = process.env.TELEGRAM_BOT_TOKEN_PEDIDOS;
+const tokenMantenimiento = process.env.TELEGRAM_BOT_TOKEN_MANTENIMIENTO; // <--- NUEVO
+
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_ID;
+const MANTENIMIENTO_CHAT_ID = process.env.TELEGRAM_CHAT_ID_MANTENIMIENTO; // <--- NUEVO
 
 let botAdminInstance = null;
 let botPedidosInstance = null;
+let botMantenimientoInstance = null; // <--- NUEVO
 
 const colaDePedidos = [];
 let procesandoCola = false;
@@ -124,6 +128,20 @@ function iniciarBotReceptor() {
     botPedidosInstance = new TelegramBot(tokenPedidos, { polling: true });
     configurarBotPedidos(botPedidosInstance);
   }
+  // --- INICIALIZAR BOT MANTENIMIENTO ---
+  if (tokenMantenimiento && !botMantenimientoInstance) {
+    botMantenimientoInstance = new TelegramBot(tokenMantenimiento, {
+      polling: true,
+    });
+    console.log("🔧 Bot Mantenimiento Activo");
+    // Listener simple para obtener el ID del grupo si escriben /id
+    botMantenimientoInstance.onText(/\/id/, (msg) => {
+      botMantenimientoInstance.sendMessage(
+        msg.chat.id,
+        `Chat ID: ${msg.chat.id}`
+      );
+    });
+  }
 }
 
 // ========================================================
@@ -161,14 +179,11 @@ function configurarBotPedidos(bot) {
         bot.sendChatAction(chatId, "typing");
 
         // --- CONSULTA CORREGIDA ---
-        // 1. Quitamos 'OR op LIKE...' para que NO busque en número de OP interna
-        // 2. Usamos '=' en vez de 'LIKE' para que sea exacto (412 no trae 10412)
-        // 3. Quitamos los '%' del parámetro
         const res = await db.query(
           `SELECT * FROM pedidos_clientes 
            WHERE oc_cliente = $1 
            ORDER BY id DESC`,
-          [ordenCompra] // Sin los signos %
+          [ordenCompra]
         );
 
         let encontrados = res.rows;
@@ -247,7 +262,78 @@ function configurarBotAdmin(bot) {
   });
 }
 
-// ALERTAS
+// ========================================================
+//  FUNCIONES MANTENIMIENTO
+// ========================================================
+
+// 1. Notificar Creación Inmediata
+async function notificarNuevoTicketMantenimiento(ticket) {
+  if (!botMantenimientoInstance || !MANTENIMIENTO_CHAT_ID) return;
+
+  const prioridadIcon =
+    ticket.prioridad === "ALTA"
+      ? "🔴"
+      : ticket.prioridad === "MEDIA"
+      ? "🟡"
+      : "🔵";
+
+  const msg =
+    `🔧 <b>NUEVO REPORTE DE FALLA</b>\n\n` +
+    `🏭 <b>Máquina:</b> ${ticket.maquina}\n` +
+    `${prioridadIcon} <b>Prioridad:</b> ${ticket.prioridad}\n` +
+    `📝 <b>Problema:</b> ${ticket.titulo}\n` +
+    `👤 <b>Reportó:</b> ${ticket.creado_por || "Anónimo"}\n` +
+    `📅 <i>${new Date().toLocaleString("es-AR")}</i>`;
+
+  try {
+    await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, {
+      parse_mode: "HTML",
+    });
+  } catch (e) {
+    console.error("Error Telegram Mant:", e.message);
+  }
+}
+
+// 2. Chequeo de 24 Horas
+async function checkAlertasMantenimiento() {
+  if (!botMantenimientoInstance || !MANTENIMIENTO_CHAT_ID) return;
+
+  try {
+    // Buscar tickets no resueltos, con más de 24h de antigüedad y que NO hayan sido avisados aún
+    const query = `
+        SELECT * FROM tickets_mantenimiento 
+        WHERE estado != 'SOLUCIONADO'
+          AND fecha_creacion < NOW() - INTERVAL '24 hours' 
+          AND (alerta_24h_enviada = FALSE OR alerta_24h_enviada IS NULL)
+    `;
+    const { rows } = await db.query(query);
+
+    for (const t of rows) {
+      const msg =
+        `🚨 <b>ALERTA: TICKET +24H</b> 🚨\n\n` +
+        `El reporte #${t.id} sigue sin solución.\n` +
+        `🏭 <b>Máquina:</b> ${t.maquina}\n` +
+        `📝 <b>Título:</b> ${t.titulo}\n\n` +
+        `<i>Por favor, actualizar estado o resolver.</i>`;
+
+      await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, {
+        parse_mode: "HTML",
+      });
+
+      // Marcar como avisado para no spamear
+      await db.query(
+        "UPDATE tickets_mantenimiento SET alerta_24h_enviada = TRUE WHERE id = $1",
+        [t.id]
+      );
+    }
+  } catch (e) {
+    console.error("Error checkAlertasMantenimiento:", e.message);
+  }
+}
+
+// ========================================================
+//  ALERTAS GENERALES
+// ========================================================
 async function enviarAlertaStock(itemsCriticos) {
   if (!botAdminInstance || !ADMIN_CHAT_ID) return;
   try {
@@ -259,6 +345,7 @@ async function enviarAlertaStock(itemsCriticos) {
     console.error(e);
   }
 }
+
 async function enviarAlertaMRP(plan, items) {
   if (!botAdminInstance || !ADMIN_CHAT_ID) return;
   try {
@@ -280,4 +367,7 @@ module.exports = {
   enviarAlertaStock,
   enviarAlertaMRP,
   getBot,
+  // Nuevas funciones exportadas
+  notificarNuevoTicketMantenimiento,
+  checkAlertasMantenimiento,
 };

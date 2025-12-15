@@ -30,7 +30,7 @@ router.get("/registros", async (req, res) => {
 // Nota: Si el Dashboard es público, 'registros' no debería llevar 'protect'.
 router.get("/pedidos-analisis", async (req, res) => {
     try {
-        const { rows } = await db.query("SELECT * FROM pedidos ORDER BY fecha DESC");
+        const { rows } = await db.query("SELECT * FROM pedidos_clientes ORDER BY fecha DESC");
         res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });

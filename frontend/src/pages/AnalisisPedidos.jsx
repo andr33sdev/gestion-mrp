@@ -9,6 +9,9 @@ import {
   FaExclamationTriangle,
   FaRocket,
   FaHourglassHalf,
+  FaArrowUp,
+  FaArrowDown,
+  FaEquals,
 } from "react-icons/fa";
 import {
   BarChart,
@@ -27,7 +30,6 @@ import SearchBar from "../components/analisis/SearchBar";
 import ConsumptionView from "../components/analisis/ConsumptionView";
 import DetailModal from "../components/analisis/DetailModal";
 import TendenciasView from "../components/analisis/TendenciasView";
-import InsumosRunway from "../components/analisis/InsumosRunway";
 
 const RECETAS_ALL_URL = `${API_BASE_URL}/ingenieria/recetas/all`;
 const STOCK_SEMIS_URL = `${API_BASE_URL}/ingenieria/semielaborados`;
@@ -135,7 +137,9 @@ export default function AnalisisPedidos() {
     const activeClients = new Set(),
       allClients = new Set(),
       allModels = new Set();
-    const monthMap = {};
+
+    // --- LÓGICA PEDIDOS (OPs) ---
+    const monthOpsMap = {};
     const monthNames = [
       "Ene",
       "Feb",
@@ -150,44 +154,57 @@ export default function AnalisisPedidos() {
       "Nov",
       "Dic",
     ];
-    monthNames.forEach((m) => (monthMap[m] = 0));
+    monthNames.forEach((m) => (monthOpsMap[m] = new Set()));
+
+    // Set global de OPs para el promedio anual
+    const uniqueOpsGlobal = new Set();
 
     const consumoTotal2025 = {};
     const consumoUltimos6Meses = {};
     const missingRecipesMap = {};
 
+    let totalUnidadesVendidas = 0;
+
     datosPedidos.forEach((row) => {
-      const dStr = row.FECHA || row.Fecha || row.fecha;
+      const dStr = row.fecha || row.FECHA || row.Fecha;
       if (!dStr) return;
       const d = new Date(dStr);
       if (isNaN(d.getTime())) return;
 
-      const estado = (row.ESTADO || row.Estado || row.estado || "")
-        .toString()
-        .toUpperCase();
+      const estado = (row.estado || row.ESTADO || "").toString().toUpperCase();
       if (estado.includes("CANCELADO")) return;
 
-      const cantVendida = Number(
-        row.CANTIDAD || row.Cantidad || row.cantidad || 1
-      );
-      const prodName = row.MODELO || row.Modelo || row.modelo || "Desconocido";
-      const cliName =
-        row.CLIENTE || row.Cliente || row.cliente || "Desconocido";
-      const detalles = (row.DETALLES || row.Detalles || row.detalles || "")
+      const cantVendida = Number(row.cantidad || row.CANTIDAD || 1);
+      const prodName = row.modelo || row.MODELO || "Desconocido";
+      const cliName = row.cliente || row.CLIENTE || "Desconocido";
+      const detalles = (row.detalles || row.DETALLES || "")
         .toString()
         .toLowerCase();
-      const oc = row.OC || row.oc;
+      const oc = row.oc_cliente || row.OC || row.oc;
+      const op = row.op || row.OP;
 
       const prodKey = normalizeKey(prodName);
 
       if (d.getFullYear() >= 2025) {
-        const isML = detalles.includes("mercadolibre");
-        if (oc) {
+        const isML =
+          detalles.includes("mercadolibre") ||
+          cliName.toLowerCase().includes("mercadolibre");
+        if (oc && oc !== "-" && oc !== "0") {
           uniqueOrders.add(oc);
           if (isML) uniqueMLOrders.add(oc);
         }
-        if (monthMap[monthNames[d.getMonth()]] !== undefined)
-          monthMap[monthNames[d.getMonth()]] += cantVendida;
+
+        // --- LÓGICA MENSUAL (Pedidos) ---
+        const mName = monthNames[d.getMonth()];
+        if (monthOpsMap[mName]) {
+          totalUnidadesVendidas += cantVendida;
+
+          // Si hay OP válida, la agregamos al set del mes y al global para contar pedidos únicos
+          if (op && op !== "-" && op !== "0") {
+            monthOpsMap[mName].add(op);
+            uniqueOpsGlobal.add(op);
+          }
+        }
 
         if (cliName !== "Desconocido") {
           const cliKey = normalizeKey(cliName);
@@ -264,9 +281,12 @@ export default function AnalisisPedidos() {
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
         .slice(0, n);
+
+    // Gráfico Evolución: Usamos .size del Set de OPs
     const salesByMonth = monthNames
       .slice(0, currentMonth + 1)
-      .map((m) => ({ mes: m, ventas: monthMap[m] }));
+      .map((m) => ({ mes: m, ventas: monthOpsMap[m].size }));
+
     const recordMonth = [...salesByMonth].sort(
       (a, b) => b.ventas - a.ventas
     )[0];
@@ -322,6 +342,8 @@ export default function AnalisisPedidos() {
     return {
       salesByMonth,
       totalOrders: uniqueOrders.size,
+      totalUnits: totalUnidadesVendidas,
+      totalOps: uniqueOpsGlobal.size,
       mlOrders: uniqueMLOrders.size,
       recordMonthName: recordMonth?.mes || "-",
       raw: filteredRaw,
@@ -367,8 +389,8 @@ export default function AnalisisPedidos() {
     const rows = analysisData.raw.filter(
       (r) =>
         (modoVista === "PRODUCTOS"
-          ? r.MODELO || r.Modelo || r.modelo
-          : r.CLIENTE || r.Cliente || r.cliente) === name
+          ? r.modelo || r.MODELO
+          : r.cliente || r.CLIENTE) === name
     );
     let total = 0;
     const pieMap = {};
@@ -390,31 +412,28 @@ export default function AnalisisPedidos() {
     monthNames.forEach((m) => (prodMonthMap[m] = 0));
     const history = rows
       .sort(
-        (a, b) =>
-          new Date(b.FECHA || b.Fecha || b.fecha) -
-          new Date(a.FECHA || a.Fecha || a.fecha)
+        (a, b) => new Date(b.fecha || b.FECHA) - new Date(a.fecha || a.FECHA)
       )
       .map((r) => {
-        const cant = Number(r.CANTIDAD || r.Cantidad || r.cantidad || 1);
+        const cant = Number(r.cantidad || r.CANTIDAD || 1);
         total += cant;
         const key =
           modoVista === "CLIENTES"
-            ? r.MODELO || r.Modelo || r.modelo || ""
-            : r.CLIENTE || r.Cliente || r.cliente || "";
+            ? r.modelo || r.MODELO || ""
+            : r.cliente || r.CLIENTE || "";
         pieMap[key] = (pieMap[key] || 0) + cant;
-        const d = new Date(r.FECHA || r.Fecha || r.fecha);
+        const d = new Date(r.fecha || r.FECHA);
         if (!isNaN(d)) {
           const mName = monthNames[d.getMonth()];
           if (prodMonthMap[mName] !== undefined) prodMonthMap[mName] += cant;
         }
         return {
-          fecha: new Date(r.FECHA || r.Fecha || r.fecha).toLocaleDateString(
-            "es-AR"
-          ),
+          fecha: new Date(r.fecha || r.FECHA).toLocaleDateString("es-AR"),
           col: key,
           cant,
-          oc: r.OC || r.oc || "-",
-          isML: (r.DETALLES || r.Detalles || r.detalles || "")
+          oc: r.oc_cliente || r.OC || "-",
+          op: r.op || r.OP || "-",
+          isML: (r.detalles || r.DETALLES || "")
             .toString()
             .toLowerCase()
             .includes("mercadolibre"),
@@ -478,6 +497,25 @@ export default function AnalisisPedidos() {
   const data = isCli ? analysisData.cli : analysisData.prod;
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A28DFF"];
 
+  // --- CÁLCULOS KPI NUEVOS (Promedio y Tendencia en PEDIDOS) ---
+  const lastMonthData = analysisData.salesByMonth[
+    analysisData.salesByMonth.length - 1
+  ] || { ventas: 0, mes: "-" };
+  const prevMonthData = analysisData.salesByMonth[
+    analysisData.salesByMonth.length - 2
+  ] || { ventas: 0 };
+  const mesesTranscurridos = Math.max(1, analysisData.salesByMonth.length);
+  // Promedio mensual de Pedidos
+  const promedioMensual = Math.round(
+    analysisData.totalOps / mesesTranscurridos
+  );
+
+  const trendDiff = lastMonthData.ventas - prevMonthData.ventas;
+  const trendPercent =
+    prevMonthData.ventas > 0
+      ? ((trendDiff / prevMonthData.ventas) * 100).toFixed(0)
+      : 0;
+
   // Lógica Modal Detalle
   let modalHistory = [],
     totalPages = 0,
@@ -495,7 +533,6 @@ export default function AnalisisPedidos() {
       (modalPage - 1) * MODAL_ITEMS_PER_PAGE,
       modalPage * MODAL_ITEMS_PER_PAGE
     );
-    // ...chart logic same as before...
     const monthNames = [
       "Ene",
       "Feb",
@@ -528,214 +565,240 @@ export default function AnalisisPedidos() {
   }
 
   return (
-    <div className="animate-in fade-in duration-500 relative">
-      {/* --- TABS DE NAVEGACIÓN PRINCIPAL --- */}
-      <div className="flex items-center border-b border-slate-700 mb-6 gap-2">
-        <button
-          onClick={() => setView("DASHBOARD")}
-          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
-            view === "DASHBOARD"
-              ? "text-white border-b-2 border-blue-500 bg-slate-800/50"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          <FaChartLine /> Dashboard
-        </button>
-        <button
-          onClick={() => setView("CONSUMO")}
-          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
-            view === "CONSUMO"
-              ? "text-white border-b-2 border-purple-500 bg-slate-800/50"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          <FaCogs /> Consumo
-        </button>
-        <button
-          onClick={() => setView("TENDENCIAS")}
-          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
-            view === "TENDENCIAS"
-              ? "text-white border-b-2 border-orange-500 bg-slate-800/50"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          <FaRocket className="text-orange-500" /> Tendencias & IA
-        </button>
-        <button
-          onClick={() => setView("RUNWAY")}
-          className={`py-3 px-4 font-bold flex items-center gap-2 text-sm transition-colors ${
-            view === "RUNWAY"
-              ? "text-white border-b-2 border-amber-500 bg-slate-800/50"
-              : "text-gray-500 hover:text-gray-300"
-          }`}
-        >
-          <FaHourglassHalf className="text-amber-500" /> Reloj de Insumos
-        </button>
+    <div className="animate-in fade-in duration-500 relative pb-20">
+      {/* 1. TABS DESLIZABLES (Estética Limpia para Móvil y Desktop) */}
+      <div className="mb-6 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-2 min-w-max pb-1 border-b border-slate-700">
+          {[
+            { id: "DASHBOARD", icon: <FaChartLine />, label: "Dashboard" },
+            { id: "CONSUMO", icon: <FaCogs />, label: "Consumo" },
+            { id: "TENDENCIAS", icon: <FaRocket />, label: "Tendencias" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setView(tab.id)}
+              className={`py-3 px-6 rounded-t-lg font-bold flex items-center gap-2 text-sm transition-all border-b-2 ${
+                view === tab.id
+                  ? "text-blue-400 border-blue-400 bg-slate-800/30"
+                  : "text-gray-400 border-transparent hover:text-white hover:bg-slate-800/20"
+              }`}
+            >
+              {tab.icon} {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* --- VISTA 1: DASHBOARD --- */}
       {view === "DASHBOARD" && (
         <>
-          <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-6">
-            <h1 className="text-4xl font-bold flex items-center gap-3">
-              {isCli ? (
-                <FaUsers className="text-purple-400" />
-              ) : (
-                <FaCubes className="text-blue-400" />
-              )}{" "}
-              Análisis 2025
-            </h1>
-            <div className="flex gap-4 items-center">
-              <div className="bg-slate-800 p-1 rounded-lg border border-slate-600">
+          {/* HEADER Y BUSCADOR COMPACTO */}
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+            <div>
+              <h1 className="text-2xl md:text-4xl font-bold flex items-center gap-3 text-white">
+                {isCli ? (
+                  <FaUsers className="text-purple-400" />
+                ) : (
+                  <FaCubes className="text-blue-400" />
+                )}
+                Análisis 2025
+              </h1>
+              <p className="text-xs md:text-sm text-gray-400 mt-1">
+                Visión general de rendimiento
+              </p>
+            </div>
+
+            <div className="w-full xl:w-auto flex flex-col md:flex-row gap-3">
+              {/* Toggle Productos/Clientes */}
+              <div className="bg-slate-800 p-1 rounded-xl border border-slate-600 flex shadow-sm">
                 <button
                   onClick={() => setModoVista("PRODUCTOS")}
-                  className={`px-4 py-2 rounded font-bold ${
-                    !isCli ? "bg-blue-600 text-white" : "text-gray-400"
+                  className={`flex-1 px-4 py-2 rounded-lg font-bold text-xs md:text-sm transition-all ${
+                    !isCli ? "bg-blue-600 text-white shadow" : "text-gray-400"
                   }`}
                 >
                   PRODUCTOS
                 </button>
                 <button
                   onClick={() => setModoVista("CLIENTES")}
-                  className={`px-4 py-2 rounded font-bold ${
-                    isCli ? "bg-purple-600 text-white" : "text-gray-400"
+                  className={`flex-1 px-4 py-2 rounded-lg font-bold text-xs md:text-sm transition-all ${
+                    isCli ? "bg-purple-600 text-white shadow" : "text-gray-400"
                   }`}
                 >
                   CLIENTES
                 </button>
               </div>
-              <SearchBar
-                busqueda={busqueda}
-                onSearch={handleSearch}
-                mostrarSugerencias={mostrarSugerencias}
-                sugerencias={sugerencias}
-                onSelect={selectItem}
-                isCli={isCli}
-              />
+
+              {/* Buscador Full Width en Móvil */}
+              <div className="flex-1">
+                <SearchBar
+                  busqueda={busqueda}
+                  onSearch={handleSearch}
+                  mostrarSugerencias={mostrarSugerencias}
+                  sugerencias={sugerencias}
+                  onSelect={selectItem}
+                  isCli={isCli}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
+          {/* GRID: 12 columnas en escritorio */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 mb-12">
+            {/* KPI 1 - Promedio Mensual (2 columnas desktop) */}
             <div
-              className={`bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 flex flex-col justify-center ${
+              className={`bg-slate-800 p-6 rounded-xl border-l-4 shadow-lg flex flex-col justify-center lg:col-span-2 h-full ${
                 isCli ? "border-purple-500" : "border-blue-500"
               }`}
             >
-              <h3 className="text-gray-400 text-xs font-bold mb-2">
-                {isCli ? "Clientes Activos" : "Total Pedidos"}
+              <h3 className="text-gray-400 text-sm font-bold uppercase mb-2">
+                {isCli ? "Clientes Activos" : "Promedio Mensual"}
               </h3>
               <p
-                className={`text-4xl font-bold ${
+                className={`text-4xl md:text-5xl font-bold ${
                   isCli ? "text-purple-400" : "text-blue-400"
                 }`}
               >
-                {isCli ? data.active : analysisData.totalOrders}
+                {isCli ? data.active : promedioMensual}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
-                {isCli ? "Compras directas" : "OCs Únicos"}
+              <p className="text-sm text-gray-500 mt-2">
+                {isCli ? "Compras directas" : "Pedidos / Mes"}
               </p>
             </div>
-            <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-yellow-500 flex flex-col justify-center">
-              <h3 className="text-gray-400 text-xs font-bold mb-2">
-                {isCli ? "Cliente Top" : "MercadoLibre"}
+
+            {/* KPI 2 - Pedidos Actuales (2 columnas desktop) */}
+            <div className="bg-slate-800 p-6 rounded-xl border-l-4 border-yellow-500 shadow-lg flex flex-col justify-center lg:col-span-2 h-full">
+              <h3 className="text-gray-400 text-sm font-bold uppercase mb-2">
+                {isCli ? "Cliente Top" : `Pedidos ${lastMonthData.mes}`}
               </h3>
               {isCli ? (
                 <>
-                  <p className="text-lg font-bold text-yellow-400 truncate">
+                  <p className="text-2xl font-bold text-yellow-400 truncate">
                     {data.y[0]?.name}
                   </p>
-                  <p className="text-xs text-gray-500">{data.y[0]?.value} u.</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {data.y[0]?.value} u.
+                  </p>
                 </>
               ) : (
                 <>
-                  <p className="text-4xl font-bold text-yellow-400">
-                    {analysisData.mlOrders}
+                  <p className="text-4xl md:text-5xl font-bold text-yellow-400">
+                    {lastMonthData.ventas}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    {(
-                      (analysisData.mlOrders / analysisData.totalOrders) *
-                      100
-                    ).toFixed(0)}
-                    %
-                  </p>
+                  <div
+                    className={`text-sm font-bold mt-2 flex items-center gap-2 ${
+                      trendDiff > 0
+                        ? "text-green-400"
+                        : trendDiff < 0
+                        ? "text-red-400"
+                        : "text-gray-400"
+                    }`}
+                  >
+                    {trendDiff > 0 ? <FaArrowUp /> : <FaArrowDown />}
+                    {trendPercent}% vs mes anterior
+                  </div>
                 </>
               )}
             </div>
-            <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-green-500">
-              <h3 className="text-gray-400 text-xs font-bold mb-3 text-center">
-                Top 5 Mes
+
+            {/* List 1 - Top 5 Mes (3 columnas desktop) */}
+            <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-green-500 shadow-lg lg:col-span-3 h-full">
+              <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
+                Top 5 Mes Actual
               </h3>
-              <ul className="space-y-1">
-                {data.m.map((p, i) => (
+              <ul className="space-y-3">
+                {data.m.slice(0, 5).map((p, i) => (
                   <li
                     key={i}
-                    className="flex justify-between text-sm border-b border-slate-700"
+                    className="flex justify-between text-sm border-b border-slate-700/50 pb-2 last:border-0"
                   >
-                    <span className="truncate w-32">{p.name}</span>
-                    <span className="text-green-400 font-bold">{p.value}</span>
+                    <span className="truncate flex-1 text-gray-300 font-medium max-w-[200px]">
+                      {p.name}
+                    </span>
+                    <span className="text-green-400 font-mono font-bold ml-2">
+                      {p.value}
+                    </span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="bg-slate-800 p-4 rounded-xl shadow-lg border-t-4 border-teal-400">
-              <h3 className="text-gray-400 text-xs font-bold mb-3 text-center">
+
+            {/* List 2 - Top 5 Semana (3 columnas desktop) */}
+            <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-teal-500 shadow-lg lg:col-span-3 h-full">
+              <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
                 Top 5 Semana
               </h3>
               {data.w.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center">
-                  <p className="text-gray-500 text-xs italic text-center px-2">
-                    Aún no hay pedidos registrados esta semana.
-                  </p>
+                <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic text-center">
+                  Sin actividad reciente
                 </div>
               ) : (
-                <ul className="space-y-1">
-                  {data.w.map((p, i) => (
+                <ul className="space-y-3">
+                  {data.w.slice(0, 5).map((p, i) => (
                     <li
                       key={i}
-                      className="flex justify-between text-sm border-b border-slate-700"
+                      className="flex justify-between text-sm border-b border-slate-700/50 pb-2 last:border-0"
                     >
-                      <span className="truncate w-32">{p.name}</span>
-                      <span className="text-teal-400 font-bold">{p.value}</span>
+                      <span className="truncate flex-1 text-gray-300 font-medium max-w-[200px]">
+                        {p.name}
+                      </span>
+                      <span className="text-teal-400 font-mono font-bold ml-2">
+                        {p.value}
+                      </span>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-            <div className="bg-slate-800 p-5 rounded-xl shadow-lg text-center border-t-4 border-purple-500 flex flex-col justify-center">
-              <h3 className="text-gray-400 text-xs font-bold mb-2">
-                Mes Récord
+
+            {/* KPI 3 - Récord (2 columnas desktop) */}
+            <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-purple-500 shadow-lg flex flex-col justify-center items-center lg:col-span-2 h-full">
+              <h3 className="text-gray-400 text-xs font-bold mb-2 uppercase text-center">
+                Mes Récord (Pedidos)
               </h3>
-              <p className="text-3xl font-bold text-purple-400">
+              <p className="text-4xl font-black text-purple-400">
                 {analysisData.recordMonthName}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 mb-12">
-            <div className="bg-slate-800 p-6 rounded-xl shadow-lg h-[400px]">
-              <h3 className="text-xl font-bold mb-4 text-gray-200">
-                Top 10 Anual
+          {/* GRÁFICOS (Altura ajustada para móvil) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+            <div className="bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 h-[350px] md:h-[450px]">
+              <h3 className="text-lg font-bold mb-6 text-gray-200">
+                Top 10 Anual (Unidades)
               </h3>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.y} layout="vertical" margin={{ left: 40 }}>
+                <BarChart
+                  data={data.y}
+                  layout="vertical"
+                  margin={{ left: 0, right: 10, bottom: 20 }}
+                >
                   <CartesianGrid
                     strokeOpacity={0.1}
                     horizontal
                     vertical={false}
                   />
-                  <XAxis type="number" stroke="#94a3b8" />
+                  <XAxis type="number" hide />
                   <YAxis
                     dataKey="name"
                     type="category"
                     stroke="#94a3b8"
-                    width={120}
-                    style={{ fontSize: "11px" }}
+                    width={100}
+                    style={{ fontSize: "11px", fontWeight: "bold" }}
                   />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b" }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#1e293b",
+                      fontSize: "12px",
+                      border: "none",
+                      borderRadius: "8px",
+                    }}
+                  />
                   <Bar
                     dataKey="value"
                     fill={isCli ? "#a855f7" : "#3b82f6"}
                     radius={[0, 4, 4, 0]}
+                    barSize={20}
                   >
                     {data.y.map((e, i) => (
                       <Cell
@@ -749,22 +812,46 @@ export default function AnalisisPedidos() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="bg-slate-800 p-6 rounded-xl shadow-lg h-[400px]">
-              <h3 className="text-xl font-bold mb-4 text-gray-200">
-                Evolución Mensual
+
+            <div className="bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 h-[350px] md:h-[450px]">
+              <h3 className="text-lg font-bold mb-6 text-gray-200">
+                Evolución Mensual (Pedidos)
               </h3>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={analysisData.salesByMonth}>
-                  <CartesianGrid strokeOpacity={0.1} />
-                  <XAxis dataKey="mes" stroke="#94a3b8" />
-                  <YAxis stroke="#94a3b8" />
-                  <Tooltip contentStyle={{ backgroundColor: "#1e293b" }} />
+                <LineChart
+                  data={analysisData.salesByMonth}
+                  margin={{ left: -20, right: 10, bottom: 20 }}
+                >
+                  <CartesianGrid strokeOpacity={0.1} vertical={false} />
+                  <XAxis
+                    dataKey="mes"
+                    stroke="#94a3b8"
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    dy={10}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    tick={{ fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#1e293b",
+                      border: "none",
+                      borderRadius: "8px",
+                    }}
+                    itemStyle={{ color: "#4ade80" }}
+                  />
                   <Line
                     type="monotone"
                     dataKey="ventas"
-                    stroke="#10b981"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
+                    stroke="#4ade80"
+                    strokeWidth={4}
+                    dot={{ r: 6, fill: "#1e293b", strokeWidth: 3 }}
+                    activeDot={{ r: 8 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -773,15 +860,11 @@ export default function AnalisisPedidos() {
         </>
       )}
 
-      {/* --- VISTA 2: CONSUMO --- */}
+      {/* --- OTRAS VISTAS (Sin Runway) --- */}
       {view === "CONSUMO" && <ConsumptionView analysisData={analysisData} />}
-
-      {/* --- VISTA 3: TENDENCIAS & IA (NUEVO) --- */}
       {view === "TENDENCIAS" && <TendenciasView />}
-      {/* --- VISTA 4: RUNWAY INSUMOS (NUEVO) --- */}
-      {view === "RUNWAY" && <InsumosRunway />}
 
-      {/* --- MODAL DETALLE (Igual que antes) --- */}
+      {/* --- MODAL DETALLE --- */}
       {selectedItem && (
         <DetailModal
           selectedItem={selectedItem}
