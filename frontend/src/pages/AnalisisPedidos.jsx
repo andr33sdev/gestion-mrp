@@ -8,20 +8,20 @@ import {
   FaSync,
   FaExclamationTriangle,
   FaRocket,
-  FaHourglassHalf,
   FaArrowUp,
   FaArrowDown,
   FaEquals,
+  FaTrophy,
+  FaMedal,
+  FaListOl,
+  FaCalendarCheck,
 } from "react-icons/fa";
 import {
-  BarChart,
-  Bar,
-  Cell,
-  CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
+  LineChart,
+  Line,
+  CartesianGrid,
   XAxis,
   YAxis,
 } from "recharts";
@@ -36,6 +36,60 @@ const STOCK_SEMIS_URL = `${API_BASE_URL}/ingenieria/semielaborados`;
 
 const normalizeKey = (key) => (key || "").trim().toUpperCase();
 
+// --- HELPER: PARSEO DE FECHAS (ARGENTINA DD/MM/YYYY) ---
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+  // Si ya es un objeto fecha, devolverlo
+  if (Object.prototype.toString.call(dateStr) === "[object Date]") {
+    return isNaN(dateStr) ? null : dateStr;
+  }
+
+  const str = String(dateStr).trim();
+
+  // Si tiene barras (DD/MM/YYYY)
+  if (str.includes("/")) {
+    const parts = str.split("/");
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // Mes 0-indexado
+      let year = parseInt(parts[2], 10);
+      // Ajuste para años de 2 dígitos (ej: 23 -> 2023)
+      if (year < 100) year += 2000;
+
+      const d = new Date(year, month, day);
+      return isNaN(d) ? null : d;
+    }
+  }
+
+  // Fallback para formato ISO u otros
+  const d = new Date(str);
+  return isNaN(d) ? null : d;
+};
+
+// --- COMPONENTES AUXILIARES ---
+const RankIcon = ({ index }) => {
+  if (index === 0) return <FaTrophy className="text-yellow-400" />;
+  if (index === 1) return <FaMedal className="text-gray-300" />;
+  if (index === 2) return <FaMedal className="text-amber-600" />;
+  return (
+    <span className="text-gray-500 font-mono font-bold text-xs">
+      #{index + 1}
+    </span>
+  );
+};
+
+const TableProgressBar = ({ value, max, colorClass }) => {
+  const percent = Math.min(100, Math.max(0, (value / max) * 100));
+  return (
+    <div className="w-24 h-2 bg-slate-700 rounded-full overflow-hidden ml-auto">
+      <div
+        className={`h-full ${colorClass}`}
+        style={{ width: `${percent}%` }}
+      />
+    </div>
+  );
+};
+
 export default function AnalisisPedidos() {
   const [datosPedidos, setDatosPedidos] = useState([]);
   const [datosRecetas, setDatosRecetas] = useState({});
@@ -43,9 +97,7 @@ export default function AnalisisPedidos() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // Vistas: DASHBOARD | CONSUMO | TENDENCIAS
   const [view, setView] = useState("DASHBOARD");
-
   const [modoVista, setModoVista] = useState("PRODUCTOS");
   const [busqueda, setBusqueda] = useState("");
   const [sugerencias, setSugerencias] = useState([]);
@@ -83,8 +135,8 @@ export default function AnalisisPedidos() {
         setLoading(false);
       })
       .catch((error) => {
-        console.error("❌ Error cargando datos de análisis:", error);
-        setErrorMsg(error.message || "Error de conexión con el servidor.");
+        console.error("❌ Error cargando datos:", error);
+        setErrorMsg(error.message || "Error de conexión.");
         setLoading(false);
       });
   };
@@ -138,7 +190,6 @@ export default function AnalisisPedidos() {
       allClients = new Set(),
       allModels = new Set();
 
-    // --- LÓGICA PEDIDOS (OPs) ---
     const monthOpsMap = {};
     const monthNames = [
       "Ene",
@@ -156,20 +207,15 @@ export default function AnalisisPedidos() {
     ];
     monthNames.forEach((m) => (monthOpsMap[m] = new Set()));
 
-    // Set global de OPs para el promedio anual
     const uniqueOpsGlobal = new Set();
-
     const consumoTotal2025 = {};
     const consumoUltimos6Meses = {};
     const missingRecipesMap = {};
 
-    let totalUnidadesVendidas = 0;
-
     datosPedidos.forEach((row) => {
-      const dStr = row.fecha || row.FECHA || row.Fecha;
-      if (!dStr) return;
-      const d = new Date(dStr);
-      if (isNaN(d.getTime())) return;
+      // --- USO DE PARSER CORREGIDO ---
+      const d = parseDate(row.fecha || row.FECHA || row.Fecha);
+      if (!d) return;
 
       const estado = (row.estado || row.ESTADO || "").toString().toUpperCase();
       if (estado.includes("CANCELADO")) return;
@@ -194,12 +240,8 @@ export default function AnalisisPedidos() {
           if (isML) uniqueMLOrders.add(oc);
         }
 
-        // --- LÓGICA MENSUAL (Pedidos) ---
         const mName = monthNames[d.getMonth()];
         if (monthOpsMap[mName]) {
-          totalUnidadesVendidas += cantVendida;
-
-          // Si hay OP válida, la agregamos al set del mes y al global para contar pedidos únicos
           if (op && op !== "-" && op !== "0") {
             monthOpsMap[mName].add(op);
             uniqueOpsGlobal.add(op);
@@ -282,7 +324,6 @@ export default function AnalisisPedidos() {
         .sort((a, b) => b.value - a.value)
         .slice(0, n);
 
-    // Gráfico Evolución: Usamos .size del Set de OPs
     const salesByMonth = monthNames
       .slice(0, currentMonth + 1)
       .map((m) => ({ mes: m, ventas: monthOpsMap[m].size }));
@@ -334,18 +375,20 @@ export default function AnalisisPedidos() {
     const missingData = Object.values(missingRecipesMap).sort(
       (a, b) => b.count - a.count
     );
+
+    // Filtro para tabla raw usando el parser
     const filteredRaw = datosPedidos.filter((row) => {
-      const d = new Date(row.FECHA || row.Fecha || row.fecha);
-      return !isNaN(d) && d.getFullYear() >= 2025;
+      const d = parseDate(row.fecha || row.FECHA || row.Fecha);
+      return d && d.getFullYear() >= 2025;
     });
 
     return {
       salesByMonth,
       totalOrders: uniqueOrders.size,
-      totalUnits: totalUnidadesVendidas,
       totalOps: uniqueOpsGlobal.size,
       mlOrders: uniqueMLOrders.size,
       recordMonthName: recordMonth?.mes || "-",
+      recordMax: recordMonth?.ventas || 1,
       raw: filteredRaw,
       rawTotalRows: filteredRaw.length,
       prod: {
@@ -410,10 +453,14 @@ export default function AnalisisPedidos() {
     ];
     const prodMonthMap = {};
     monthNames.forEach((m) => (prodMonthMap[m] = 0));
+
     const history = rows
-      .sort(
-        (a, b) => new Date(b.fecha || b.FECHA) - new Date(a.fecha || a.FECHA)
-      )
+      .sort((a, b) => {
+        // Ordenamiento usando parser
+        const dateA = parseDate(a.fecha || a.FECHA);
+        const dateB = parseDate(b.fecha || b.FECHA);
+        return dateB - dateA;
+      })
       .map((r) => {
         const cant = Number(r.cantidad || r.CANTIDAD || 1);
         total += cant;
@@ -422,13 +469,15 @@ export default function AnalisisPedidos() {
             ? r.modelo || r.MODELO || ""
             : r.cliente || r.CLIENTE || "";
         pieMap[key] = (pieMap[key] || 0) + cant;
-        const d = new Date(r.fecha || r.FECHA);
-        if (!isNaN(d)) {
+
+        const d = parseDate(r.fecha || r.FECHA);
+        if (d) {
           const mName = monthNames[d.getMonth()];
           if (prodMonthMap[mName] !== undefined) prodMonthMap[mName] += cant;
         }
         return {
-          fecha: new Date(r.fecha || r.FECHA).toLocaleDateString("es-AR"),
+          // Formateo visual consistente
+          fecha: d ? d.toLocaleDateString("es-AR") : "-",
           col: key,
           cant,
           oc: r.oc_cliente || r.OC || "-",
@@ -439,6 +488,7 @@ export default function AnalisisPedidos() {
             .includes("mercadolibre"),
         };
       });
+
     const topPie = Object.entries(pieMap)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
@@ -497,15 +547,19 @@ export default function AnalisisPedidos() {
   const data = isCli ? analysisData.cli : analysisData.prod;
   const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A28DFF"];
 
-  // --- CÁLCULOS KPI NUEVOS (Promedio y Tendencia en PEDIDOS) ---
+  // KPIs
   const lastMonthData = analysisData.salesByMonth[
     analysisData.salesByMonth.length - 1
-  ] || { ventas: 0, mes: "-" };
+  ] || {
+    ventas: 0,
+    mes: "-",
+  };
   const prevMonthData = analysisData.salesByMonth[
     analysisData.salesByMonth.length - 2
-  ] || { ventas: 0 };
+  ] || {
+    ventas: 0,
+  };
   const mesesTranscurridos = Math.max(1, analysisData.salesByMonth.length);
-  // Promedio mensual de Pedidos
   const promedioMensual = Math.round(
     analysisData.totalOps / mesesTranscurridos
   );
@@ -516,7 +570,7 @@ export default function AnalisisPedidos() {
       ? ((trendDiff / prevMonthData.ventas) * 100).toFixed(0)
       : 0;
 
-  // Lógica Modal Detalle
+  // Lógica Modal
   let modalHistory = [],
     totalPages = 0,
     dynamicChartData = [];
@@ -550,6 +604,8 @@ export default function AnalisisPedidos() {
     const currentMonth = new Date().getMonth();
     const salesMap = {};
     monthNames.slice(0, currentMonth + 1).forEach((m) => (salesMap[m] = 0));
+
+    // Parseo consistente también en el modal
     filtered.forEach((row) => {
       const parts = row.fecha.split("/");
       if (parts.length === 3) {
@@ -564,9 +620,11 @@ export default function AnalisisPedidos() {
     }));
   }
 
+  const maxValTop = data.y[0]?.value || 1;
+
   return (
     <div className="animate-in fade-in duration-500 relative pb-20">
-      {/* 1. TABS DESLIZABLES (Estética Limpia para Móvil y Desktop) */}
+      {/* TABS */}
       <div className="mb-6 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-2 min-w-max pb-1 border-b border-slate-700">
           {[
@@ -591,7 +649,7 @@ export default function AnalisisPedidos() {
 
       {view === "DASHBOARD" && (
         <>
-          {/* HEADER Y BUSCADOR COMPACTO */}
+          {/* HEADER */}
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
             <div>
               <h1 className="text-2xl md:text-4xl font-bold flex items-center gap-3 text-white">
@@ -599,7 +657,7 @@ export default function AnalisisPedidos() {
                   <FaUsers className="text-purple-400" />
                 ) : (
                   <FaCubes className="text-blue-400" />
-                )}
+                )}{" "}
                 Análisis 2025
               </h1>
               <p className="text-xs md:text-sm text-gray-400 mt-1">
@@ -608,7 +666,6 @@ export default function AnalisisPedidos() {
             </div>
 
             <div className="w-full xl:w-auto flex flex-col md:flex-row gap-3">
-              {/* Toggle Productos/Clientes */}
               <div className="bg-slate-800 p-1 rounded-xl border border-slate-600 flex shadow-sm">
                 <button
                   onClick={() => setModoVista("PRODUCTOS")}
@@ -627,8 +684,6 @@ export default function AnalisisPedidos() {
                   CLIENTES
                 </button>
               </div>
-
-              {/* Buscador Full Width en Móvil */}
               <div className="flex-1">
                 <SearchBar
                   busqueda={busqueda}
@@ -642,98 +697,78 @@ export default function AnalisisPedidos() {
             </div>
           </div>
 
-          {/* GRID: 12 columnas en escritorio */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 mb-12">
-            {/* KPI 1 - Promedio Mensual (2 columnas desktop) */}
-            <div
-              className={`bg-slate-800 p-6 rounded-xl border-l-4 shadow-lg flex flex-col justify-center lg:col-span-2 h-full ${
-                isCli ? "border-purple-500" : "border-blue-500"
-              }`}
-            >
-              <h3 className="text-gray-400 text-sm font-bold uppercase mb-2">
-                {isCli ? "Clientes Activos" : "Promedio Mensual"}
-              </h3>
-              <p
-                className={`text-4xl md:text-5xl font-bold ${
-                  isCli ? "text-purple-400" : "text-blue-400"
+          {/* GRID DASHBOARD */}
+          <div className="flex flex-col gap-6 mb-12">
+            {/* FILA 1: KPIs PRINCIPALES */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              <div
+                className={`bg-slate-800 p-6 rounded-xl border-l-4 shadow-lg flex flex-col justify-center h-full ${
+                  isCli ? "border-purple-500" : "border-blue-500"
                 }`}
               >
-                {isCli ? data.active : promedioMensual}
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                {isCli ? "Compras directas" : "Pedidos / Mes"}
-              </p>
+                <h3 className="text-gray-400 text-sm font-bold uppercase mb-2">
+                  {isCli ? "Clientes Activos" : "Promedio Mensual"}
+                </h3>
+                <p
+                  className={`text-4xl md:text-5xl font-bold ${
+                    isCli ? "text-purple-400" : "text-blue-400"
+                  }`}
+                >
+                  {isCli ? data.active : promedioMensual}
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  {isCli ? "Compras directas" : "Pedidos / Mes"}
+                </p>
+              </div>
+              <div className="bg-slate-800 p-6 rounded-xl border-l-4 border-yellow-500 shadow-lg flex flex-col justify-center h-full">
+                <h3 className="text-gray-400 text-sm font-bold uppercase mb-2">
+                  {isCli ? "Cliente Top" : `Pedidos ${lastMonthData.mes}`}
+                </h3>
+                {isCli ? (
+                  <>
+                    <p className="text-2xl font-bold text-yellow-400 truncate">
+                      {data.y[0]?.name}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {data.y[0]?.value} u.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-4xl md:text-5xl font-bold text-yellow-400">
+                      {lastMonthData.ventas}
+                    </p>
+                    <div
+                      className={`text-sm font-bold mt-2 flex items-center gap-2 ${
+                        trendDiff > 0
+                          ? "text-green-400"
+                          : trendDiff < 0
+                          ? "text-red-400"
+                          : "text-gray-400"
+                      }`}
+                    >
+                      {trendDiff > 0 ? (
+                        <FaArrowUp />
+                      ) : trendDiff < 0 ? (
+                        <FaArrowDown />
+                      ) : (
+                        <FaEquals />
+                      )}{" "}
+                      {trendPercent}% vs mes anterior
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
 
-            {/* KPI 2 - Pedidos Actuales (2 columnas desktop) */}
-            <div className="bg-slate-800 p-6 rounded-xl border-l-4 border-yellow-500 shadow-lg flex flex-col justify-center lg:col-span-2 h-full">
-              <h3 className="text-gray-400 text-sm font-bold uppercase mb-2">
-                {isCli ? "Cliente Top" : `Pedidos ${lastMonthData.mes}`}
-              </h3>
-              {isCli ? (
-                <>
-                  <p className="text-2xl font-bold text-yellow-400 truncate">
-                    {data.y[0]?.name}
-                  </p>
-                  <p className="text-sm text-gray-500 mt-1">
-                    {data.y[0]?.value} u.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-4xl md:text-5xl font-bold text-yellow-400">
-                    {lastMonthData.ventas}
-                  </p>
-                  <div
-                    className={`text-sm font-bold mt-2 flex items-center gap-2 ${
-                      trendDiff > 0
-                        ? "text-green-400"
-                        : trendDiff < 0
-                        ? "text-red-400"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    {trendDiff > 0 ? <FaArrowUp /> : <FaArrowDown />}
-                    {trendPercent}% vs mes anterior
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* List 1 - Top 5 Mes (3 columnas desktop) */}
-            <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-green-500 shadow-lg lg:col-span-3 h-full">
-              <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
-                Top 5 Mes Actual
-              </h3>
-              <ul className="space-y-3">
-                {data.m.slice(0, 5).map((p, i) => (
-                  <li
-                    key={i}
-                    className="flex justify-between text-sm border-b border-slate-700/50 pb-2 last:border-0"
-                  >
-                    <span className="truncate flex-1 text-gray-300 font-medium max-w-[200px]">
-                      {p.name}
-                    </span>
-                    <span className="text-green-400 font-mono font-bold ml-2">
-                      {p.value}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* List 2 - Top 5 Semana (3 columnas desktop) */}
-            <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-teal-500 shadow-lg lg:col-span-3 h-full">
-              <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
-                Top 5 Semana
-              </h3>
-              {data.w.length === 0 ? (
-                <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic text-center">
-                  Sin actividad reciente
-                </div>
-              ) : (
+            {/* FILA 2: LISTAS SECUNDARIAS */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+              <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-green-500 shadow-lg h-full">
+                <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
+                  Top 5 Mes Actual
+                </h3>
                 <ul className="space-y-3">
-                  {data.w.slice(0, 5).map((p, i) => (
+                  {data.m.slice(0, 5).map((p, i) => (
                     <li
                       key={i}
                       className="flex justify-between text-sm border-b border-slate-700/50 pb-2 last:border-0"
@@ -741,126 +776,192 @@ export default function AnalisisPedidos() {
                       <span className="truncate flex-1 text-gray-300 font-medium max-w-[200px]">
                         {p.name}
                       </span>
-                      <span className="text-teal-400 font-mono font-bold ml-2">
+                      <span className="text-green-400 font-mono font-bold ml-2">
                         {p.value}
                       </span>
                     </li>
                   ))}
                 </ul>
-              )}
-            </div>
-
-            {/* KPI 3 - Récord (2 columnas desktop) */}
-            <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-purple-500 shadow-lg flex flex-col justify-center items-center lg:col-span-2 h-full">
-              <h3 className="text-gray-400 text-xs font-bold mb-2 uppercase text-center">
-                Mes Récord (Pedidos)
-              </h3>
-              <p className="text-4xl font-black text-purple-400">
-                {analysisData.recordMonthName}
-              </p>
+              </div>
+              <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-teal-500 shadow-lg h-full">
+                <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
+                  Top 5 Semana
+                </h3>
+                {data.w.length === 0 ? (
+                  <div className="h-32 flex items-center justify-center text-gray-500 text-xs italic text-center">
+                    Sin actividad reciente
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {data.w.slice(0, 5).map((p, i) => (
+                      <li
+                        key={i}
+                        className="flex justify-between text-sm border-b border-slate-700/50 pb-2 last:border-0"
+                      >
+                        <span className="truncate flex-1 text-gray-300 font-medium max-w-[200px]">
+                          {p.name}
+                        </span>
+                        <span className="text-teal-400 font-mono font-bold ml-2">
+                          {p.value}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-purple-500 shadow-lg flex flex-col justify-center items-center h-full">
+                <h3 className="text-gray-400 text-xs font-bold mb-2 uppercase text-center">
+                  Mes Récord (Pedidos)
+                </h3>
+                <p className="text-4xl font-black text-purple-400">
+                  {analysisData.recordMonthName}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* GRÁFICOS (Altura ajustada para móvil) */}
+          {/* FILA 3: TABLAS DE DATOS */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
-            <div className="bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 h-[350px] md:h-[450px]">
-              <h3 className="text-lg font-bold mb-6 text-gray-200">
-                Top 10 Anual (Unidades)
-              </h3>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={data.y}
-                  layout="vertical"
-                  margin={{ left: 0, right: 10, bottom: 20 }}
-                >
-                  <CartesianGrid
-                    strokeOpacity={0.1}
-                    horizontal
-                    vertical={false}
-                  />
-                  <XAxis type="number" hide />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    stroke="#94a3b8"
-                    width={100}
-                    style={{ fontSize: "11px", fontWeight: "bold" }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#1e293b",
-                      fontSize: "12px",
-                      border: "none",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Bar
-                    dataKey="value"
-                    fill={isCli ? "#a855f7" : "#3b82f6"}
-                    radius={[0, 4, 4, 0]}
-                    barSize={20}
-                  >
-                    {data.y.map((e, i) => (
-                      <Cell
-                        key={i}
-                        fill={
-                          i < 3 ? (isCli ? "#d8b4fe" : "#60a5fa") : "#475569"
-                        }
-                      />
+            {/* TABLA 1: TOP 10 ANUAL */}
+            <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex flex-col h-full">
+              <div className="p-4 border-b border-slate-700 bg-slate-800 sticky top-0">
+                <h3 className="text-lg font-bold text-gray-200 flex items-center gap-2">
+                  <FaListOl className="text-blue-500" /> Top 10 Anual (Unidades)
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-300">
+                  <thead className="bg-slate-900 text-gray-400 uppercase text-xs">
+                    <tr>
+                      <th className="px-4 py-3 w-10 text-center">#</th>
+                      <th className="px-4 py-3">Producto / Cliente</th>
+                      <th className="px-4 py-3 text-right">Total</th>
+                      <th className="px-4 py-3 w-32 hidden md:table-cell">
+                        Volumen
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {data.y.slice(0, 10).map((item, index) => (
+                      <tr
+                        key={index}
+                        className="hover:bg-slate-700/30 transition-colors"
+                      >
+                        <td className="px-4 py-3 text-center">
+                          <RankIcon index={index} />
+                        </td>
+                        <td className="px-4 py-3 font-medium text-white truncate max-w-[150px]">
+                          {item.name}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-blue-300">
+                          {item.value}
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell align-middle">
+                          <TableProgressBar
+                            value={item.value}
+                            max={maxValTop}
+                            colorClass={isCli ? "bg-purple-500" : "bg-blue-500"}
+                          />
+                        </td>
+                      </tr>
                     ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="bg-slate-800 p-4 md:p-6 rounded-xl shadow-lg border border-slate-700 h-[350px] md:h-[450px]">
-              <h3 className="text-lg font-bold mb-6 text-gray-200">
-                Evolución Mensual (Pedidos)
-              </h3>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={analysisData.salesByMonth}
-                  margin={{ left: -20, right: 10, bottom: 20 }}
-                >
-                  <CartesianGrid strokeOpacity={0.1} vertical={false} />
-                  <XAxis
-                    dataKey="mes"
-                    stroke="#94a3b8"
-                    tick={{ fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                    dy={10}
-                  />
-                  <YAxis
-                    stroke="#94a3b8"
-                    tick={{ fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#1e293b",
-                      border: "none",
-                      borderRadius: "8px",
-                    }}
-                    itemStyle={{ color: "#4ade80" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="ventas"
-                    stroke="#4ade80"
-                    strokeWidth={4}
-                    dot={{ r: 6, fill: "#1e293b", strokeWidth: 3 }}
-                    activeDot={{ r: 8 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            {/* TABLA 2: EVOLUCIÓN MENSUAL */}
+            <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex flex-col h-full">
+              <div className="p-4 border-b border-slate-700 bg-slate-800 sticky top-0">
+                <h3 className="text-lg font-bold text-gray-200 flex items-center gap-2">
+                  <FaCalendarCheck className="text-green-500" /> Evolución
+                  Mensual (Pedidos)
+                </h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-300">
+                  <thead className="bg-slate-900 text-gray-400 uppercase text-xs">
+                    <tr>
+                      <th className="px-6 py-3">Mes</th>
+                      <th className="px-6 py-3 text-right">Pedidos</th>
+                      <th className="px-6 py-3 text-right">Variación</th>
+                      <th className="px-6 py-3 text-center">Tendencia</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {analysisData.salesByMonth.map((mesData, index) => {
+                      const prev =
+                        analysisData.salesByMonth[index - 1]?.ventas || 0;
+                      const diff = index === 0 ? 0 : mesData.ventas - prev;
+                      const percent =
+                        prev > 0 ? ((diff / prev) * 100).toFixed(0) : 0;
+
+                      return (
+                        <tr
+                          key={index}
+                          className="hover:bg-slate-700/30 transition-colors"
+                        >
+                          <td className="px-6 py-3 font-bold text-white uppercase tracking-wider">
+                            {mesData.mes}
+                          </td>
+                          <td className="px-6 py-3 text-right font-mono text-lg text-green-400">
+                            {mesData.ventas}
+                          </td>
+                          <td className="px-6 py-3 text-right font-mono text-xs">
+                            {index > 0 && (
+                              <span
+                                className={`flex items-center justify-end gap-1 ${
+                                  diff > 0
+                                    ? "text-green-400"
+                                    : diff < 0
+                                    ? "text-red-400"
+                                    : "text-gray-500"
+                                }`}
+                              >
+                                {diff > 0 ? "+" : ""}
+                                {percent}%
+                                {diff > 0 ? (
+                                  <FaArrowUp size={10} />
+                                ) : diff < 0 ? (
+                                  <FaArrowDown size={10} />
+                                ) : (
+                                  <FaEquals size={10} />
+                                )}
+                              </span>
+                            )}
+                            {index === 0 && (
+                              <span className="text-gray-600">-</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-3 text-center">
+                            {/* Mini Sparkline simulado */}
+                            <div className="w-16 h-1.5 bg-slate-700 rounded-full mx-auto overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  diff >= 0 ? "bg-green-500" : "bg-red-500"
+                                }`}
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    (mesData.ventas /
+                                      (analysisData.recordMax || 1)) *
+                                      100
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </>
       )}
 
-      {/* --- OTRAS VISTAS (Sin Runway) --- */}
       {view === "CONSUMO" && <ConsumptionView analysisData={analysisData} />}
       {view === "TENDENCIAS" && <TendenciasView />}
 
