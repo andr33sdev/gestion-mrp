@@ -23,6 +23,28 @@ router.get("/abiertos", async (req, res) => {
   res.json(rows);
 });
 
+// NUEVA RUTA: Obtener Pedidos Sin Stock directo de la DB
+router.get("/sin-stock", async (req, res) => {
+  try {
+    // CORRECCIÓN: Eliminamos el CASE complejo que mezclaba tipos.
+    // Ordenamos por ID DESC (los últimos cargados primero) para evitar errores de conversión de fecha.
+    const query = `
+      SELECT * FROM pedidos_clientes 
+      WHERE estado ILIKE '%SIN STOCK%' 
+      AND estado NOT ILIKE '%CANCELADO%'
+      AND estado NOT ILIKE '%ENTREGADO%'
+      ORDER BY id DESC
+    `;
+
+    const result = await db.query(query);
+    res.json(result.rows);
+  } catch (e) {
+    console.error("Error al buscar pedidos sin stock:", e);
+    // Importante: devolver un array vacío en caso de error para no romper el frontend
+    res.status(500).json([]);
+  }
+});
+
 // GET DETALLE DEL PLAN (CORREGIDO)
 router.get("/:id", getPlanById);
 

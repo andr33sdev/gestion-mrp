@@ -193,17 +193,6 @@ async function sincronizarPedidos() {
         // Validación básica: Sin OP (Col C/Indice 2) no procesamos
         if (!fila[2]) continue;
 
-        // --- DEBUG TEMPORAL: Ver qué pasa con Luparini ---
-        const rawCliente = fila[3] ? fila[3].toString() : "";
-        if (rawCliente.toLowerCase().includes("luparini")) {
-          // Esto te mostrará en la consola si la columna 6 existe o no
-          console.log(
-            `🕵️‍♂️ LUPARINI DETECTADO | OP: ${fila[2]} | Col G (OC):`,
-            fila[6]
-          );
-        }
-        // -----------------------------------------------
-
         // MAPEO DE COLUMNAS (A=0, B=1 ... G=6)
         const p_fecha = fila[0] ? fila[0].toString() : "";
         const p_periodo = fila[1] ? fila[1].toString() : "";
