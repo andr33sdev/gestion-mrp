@@ -7,14 +7,16 @@ const db = require("../db");
 // --- 1. CONFIGURACIÓN ---
 const tokenAdmin = process.env.TELEGRAM_BOT_TOKEN;
 const tokenPedidos = process.env.TELEGRAM_BOT_TOKEN_PEDIDOS;
-const tokenMantenimiento = process.env.TELEGRAM_BOT_TOKEN_MANTENIMIENTO; // <--- NUEVO
+const tokenMantenimiento = process.env.TELEGRAM_BOT_TOKEN_MANTENIMIENTO;
+const tokenLogistica = process.env.TELEGRAM_BOT_TOKEN_LOGISTICA; // <--- NUEVO
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_ID;
-const MANTENIMIENTO_CHAT_ID = process.env.TELEGRAM_CHAT_ID_MANTENIMIENTO; // <--- NUEVO
+const MANTENIMIENTO_CHAT_ID = process.env.TELEGRAM_CHAT_ID_MANTENIMIENTO;
 
 let botAdminInstance = null;
 let botPedidosInstance = null;
-let botMantenimientoInstance = null; // <--- NUEVO
+let botMantenimientoInstance = null;
+let botLogisticaInstance = null; // <--- NUEVO
 
 const colaDePedidos = [];
 let procesandoCola = false;
@@ -29,7 +31,7 @@ function getPeriodo(fechaStr) {
   return `2/${mes}/${anio}`;
 }
 
-// --- PARSER ---
+// --- PARSER PEDIDOS ---
 function parsearMensajePedido(text) {
   try {
     if (
@@ -104,7 +106,6 @@ async function procesarSiguientePedido(bot) {
     bot.sendMessage(chatId, respuesta, { parse_mode: "HTML" });
 
     console.log("↻ Forzando sincronización DB para que aparezca inmediato...");
-    // IMPORTACIÓN DINÁMICA PARA EVITAR CICLO
     const { sincronizarPedidos } = require("./syncService");
     await sincronizarPedidos();
 
@@ -119,22 +120,26 @@ async function procesarSiguientePedido(bot) {
   }
 }
 
+// ========================================================
+//  INICIALIZADOR PRINCIPAL
+// ========================================================
 function iniciarBotReceptor() {
+  // 1. Bot Admin
   if (tokenAdmin && !botAdminInstance) {
     botAdminInstance = new TelegramBot(tokenAdmin, { polling: true });
     configurarBotAdmin(botAdminInstance);
   }
+  // 2. Bot Pedidos
   if (tokenPedidos && !botPedidosInstance) {
     botPedidosInstance = new TelegramBot(tokenPedidos, { polling: true });
     configurarBotPedidos(botPedidosInstance);
   }
-  // --- INICIALIZAR BOT MANTENIMIENTO ---
+  // 3. Bot Mantenimiento
   if (tokenMantenimiento && !botMantenimientoInstance) {
     botMantenimientoInstance = new TelegramBot(tokenMantenimiento, {
       polling: true,
     });
     console.log("🔧 Bot Mantenimiento Activo");
-    // Listener simple para obtener el ID del grupo si escriben /id
     botMantenimientoInstance.onText(/\/id/, (msg) => {
       botMantenimientoInstance.sendMessage(
         msg.chat.id,
@@ -142,10 +147,16 @@ function iniciarBotReceptor() {
       );
     });
   }
+  // 4. Bot Logística (NUEVO)
+  if (tokenLogistica && !botLogisticaInstance) {
+    botLogisticaInstance = new TelegramBot(tokenLogistica, { polling: true });
+    configurarBotLogistica(botLogisticaInstance);
+    console.log("🚚 Bot Logística Activo (Modo Difusión)");
+  }
 }
 
 // ========================================================
-//  LÓGICA BOT PEDIDOS
+//  LOGICA BOT PEDIDOS
 // ========================================================
 function configurarBotPedidos(bot) {
   bot.on("message", async (msg) => {
@@ -177,8 +188,6 @@ function configurarBotPedidos(bot) {
 
       try {
         bot.sendChatAction(chatId, "typing");
-
-        // --- CONSULTA CORREGIDA ---
         const res = await db.query(
           `SELECT * FROM pedidos_clientes 
            WHERE oc_cliente = $1 
@@ -187,7 +196,6 @@ function configurarBotPedidos(bot) {
         );
 
         let encontrados = res.rows;
-
         if (encontrados.length === 0) {
           bot.sendMessage(
             chatId,
@@ -197,7 +205,6 @@ function configurarBotPedidos(bot) {
           return;
         }
 
-        // Filtro Nombre
         if (filtroCliente.length > 2) {
           encontrados = encontrados.filter((p) =>
             (p.cliente || "").toLowerCase().includes(filtroCliente)
@@ -212,7 +219,6 @@ function configurarBotPedidos(bot) {
           }
         }
 
-        // Respuesta
         const cabecera = encontrados[0];
         let respuesta = `📋 <b>ESTADO DE ORDEN #${ordenCompra}</b>\n`;
         respuesta += `🏢 <b>Cliente:</b> ${cabecera.cliente}\n\n`;
@@ -239,7 +245,6 @@ function configurarBotPedidos(bot) {
       return;
     }
 
-    // C. SALUDO
     if (["hola", "buenas"].some((w) => texto.toLowerCase().includes(w))) {
       bot.sendMessage(
         chatId,
@@ -263,10 +268,116 @@ function configurarBotAdmin(bot) {
 }
 
 // ========================================================
+//  NUEVO: LÓGICA BOT LOGÍSTICA (SUSCRIPCIONES)
+// ========================================================
+function configurarBotLogistica(bot) {
+  // 1. Suscribirse
+  bot.onText(/\/start/, async (msg) => {
+    const chatId = msg.chat.id;
+    const firstName = msg.from.first_name || "SinNombre";
+    const username = msg.from.username || "SinUser";
+
+    try {
+      await db.query(
+        `INSERT INTO telegram_suscriptores (chat_id, first_name, username) 
+                 VALUES ($1, $2, $3) 
+                 ON CONFLICT (chat_id) DO NOTHING`,
+        [chatId, firstName, username]
+      );
+      bot.sendMessage(
+        chatId,
+        `¡Hola ${firstName}! 👋\nYa estás suscrito a las alertas de Logística.`
+      );
+      console.log(`✅ Nuevo suscriptor Logística: ${firstName}`);
+    } catch (err) {
+      console.error("Error guardando suscriptor Logística:", err);
+    }
+  });
+
+  // 2. Desuscribirse
+  bot.onText(/\/stop/, async (msg) => {
+    const chatId = msg.chat.id;
+    try {
+      await db.query("DELETE FROM telegram_suscriptores WHERE chat_id = $1", [
+        chatId,
+      ]);
+      bot.sendMessage(
+        chatId,
+        "🔕 Te has dado de baja. No recibirás más alertas."
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  // Manejo de errores de conexión
+  bot.on("polling_error", (error) => {
+    if (error.code !== "EFATAL") console.warn(`[BOT LOGISTICA] ${error.code}`);
+  });
+}
+
+// FUNCION DE DIFUSION PARA LOGISTICA
+async function enviarNotificacionLogistica(tipo, data) {
+  if (!botLogisticaInstance) return;
+
+  const hora = new Date().toLocaleString("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  let mensaje = "";
+
+  switch (tipo) {
+    case "NUEVA_SOLICITUD":
+      mensaje = `📦 <b>NUEVA SOLICITUD (#${data.id})</b>\n👤 <b>Pide:</b> ${data.solicitante}\n🛠 <b>Producto:</b> ${data.producto}\n🔢 <b>Cantidad:</b> ${data.cantidad}\n🚨 <b>Prioridad:</b> ${data.prioridad}\n⏰ <i>${hora} hs</i>`;
+      break;
+
+    case "CAMBIO_ESTADO":
+      const iconos = {
+        APROBADO: "✅",
+        RECHAZADO: "⛔",
+        PREPARADO: "📦",
+        FINALIZADO: "🚀",
+        ELIMINADO: "🗑",
+      };
+      const icono = iconos[data.estado] || "🔄";
+      mensaje = `${icono} <b>ESTADO ACTUALIZADO (#${data.id})</b>\n👤 <b>Responsable:</b> ${data.usuario}\n🛠 <b>Producto:</b> ${data.producto}\n📊 <b>Nuevo Estado:</b> ${data.estado}\n⏰ <i>${hora} hs</i>`;
+      break;
+
+    case "NUEVO_COMENTARIO":
+      mensaje = `💬 <b>NUEVO COMENTARIO (#${data.id})</b>\n👤 <b>${data.usuario} dice:</b>\n"<i>${data.mensaje}</i>"\n\n🛠 <b>En:</b> ${data.producto}\n⏰ <i>${hora} hs</i>`;
+      break;
+
+    default:
+      return;
+  }
+
+  try {
+    const res = await db.query("SELECT chat_id FROM telegram_suscriptores");
+    const suscriptores = res.rows;
+
+    if (suscriptores.length === 0) return;
+
+    const envios = suscriptores.map((sub) =>
+      botLogisticaInstance
+        .sendMessage(sub.chat_id, mensaje, { parse_mode: "HTML" })
+        .catch((err) => {
+          if (err.response && err.response.statusCode === 403) {
+            db.query("DELETE FROM telegram_suscriptores WHERE chat_id = $1", [
+              sub.chat_id,
+            ]);
+          }
+        })
+    );
+    await Promise.all(envios);
+  } catch (error) {
+    console.error("❌ Error difusión Logística:", error.message);
+  }
+}
+
+// ========================================================
 //  FUNCIONES MANTENIMIENTO
 // ========================================================
-
-// 1. Notificar Creación Inmediata
 async function notificarNuevoTicketMantenimiento(ticket) {
   if (!botMantenimientoInstance || !MANTENIMIENTO_CHAT_ID) return;
 
@@ -294,12 +405,9 @@ async function notificarNuevoTicketMantenimiento(ticket) {
   }
 }
 
-// 2. Chequeo de 24 Horas
 async function checkAlertasMantenimiento() {
   if (!botMantenimientoInstance || !MANTENIMIENTO_CHAT_ID) return;
-
   try {
-    // Buscar tickets no resueltos, con más de 24h de antigüedad y que NO hayan sido avisados aún
     const query = `
         SELECT * FROM tickets_mantenimiento 
         WHERE estado != 'SOLUCIONADO'
@@ -319,8 +427,6 @@ async function checkAlertasMantenimiento() {
       await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, {
         parse_mode: "HTML",
       });
-
-      // Marcar como avisado para no spamear
       await db.query(
         "UPDATE tickets_mantenimiento SET alerta_24h_enviada = TRUE WHERE id = $1",
         [t.id]
@@ -367,7 +473,7 @@ module.exports = {
   enviarAlertaStock,
   enviarAlertaMRP,
   getBot,
-  // Nuevas funciones exportadas
   notificarNuevoTicketMantenimiento,
   checkAlertasMantenimiento,
+  enviarNotificacionLogistica,
 };

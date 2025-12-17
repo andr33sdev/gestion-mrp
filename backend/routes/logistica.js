@@ -1,316 +1,242 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-const { protect, restrictTo } = require("../middleware/auth");
-const { notificarDespacho } = require("../services/telegramBotListener");
 
-router.use(protect);
+// --- CORRECCIÓN CLAVE AQUÍ ---
+// Importamos la función NUEVA desde el archivo "listener" (donde están todos los bots)
+const {
+  enviarNotificacionLogistica,
+} = require("../services/telegramBotListener");
 
-// ... (Mantener rutas /stock, /enviar, /recibir, etc. IGUALES) ...
-// Solo asegúrate de que estas rutas anteriores sigan ahí.
-// Voy a escribir el archivo completo para evitar confusiones, manteniendo lo anterior.
-
-router.get("/stock", async (req, res) => {
+// 1. OBTENER TODAS
+router.get("/", async (req, res) => {
   try {
-    res.setHeader("Cache-Control", "no-store");
+    const query = `
+      SELECT * FROM solicitudes_logistica
+      ORDER BY
+        CASE 
+          WHEN estado = 'PENDIENTE' AND prioridad = 'ALTA' THEN 1
+          WHEN estado = 'PENDIENTE' AND prioridad = 'MEDIA' THEN 2
+          WHEN estado = 'PENDIENTE' AND prioridad = 'BAJA' THEN 3
+          WHEN estado = 'APROBADO' THEN 4
+          WHEN estado = 'PREPARADO' THEN 5
+          ELSE 6
+        END ASC,
+        fecha_creacion DESC
+    `;
+    const { rows } = await db.query(query);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send("Error al obtener solicitudes");
+  }
+});
+
+// 2. OBTENER HISTORIAL
+router.get("/:id/historial", async (req, res) => {
+  try {
     const { rows } = await db.query(
-      `SELECT id, codigo, nombre, 
-             stock_planta_26, stock_planta_37, stock_deposito_ayolas, stock_deposito_quintana 
-             FROM semielaborados ORDER BY nombre ASC`
+      "SELECT * FROM historial_logistica WHERE solicitud_id = $1 ORDER BY fecha ASC",
+      [req.params.id]
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).send(err.message);
+    res.status(500).send("Error al obtener historial");
   }
 });
 
-router.get("/historial", async (req, res) => {
-  try {
-    const { rows } = await db.query(`
-            SELECT 
-                ml.codigo_remito, ml.origen, ml.destino, ml.chofer, ml.estado, 
-                to_char(MIN(ml.fecha_creacion) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD HH24:MI:SS') as fecha_salida_arg,
-                to_char(MAX(ml.fecha_recepcion) AT TIME ZONE 'UTC' AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD HH24:MI:SS') as fecha_recepcion_arg,
-                COUNT(*) as total_items, SUM(ml.cantidad) as total_unidades,
-                json_agg(json_build_object('nombre', s.nombre, 'codigo', s.codigo, 'cantidad', ml.cantidad)) as items_detalle
-            FROM movimientos_logistica ml
-            JOIN semielaborados s ON ml.semielaborado_id = s.id
-            GROUP BY ml.codigo_remito, ml.origen, ml.destino, ml.chofer, ml.estado 
-            ORDER BY MIN(ml.fecha_creacion) DESC LIMIT 50
-        `);
-    res.json(rows);
-  } catch (e) {
-    res.status(500).send(e.message);
-  }
-});
-
-router.post("/enviar", async (req, res) => {
-  const { items, origen, destino, chofer } = req.body;
-  const codigo_remito = `REM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    for (const item of items) {
-      await client.query(
-        "INSERT INTO movimientos_logistica (semielaborado_id, cantidad, origen, destino, estado, codigo_remito, chofer) VALUES ($1, $2, $3, $4, 'EN_TRANSITO', $5, $6)",
-        [item.id, item.cantidad, origen, destino, codigo_remito, chofer]
-      );
-    }
-    await client.query("COMMIT");
-    res.json({ success: true, codigo_remito });
-    notificarDespacho({
-      codigo: codigo_remito,
-      origen,
-      destino,
-      chofer,
-      items,
-    });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).send(e.message);
-  } finally {
-    client.release();
-  }
-});
-
-router.post(
-  "/recibir",
-  restrictTo("GERENCIA", "DEPOSITO", "PANEL"),
-  async (req, res) => {
-    const { codigo_remito } = req.body;
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      const movRes = await client.query(
-        "SELECT * FROM movimientos_logistica WHERE codigo_remito = $1 AND estado = 'EN_TRANSITO'",
-        [codigo_remito]
-      );
-      if (movRes.rowCount === 0)
-        throw new Error("Remito no válido o ya recibido");
-      const destino = movRes.rows[0].destino;
-      const origen = movRes.rows[0].origen;
-      for (const mov of movRes.rows) {
-        await client.query(
-          "UPDATE movimientos_logistica SET estado = 'RECIBIDO', fecha_recepcion = NOW() WHERE id = $1",
-          [mov.id]
-        );
-      }
-      await client.query("COMMIT");
-      res.json({
-        success: true,
-        msg: `Recibidos ${movRes.rowCount} items correctamente.`,
-        origen,
-        destino,
-      });
-    } catch (e) {
-      await client.query("ROLLBACK");
-      res.status(400).json({ msg: e.message });
-    } finally {
-      client.release();
-    }
-  }
-);
-
-router.put("/stock/:id", restrictTo("GERENCIA"), async (req, res) => {
-  const { p26, p37, ayolas, quintana } = req.body;
-  try {
-    await db.query(
-      "UPDATE semielaborados SET stock_planta_26=$1, stock_planta_37=$2, stock_deposito_ayolas=$3, stock_deposito_quintana=$4 WHERE id=$5",
-      [
-        Number(p26) || 0,
-        Number(p37) || 0,
-        Number(ayolas) || 0,
-        Number(quintana) || 0,
-        req.params.id,
-      ]
-    );
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).send(e.message);
-  }
-});
-
-router.post("/reset-negativos", restrictTo("GERENCIA"), async (req, res) => {
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      `UPDATE semielaborados SET stock_planta_26 = GREATEST(0, stock_planta_26), stock_planta_37 = GREATEST(0, stock_planta_37), stock_deposito_ayolas = GREATEST(0, stock_deposito_ayolas), stock_deposito_quintana = GREATEST(0, stock_deposito_quintana) WHERE stock_planta_26 < 0 OR stock_planta_37 < 0 OR stock_deposito_ayolas < 0 OR stock_deposito_quintana < 0`
-    );
-    await client.query("COMMIT");
-    res.json({ success: true, msg: "Stocks negativos corregidos." });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ msg: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-router.post("/reset-total-db", restrictTo("GERENCIA"), async (req, res) => {
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      `UPDATE semielaborados SET stock_planta_26 = 0, stock_planta_37 = 0, stock_deposito_ayolas = 0, stock_deposito_quintana = 0`
-    );
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ msg: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-router.post("/solicitud", async (req, res) => {
-  const { items, destino } = req.body;
-  if (!items || items.length === 0 || !destino)
-    return res.status(400).json({ msg: "Faltan datos." });
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    for (const item of items) {
-      await client.query(
-        "INSERT INTO solicitudes_reposicion (semielaborado_id, cantidad, destino) VALUES ($1, $2, $3)",
-        [item.id, item.cantidad, destino]
-      );
-    }
-    await client.query("COMMIT");
-    res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ msg: e.message });
-  } finally {
-    client.release();
-  }
-});
-
-router.get("/solicitudes/pendientes", async (req, res) => {
+// 3. OBTENER COMENTARIOS
+router.get("/:id/comentarios", async (req, res) => {
   try {
     const { rows } = await db.query(
-      `SELECT sr.*, s.nombre, s.codigo FROM solicitudes_reposicion sr JOIN semielaborados s ON sr.semielaborado_id = s.id WHERE sr.estado = 'PENDIENTE' ORDER BY sr.fecha_creacion DESC`
-    );
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ msg: e.message });
-  }
-});
-
-router.post(
-  "/solicitudes/despachar",
-  restrictTo("GERENCIA"),
-  async (req, res) => {
-    const { ids, origen, chofer } = req.body;
-    if (!ids || ids.length === 0)
-      return res.status(400).json({ msg: "Nada seleccionado" });
-    const client = await db.connect();
-    try {
-      await client.query("BEGIN");
-      const codigo_remito = `REM-${Date.now()}-${Math.floor(
-        Math.random() * 1000
-      )}`;
-      const itemsParaTelegram = [];
-      for (const id of ids) {
-        const solRes = await client.query(
-          `SELECT sr.*, s.nombre FROM solicitudes_reposicion sr JOIN semielaborados s ON sr.semielaborado_id = s.id WHERE sr.id = $1`,
-          [id]
-        );
-        if (solRes.rowCount === 0) continue;
-        const solicitud = solRes.rows[0];
-        itemsParaTelegram.push({
-          nombre: solicitud.nombre,
-          cantidad: solicitud.cantidad,
-        });
-        await client.query(
-          "INSERT INTO movimientos_logistica (semielaborado_id, cantidad, origen, destino, estado, codigo_remito, chofer) VALUES ($1, $2, $3, $4, 'EN_TRANSITO', $5, $6)",
-          [
-            solicitud.semielaborado_id,
-            solicitud.cantidad,
-            origen,
-            solicitud.destino,
-            codigo_remito,
-            chofer,
-          ]
-        );
-        await client.query(
-          "UPDATE solicitudes_reposicion SET estado = 'DESPACHADO', fecha_despacho = NOW() WHERE id = $1",
-          [id]
-        );
-      }
-      await client.query("COMMIT");
-      res.json({ success: true, codigo_remito });
-      if (itemsParaTelegram.length > 0)
-        notificarDespacho({
-          codigo: codigo_remito,
-          origen,
-          destino: "Varios/Lote",
-          chofer,
-          items: itemsParaTelegram,
-        });
-    } catch (e) {
-      await client.query("ROLLBACK");
-      res.status(500).json({ msg: e.message });
-    } finally {
-      client.release();
-    }
-  }
-);
-
-router.delete("/solicitud/:id", async (req, res) => {
-  try {
-    await db.query(
-      "UPDATE solicitudes_reposicion SET estado = 'CANCELADO' WHERE id = $1",
+      "SELECT * FROM comentarios_logistica WHERE solicitud_id = $1 ORDER BY fecha ASC",
       [req.params.id]
     );
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ msg: e.message });
-  }
-});
-
-// --- HOJA DE RUTA Y PEDIDOS (LO NUEVO) ---
-
-// 7. OBTENER CALENDARIO (Sin cambios, ya estaba)
-router.get("/hoja-de-ruta", async (req, res) => {
-  try {
-    const { rows } = await db.query(`
-            SELECT id, cliente, razon_social, fecha_nueva, mensaje_original, fecha_registro
-            FROM novedades_pedidos
-            ORDER BY fecha_nueva DESC
-        `);
     res.json(rows);
-  } catch (e) {
-    res.status(500).send(e.message);
+  } catch (err) {
+    res.status(500).send("Error al obtener comentarios");
   }
 });
 
-// 8. OBTENER PEDIDOS DE UN CLIENTE (PARA HOJA DE RUTA)
-// Busca pedidos del cliente que NO tengan fecha de despacho (pendientes)
-router.get("/hoja-de-ruta/pedidos/:cliente", async (req, res) => {
-  const { cliente } = req.params;
-  const clienteDecodificado = decodeURIComponent(cliente);
+// 4. CREAR SOLICITUD (Conexión al Bot)
+router.post("/", async (req, res) => {
+  const { producto, cantidad, prioridad, solicitante, notas } = req.body;
+  const client = await db.connect();
 
   try {
-    // Buscamos pedidos donde el nombre del cliente sea similar
-    // Y que NO tengan fecha de despacho (significa que están pendientes/en ruta)
-    const { rows } = await db.query(
-      `
-            SELECT * FROM pedidos 
-            WHERE 
-                UPPER(cliente) LIKE UPPER($1)
-                AND fecha_despacho IS NULL 
-            ORDER BY fecha DESC
-            LIMIT 20
-        `,
-      [`%${clienteDecodificado}%`]
+    await client.query("BEGIN");
+
+    // Insertar
+    const resSol = await client.query(
+      "INSERT INTO solicitudes_logistica (producto, cantidad, prioridad, solicitante, notas) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [producto, cantidad, prioridad || "MEDIA", solicitante, notas]
+    );
+    const nuevaSol = resSol.rows[0];
+
+    // Historial
+    await client.query(
+      "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, $2, $3, $4)",
+      [
+        nuevaSol.id,
+        "CREADO",
+        solicitante,
+        `Solicitud iniciada. Prioridad: ${prioridad}. Cant: ${cantidad}`,
+      ]
     );
 
-    res.json(rows);
-  } catch (e) {
-    console.error("Error buscando pedidos cliente:", e);
-    res.status(500).send(e.message);
+    await client.query("COMMIT");
+
+    // 🔥 LLAMADA AL BOT CORREGIDA
+    enviarNotificacionLogistica("NUEVA_SOLICITUD", nuevaSol);
+
+    res.json(nuevaSol);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).send("Error al crear");
+  } finally {
+    client.release();
+  }
+});
+
+// 5. CAMBIAR ESTADO (Conexión al Bot)
+router.put("/:id/estado", async (req, res) => {
+  const { id } = req.params;
+  const { estado, usuario } = req.body;
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Datos previos para el bot
+    const prevRes = await client.query(
+      "SELECT producto, estado FROM solicitudes_logistica WHERE id = $1",
+      [id]
+    );
+    const datosPrevios = prevRes.rows[0];
+    const prevEstado = datosPrevios?.estado || "DESC";
+
+    // Actualizar
+    const result = await client.query(
+      "UPDATE solicitudes_logistica SET estado = $1, fecha_actualizacion = NOW() WHERE id = $2 RETURNING *",
+      [estado, id]
+    );
+
+    // Historial
+    await client.query(
+      "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, $2, $3, $4)",
+      [
+        id,
+        estado,
+        usuario || "Sistema",
+        `Estado cambió de ${prevEstado} a ${estado}`,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    // 🔥 LLAMADA AL BOT CORREGIDA
+    enviarNotificacionLogistica("CAMBIO_ESTADO", {
+      id,
+      producto: datosPrevios.producto,
+      estado,
+      usuario,
+    });
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).send("Error al actualizar");
+  } finally {
+    client.release();
+  }
+});
+
+// 6. AGREGAR COMENTARIO (Conexión al Bot)
+router.post("/:id/comentarios", async (req, res) => {
+  const { id } = req.params;
+  const { usuario, mensaje } = req.body;
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const prodRes = await client.query(
+      "SELECT producto FROM solicitudes_logistica WHERE id = $1",
+      [id]
+    );
+    const nombreProducto = prodRes.rows[0]?.producto || "Producto";
+
+    // Insertar Comentario
+    const resCom = await client.query(
+      "INSERT INTO comentarios_logistica (solicitud_id, usuario, mensaje) VALUES ($1, $2, $3) RETURNING *",
+      [id, usuario, mensaje]
+    );
+
+    // Historial
+    await client.query(
+      "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, 'COMENTARIO', $2, $3)",
+      [id, usuario, `Comentario: "${mensaje.substring(0, 50)}..."`]
+    );
+
+    await client.query("COMMIT");
+
+    // 🔥 LLAMADA AL BOT CORREGIDA
+    enviarNotificacionLogistica("NUEVO_COMENTARIO", {
+      id,
+      producto: nombreProducto,
+      usuario,
+      mensaje,
+    });
+
+    res.json(resCom.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+    res.status(500).send("Error al comentar");
+  } finally {
+    client.release();
+  }
+});
+
+// 7. ELIMINAR (Conexión al Bot)
+router.delete("/:id", async (req, res) => {
+  const { usuario } = req.body;
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+
+    const prodRes = await client.query(
+      "SELECT producto FROM solicitudes_logistica WHERE id = $1",
+      [req.params.id]
+    );
+    const nombreProducto = prodRes.rows[0]?.producto || "Producto";
+
+    await client.query(
+      "UPDATE solicitudes_logistica SET estado = 'ELIMINADO', fecha_actualizacion = NOW() WHERE id = $1",
+      [req.params.id]
+    );
+
+    await client.query(
+      "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, 'ELIMINADO', $2, 'Solicitud movida a papelera')",
+      [req.params.id, usuario || "Admin"]
+    );
+
+    await client.query("COMMIT");
+
+    // 🔥 LLAMADA AL BOT CORREGIDA
+    enviarNotificacionLogistica("CAMBIO_ESTADO", {
+      id: req.params.id,
+      producto: nombreProducto,
+      estado: "ELIMINADO",
+      usuario,
+    });
+
+    res.json({ message: "Eliminado lógicamente" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).send("Error al eliminar");
+  } finally {
+    client.release();
   }
 });
 

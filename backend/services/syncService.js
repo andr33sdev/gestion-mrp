@@ -7,11 +7,11 @@ const {
   leerMateriasPrimas,
 } = require("../google-drive");
 const { parsearLog } = require("../parser");
-const { enviarAlertaStock } = require("./telegramBotListener");
+// const { enviarAlertaStock } = require("./telegramBotListener"); // Descomenta si lo usas
 const format = require("pg-format");
 const XLSX = require("xlsx");
 
-// --- HELPERS (Igual que siempre) ---
+// --- HELPERS ---
 function parsearFechaExcel(valor) {
   if (!valor) return null;
   if (valor instanceof Date) return isNaN(valor.getTime()) ? null : valor;
@@ -67,7 +67,6 @@ function limpiarNumero(val) {
 // 1. SYNC LOGS HORNO
 // =====================================================
 async function sincronizarBaseDeDatos() {
-  // (Este código lo dejamos igual, funcionaba bien)
   console.log("[TIMER] Sincronizando Logs Horno...");
   const client = await db.connect();
   try {
@@ -75,12 +74,7 @@ async function sincronizarBaseDeDatos() {
     const registrosOriginales = parsearLog(textoCrudo);
 
     await client.query("BEGIN");
-    // ... (Lógica resumida para no hacer el mensaje gigante, asumo que ya la tienes)
-    // ... Si necesitas que te copie TODO el bloque del horno de nuevo avísame,
-    // ... pero aquí lo importante es arreglar PEDIDOS.
-    // ... Dejo un placeholder para que no se pierda si copias y pegas:
 
-    // (LÓGICA LOGS HORNO IGUAL A LA VERSIÓN ANTERIOR)
     const { rows: currentProdRows } = await client.query(
       "SELECT * FROM estado_produccion FOR UPDATE"
     );
@@ -158,6 +152,11 @@ async function sincronizarBaseDeDatos() {
     return { success: true, msg: "Sincronización completa." };
   } catch (err) {
     await client.query("ROLLBACK");
+    // Manejo de errores de conexión para no tumbar el servidor
+    if (err.code === "ETIMEDOUT" || err.code === "ECONNRESET") {
+      console.warn("⚠️ Timeout Logs Horno (reintentando luego).");
+      return { success: false, msg: "Timeout" };
+    }
     console.error("[TIMER] Error:", err);
     return { success: false, msg: "Error server." };
   } finally {
@@ -166,7 +165,7 @@ async function sincronizarBaseDeDatos() {
 }
 
 // =====================================================
-// 2. SINCRONIZAR PEDIDOS (CON DEBUG Y FIX DE OC)
+// 2. SINCRONIZAR PEDIDOS (CORREGIDO)
 // =====================================================
 async function sincronizarPedidos() {
   console.log("↻ Iniciando sincronización de Pedidos...");
@@ -183,10 +182,10 @@ async function sincronizarPedidos() {
     try {
       await client.query("BEGIN");
 
-      // 1. LIMPIAR LA TABLA
+      // 1. LIMPIAR LA TABLA (TRUNCATE es perfecto para sincronizar estados borrados)
       await client.query("TRUNCATE TABLE pedidos_clientes RESTART IDENTITY");
 
-      // 2. INSERTAR
+      // 2. PREPARAR DATOS
       const valoresTotales = [];
 
       for (const fila of datos) {
@@ -194,23 +193,33 @@ async function sincronizarPedidos() {
         if (!fila[2]) continue;
 
         // MAPEO DE COLUMNAS (A=0, B=1 ... G=6)
-        const p_fecha = fila[0] ? fila[0].toString() : "";
+        const p_fecha = fila[0] ? fila[0].toString() : null;
         const p_periodo = fila[1] ? fila[1].toString() : "";
         const p_op = fila[2] ? fila[2].toString() : "";
-        const p_cliente = rawCliente;
+
+        // --- CORRECCIÓN CRÍTICA AQUÍ ---
+        // Antes tenías "rawCliente" que no existía. Es fila[3] (Columna D)
+        const p_cliente = fila[3]
+          ? fila[3].toString().trim()
+          : "Cliente Desconocido";
+
         const p_modelo = fila[4] ? fila[4].toString() : "";
         const p_detalles = fila[5] ? fila[5].toString() : "";
 
-        // --- CORRECCIÓN OC (Columna G - Indice 6) ---
-        // Verificamos que no sea undefined, null, y lo limpiamos
+        // Verificamos que OC no sea undefined
         const rawOC = fila[6];
         const p_oc_cliente =
           rawOC !== undefined && rawOC !== null && rawOC !== ""
             ? rawOC.toString().trim()
             : "-";
 
-        const p_cantidad = fila[7] ? fila[7].toString() : "0";
-        const p_estado = fila[8] ? fila[8].toString() : "PENDIENTE";
+        // Limpiamos puntos de mil en la cantidad (ej: "1.000" -> "1000")
+        const rawCant = fila[7] ? fila[7].toString() : "0";
+        const p_cantidad = rawCant.replace(/\./g, "");
+
+        const p_estado = fila[8]
+          ? fila[8].toString().toUpperCase()
+          : "PENDIENTE";
         const p_programado = fila[9] ? fila[9].toString() : "";
 
         valoresTotales.push([
@@ -228,20 +237,22 @@ async function sincronizarPedidos() {
       }
 
       // Batch Insert
-      const TAMAÑO_LOTE = 2000;
-      for (let i = 0; i < valoresTotales.length; i += TAMAÑO_LOTE) {
-        const lote = valoresTotales.slice(i, i + TAMAÑO_LOTE);
-        const query = format(
-          `INSERT INTO pedidos_clientes (fecha, periodo, op, cliente, modelo, detalles, oc_cliente, cantidad, estado, programado)
+      if (valoresTotales.length > 0) {
+        const TAMAÑO_LOTE = 2000;
+        for (let i = 0; i < valoresTotales.length; i += TAMAÑO_LOTE) {
+          const lote = valoresTotales.slice(i, i + TAMAÑO_LOTE);
+          const query = format(
+            `INSERT INTO pedidos_clientes (fecha, periodo, op, cliente, modelo, detalles, oc_cliente, cantidad, estado, programado)
              VALUES %L`,
-          lote
-        );
-        await client.query(query);
+            lote
+          );
+          await client.query(query);
+        }
       }
 
       await client.query("COMMIT");
       console.log(
-        `✅ Sync Pedidos: ${valoresTotales.length} filas insertadas.`
+        `✅ Sync Pedidos: ${valoresTotales.length} filas insertadas correctamente.`
       );
     } catch (err) {
       await client.query("ROLLBACK");
@@ -250,7 +261,12 @@ async function sincronizarPedidos() {
       client.release();
     }
   } catch (error) {
-    console.error("❌ Error Sync Pedidos:", error.message);
+    // Manejo de errores de conexión
+    if (error.code === "ETIMEDOUT" || error.code === "ECONNRESET") {
+      console.warn("⚠️ Timeout en Sync Pedidos (se reintentará).");
+    } else {
+      console.error("❌ Error Sync Pedidos:", error.message);
+    }
   }
 }
 
@@ -258,7 +274,6 @@ async function sincronizarPedidos() {
 // 3. SYNC STOCK + ALERTAS
 // =====================================================
 async function sincronizarStockSemielaborados() {
-  // (Lógica Stock igual que antes)
   const client = await db.connect();
   try {
     console.log("\n📥 [SYNC] Stock...");
@@ -386,7 +401,6 @@ async function sincronizarStockSemielaborados() {
 // 4. SYNC MATERIAS PRIMAS
 // =====================================================
 async function sincronizarMateriasPrimas() {
-  // (Igual que antes, versión compacta para no saturar)
   const client = await db.connect();
   try {
     console.log("⏳ [SYNC] Materias Primas...");

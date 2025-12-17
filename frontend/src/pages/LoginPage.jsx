@@ -10,6 +10,7 @@ import {
   FaTools,
   FaArrowLeft,
 } from "react-icons/fa";
+import { motion } from "framer-motion";
 import { API_BASE_URL } from "../utils";
 
 export default function LoginPage() {

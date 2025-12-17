@@ -299,6 +299,55 @@ async function inicializarTablas() {
   } catch (e) {
     // Ignorar si ya existe
   }
+
+  // --- 14. SOLICITUDES LOGÍSTICA (EXPEDICIÓN -> PRODUCCIÓN) ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS solicitudes_logistica (
+        id SERIAL PRIMARY KEY,
+        producto VARCHAR(255) NOT NULL,
+        cantidad INT NOT NULL,
+        prioridad VARCHAR(50) DEFAULT 'MEDIA',
+        estado VARCHAR(50) DEFAULT 'PENDIENTE',
+        solicitante VARCHAR(100),
+        notas TEXT,
+        fecha_creacion TIMESTAMP DEFAULT NOW(),
+        fecha_actualizacion TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+  // --- 15. SOLICITUDES LOGÍSTICA (HISTORIAL) ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS historial_logistica (
+      id SERIAL PRIMARY KEY,
+      solicitud_id INTEGER REFERENCES solicitudes_logistica(id),
+      accion VARCHAR(100), -- Ej: "CREADO", "APROBADO", "PRIORIDAD CAMBIADA"
+      usuario VARCHAR(100), -- Quién lo hizo
+      detalle TEXT, -- Ej: "Cambió de PENDIENTE a APROBADO"
+      fecha TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+  // --- 16. SOLICITUDES LOGÍSTICA (COMENTARIOS) ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS comentarios_logistica (
+      id SERIAL PRIMARY KEY,
+      solicitud_id INTEGER REFERENCES solicitudes_logistica(id) ON DELETE CASCADE,
+      usuario VARCHAR(100),
+      mensaje TEXT,
+      fecha TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+  // --- 17. SUSCRIPTORES BOT DE SOLICITUDES INTERNAS ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS telegram_suscriptores (
+      chat_id BIGINT PRIMARY KEY,
+      first_name VARCHAR(100),
+      username VARCHAR(100),
+      fecha_suscripcion TIMESTAMP DEFAULT NOW()
+    );
+    `);
+
   console.log("✔ Tablas verificadas y actualizadas correctamente.");
 }
 

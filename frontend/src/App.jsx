@@ -55,7 +55,7 @@ const NAV_LINKS = [
     path: "/",
     label: "Dashboard Vivo",
     icon: <FaChartLine />,
-    roles: ["GERENCIA", "PANEL", "DEPOSITO", "MANTENIMIENTO", "OPERARIO"],
+    roles: ["GERENCIA", "PANEL", "MANTENIMIENTO", "OPERARIO"],
   },
   {
     path: "/planificacion",
@@ -102,9 +102,9 @@ const NAV_LINKS = [
   },
   {
     path: "/logistica",
-    label: "Logística Stock",
+    label: "Solicitudes Internas",
     icon: <FaTruck />,
-    roles: ["GERENCIA"],
+    roles: ["DEPOSITO", "GERENCIA", "OPERARIO", "PANEL"],
   },
   {
     path: "/hoja-de-ruta",
@@ -128,7 +128,7 @@ const NAV_LINKS = [
     path: "/recepcion",
     label: "Recepción",
     icon: <FaWarehouse />,
-    roles: ["GERENCIA", "DEPOSITO"],
+    roles: ["GERENCIA"],
   },
 ];
 
@@ -387,9 +387,13 @@ const Layout = ({ children }) => {
     userBadge = { icon: <FaTools />, text: "TÉCNICO", color: "text-red-400" };
 
   // Filtrar links permitidos
-  const allowedLinks = NAV_LINKS.filter(
-    (link) => link.roles.includes(role) || role === "GERENCIA"
-  );
+  const allowedLinks = NAV_LINKS.filter((link) => {
+    // Normalizamos el rol a mayúsculas y sin espacios por si acaso
+    const currentRole = role ? role.toString().trim().toUpperCase() : "";
+
+    // Si es Gerencia ve todo, si no, buscamos en el array
+    return currentRole === "GERENCIA" || link.roles.includes(currentRole);
+  });
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden selection:bg-blue-500 selection:text-white">
@@ -455,7 +459,12 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Layout>
-                <Dashboard />
+                {/* 2. PERO... Si es DEPOSITO, lo redirigimos forzosamente a Logística */}
+                {getAuthData().role === "DEPOSITO" ? (
+                  <Navigate to="/logistica" replace />
+                ) : (
+                  <Dashboard />
+                )}
               </Layout>
             </ProtectedRoute>
           }
@@ -485,7 +494,7 @@ export default function App() {
         <Route
           path="/recepcion"
           element={
-            <ProtectedRoute allowedRoles={["DEPOSITO", "GERENCIA"]}>
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
               <Layout>
                 <RecepcionPage />
               </Layout>
@@ -540,7 +549,9 @@ export default function App() {
         <Route
           path="/logistica"
           element={
-            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+            <ProtectedRoute
+              allowedRoles={["DEPOSITO", "GERENCIA", "OPERARIO", "PANEL"]}
+            >
               <Layout>
                 <LogisticaPage />
               </Layout>

@@ -4,6 +4,7 @@ const db = require("../db");
 const { protect, restrictTo } = require("../middleware/auth");
 const { enviarAlertaMRP } = require("../services/telegramBotListener");
 const { getPlanById } = require("../controllers/planificacionController");
+const { sincronizarPedidos } = require("../services/syncService");
 
 router.use(protect);
 
@@ -143,6 +144,21 @@ router.post("/", restrictTo("GERENCIA"), async (req, res) => {
     res.status(500).send(e.message);
   } finally {
     client.release();
+  }
+});
+
+// Ruta para forzar la sincronización manual desde el botón
+router.post("/sincronizar-ya", async (req, res) => {
+  try {
+    // Esto ejecuta la función que acabamos de corregir
+    await sincronizarPedidos();
+    res.json({
+      success: true,
+      message: "Base de datos actualizada con el Excel",
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Error al sincronizar" });
   }
 });
 

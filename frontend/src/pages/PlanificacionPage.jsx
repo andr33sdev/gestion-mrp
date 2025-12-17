@@ -36,6 +36,7 @@ import {
   FaUser,
   FaTimes,
   FaClock,
+  FaSync
 } from "react-icons/fa";
 
 export default function PlanificacionPage({ onNavigate }) {
@@ -393,6 +394,29 @@ export default function PlanificacionPage({ onNavigate }) {
       return d.toLocaleDateString("es-AR", { timeZone: "UTC" });
     } catch (e) {
       return str;
+    }
+  };
+
+  // Función para forzar sync
+  const handleForceSync = async () => {
+    if (
+      confirm(
+        "¿Forzar actualización desde el Excel? Esto puede tardar unos segundos."
+      )
+    ) {
+      setLoadingPending(true); // Usamos el mismo loader
+      try {
+        await authFetch(`${API_BASE_URL}/planificacion/sincronizar-ya`, {
+          method: "POST",
+        });
+        // Esperamos 2 seg para dar tiempo a la DB
+        setTimeout(() => {
+          loadPendingOrders();
+        }, 2000);
+      } catch (e) {
+        alert("Error sincronizando");
+        setLoadingPending(false);
+      }
     }
   };
 
@@ -825,6 +849,15 @@ export default function PlanificacionPage({ onNavigate }) {
                     Revisión rápida de urgencias
                   </p>
                 </div>
+                <div className="flex gap-2"></div>
+                {/* BOTÓN NUEVO DE REFRESCAR */}
+                <button
+                  onClick={handleForceSync}
+                  className="text-blue-400 hover:text-white bg-slate-700 hover:bg-blue-600 p-2 rounded-full transition-colors"
+                  title="Sincronizar ahora con Excel"
+                >
+                  <FaSync className={loadingPending ? "animate-spin" : ""} />
+                </button>
                 <button
                   onClick={() => setShowPendingDrawer(false)}
                   className="text-gray-400 hover:text-white bg-slate-700 p-2 rounded-full transition-colors"
