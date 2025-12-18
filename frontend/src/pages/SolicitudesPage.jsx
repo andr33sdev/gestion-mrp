@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { API_BASE_URL, authFetch } from "../utils.js"; // <--- IMPORTAR
-import { FaShoppingCart, FaSearch, FaTrash, FaFilePdf, FaSpinner, FaPlus, FaHistory, FaClipboardList, FaCheckCircle, FaClock, FaTimes, FaSave, FaEdit, FaEraser } from "react-icons/fa";
+import { FaShoppingCart, FaSearch, FaTrash, FaFilePdf, FaSpinner, FaPlus, FaHistory, FaClipboardList, FaCheckCircle, FaClock, FaTimes, FaSave, FaEdit, FaEraser, FaChevronLeft } from "react-icons/fa";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
