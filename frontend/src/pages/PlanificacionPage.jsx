@@ -12,6 +12,7 @@ import PlanCard from "../components/planificacion/PlanCard";
 import PlanStats from "../components/planificacion/PlanStats";
 import TabButton from "../components/planificacion/TabButton";
 import PlanGanttModal from "../components/planificacion/PlanGanttModal";
+import ProductionMatrixModal from "../components/planificacion/ProductionMatrixModal";
 
 import {
   FaClipboardList,
@@ -36,7 +37,7 @@ import {
   FaUser,
   FaTimes,
   FaClock,
-  FaSync
+  FaSync,
 } from "react-icons/fa";
 
 export default function PlanificacionPage({ onNavigate }) {
@@ -62,6 +63,7 @@ export default function PlanificacionPage({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("items");
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showGanttModal, setShowGanttModal] = useState(false);
+  const [showMatrixModal, setShowMatrixModal] = useState(false);
 
   // --- CARGA DE DATOS ---
   useEffect(() => {
@@ -451,6 +453,16 @@ export default function PlanificacionPage({ onNavigate }) {
             </div>
 
             <div className="flex gap-3 w-full md:w-auto">
+              {/* --- BOTÓN GANTT / CRONOGRAMA (NUEVO) --- */}
+              <motion.button
+                onClick={() => setShowMatrixModal(true)}
+                className="flex-1 md:flex-none bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-colors border border-purple-500/50"
+              >
+                <FaCalendarAlt />
+                <span className="hidden sm:inline">Cronograma</span>
+                <span className="sm:hidden">Gantt</span>
+              </motion.button>
+
               {/* --- BOTÓN DE PEDIDOS SIN STOCK --- */}
               <motion.button
                 whileTap={{ scale: 0.95 }}
@@ -849,21 +861,22 @@ export default function PlanificacionPage({ onNavigate }) {
                     Revisión rápida de urgencias
                   </p>
                 </div>
-                <div className="flex gap-2"></div>
-                {/* BOTÓN NUEVO DE REFRESCAR */}
-                <button
-                  onClick={handleForceSync}
-                  className="text-blue-400 hover:text-white bg-slate-700 hover:bg-blue-600 p-2 rounded-full transition-colors"
-                  title="Sincronizar ahora con Excel"
-                >
-                  <FaSync className={loadingPending ? "animate-spin" : ""} />
-                </button>
-                <button
-                  onClick={() => setShowPendingDrawer(false)}
-                  className="text-gray-400 hover:text-white bg-slate-700 p-2 rounded-full transition-colors"
-                >
-                  <FaTimes />
-                </button>
+                <div className="flex gap-2">
+                  {/* BOTÓN NUEVO DE REFRESCAR */}
+                  <button
+                    onClick={handleForceSync}
+                    className="text-blue-400 hover:text-white bg-slate-700 hover:bg-blue-600 p-2 rounded-full transition-colors"
+                    title="Sincronizar ahora con Excel"
+                  >
+                    <FaSync className={loadingPending ? "animate-spin" : ""} />
+                  </button>
+                  <button
+                    onClick={() => setShowPendingDrawer(false)}
+                    className="text-gray-400 hover:text-white bg-slate-700 p-2 rounded-full transition-colors"
+                  >
+                    <FaTimes />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 bg-slate-900/50">
@@ -937,6 +950,15 @@ export default function PlanificacionPage({ onNavigate }) {
             items={currentPlanItems}
             onClose={() => setShowGanttModal(false)}
             onSaveUpdate={handleUpdateFromGantt}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showMatrixModal && (
+          <ProductionMatrixModal
+            orders={pendingOrders}
+            allSemis={allSemis}
+            onClose={() => setShowMatrixModal(false)}
           />
         )}
       </AnimatePresence>
