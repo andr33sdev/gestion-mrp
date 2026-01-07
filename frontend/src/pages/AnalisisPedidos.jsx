@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import {
   FaUsers,
   FaCubes,
@@ -20,6 +21,11 @@ import {
   FaChartPie,
   FaTimes,
   FaListUl,
+  FaMinus,
+  FaQuestionCircle,
+  FaCalendarDay,
+  FaCalendarWeek,
+  FaCalendarAlt,
 } from "react-icons/fa";
 import {
   ResponsiveContainer,
@@ -30,6 +36,8 @@ import {
   XAxis,
   YAxis,
   ReferenceLine,
+  AreaChart,
+  Area,
 } from "recharts";
 import { PEDIDOS_API_URL, API_BASE_URL, authFetch } from "../utils.js";
 import SearchBar from "../components/analisis/SearchBar";
@@ -42,7 +50,6 @@ const STOCK_SEMIS_URL = `${API_BASE_URL}/ingenieria/semielaborados`;
 
 const normalizeKey = (key) => (key || "").trim().toUpperCase();
 
-// --- HELPER: PARSEO DE FECHAS ---
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
   if (Object.prototype.toString.call(dateStr) === "[object Date]") {
@@ -64,7 +71,6 @@ const parseDate = (dateStr) => {
   return isNaN(d) ? null : d;
 };
 
-// --- COMPONENTES VISUALES ---
 const RankIcon = ({ index }) => {
   if (index === 0) return <FaTrophy className="text-yellow-400" />;
   if (index === 1) return <FaMedal className="text-gray-300" />;
@@ -76,22 +82,117 @@ const RankIcon = ({ index }) => {
   );
 };
 
-const TableProgressBar = ({ value, max, colorClass }) => {
-  const percent = Math.min(100, Math.max(0, (value / max) * 100));
+const PortalTooltip = ({ coords, children }) => {
+  if (!coords) return null;
+  return createPortal(
+    <div
+      className="fixed z-[9999] pointer-events-none"
+      style={{
+        left: coords.left,
+        top: coords.top,
+        transform: "translateX(-50%) translateY(-100%) translateY(-8px)",
+      }}
+    >
+      {children}
+    </div>,
+    document.body
+  );
+};
+
+const Sparkline = ({ data, color = "#8884d8" }) => {
+  if (!data || data.length === 0)
+    return <div className="h-8 w-24 bg-slate-800/50 rounded"></div>;
+
+  const chartData = data.map((val, i) => ({ i, v: val }));
+
   return (
-    <div className="w-24 h-2 bg-slate-700 rounded-full overflow-hidden ml-auto">
-      <div
-        className={`h-full ${colorClass}`}
-        style={{ width: `${percent}%` }}
-      />
+    <div className="h-10 w-32 ml-auto">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id={`grad_${color}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color} stopOpacity={0.8} />
+              <stop offset="95%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="v"
+            stroke={color}
+            fill={`url(#grad_${color})`}
+            strokeWidth={2}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 };
 
-// --- MODAL PARETO ---
+export const TrendWidget = ({ trend, value }) => {
+  const [tooltipCoords, setTooltipCoords] = useState(null);
+
+  const handleMouseEnter = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipCoords({
+      left: rect.left + rect.width / 2,
+      top: rect.top,
+    });
+  };
+
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <span className="font-mono font-bold text-blue-300 text-sm">{value}</span>
+
+      <div className="flex items-center gap-1">
+        {trend === "up" && <FaArrowUp className="text-green-400 text-xs" />}
+        {trend === "down" && <FaArrowDown className="text-red-400 text-xs" />}
+        {trend === "neutral" && (
+          <FaMinus className="text-gray-600 text-[10px]" />
+        )}
+
+        <div
+          className="cursor-help ml-1"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={() => setTooltipCoords(null)}
+        >
+          <FaQuestionCircle className="text-slate-600 text-[10px] hover:text-slate-400 transition-colors" />
+        </div>
+
+        <PortalTooltip coords={tooltipCoords}>
+          <div className="w-56 p-3 bg-slate-900 text-white text-[10px] rounded-lg shadow-2xl border border-slate-700 animate-in fade-in zoom-in-95 duration-150">
+            <p className="font-bold mb-1 text-gray-200">
+              Momentum (Velocidad):
+            </p>
+            <p className="leading-relaxed text-gray-400 mb-2">
+              Compara el promedio de ventas de los{" "}
+              <span className="text-blue-300">últimos 2 meses</span> contra tu
+              promedio <span className="text-blue-300">semestral</span>.
+            </p>
+            <div className="pt-2 border-t border-slate-700/50 flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <div className="bg-green-500/20 p-1 rounded">
+                  <FaArrowUp className="text-green-400" />
+                </div>
+                <span className="text-gray-300">Acelerando (+10%)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="bg-red-500/20 p-1 rounded">
+                  <FaArrowDown className="text-red-400" />
+                </div>
+                <span className="text-gray-300">Frenando (-10%)</span>
+              </div>
+            </div>
+            <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-slate-700"></div>
+          </div>
+        </PortalTooltip>
+      </div>
+    </div>
+  );
+};
+
 const ParetoModal = ({ isOpen, onClose, data, isCli }) => {
   if (!isOpen) return null;
-
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden max-h-[90vh]">
@@ -176,6 +277,8 @@ export default function AnalisisPedidos() {
   const [modalPage, setModalPage] = useState(1);
   const [historialFilter, setHistorialFilter] = useState("TODOS");
   const [incluirMesActual, setIncluirMesActual] = useState(false);
+  const [chartResolution, setChartResolution] = useState("MENSUAL");
+  const [incluirMesActualModal, setIncluirMesActualModal] = useState(false);
   const [showParetoModal, setShowParetoModal] = useState(false);
 
   const MODAL_ITEMS_PER_PAGE = 5;
@@ -244,11 +347,13 @@ export default function AnalisisPedidos() {
 
     const stockMap = {};
     datosStock.forEach((s) => {
-      stockMap[normalizeKey(s.nombre)] =
+      const key = normalizeKey(s.nombre);
+      const sumaFila =
         Number(s.stock_planta_26 || 0) +
         Number(s.stock_planta_37 || 0) +
         Number(s.stock_deposito_ayolas || 0) +
         Number(s.stock_deposito_quintana || 0);
+      stockMap[key] = Math.max(stockMap[key] || 0, sumaFila);
     });
 
     const uniqueOrders = new Set(),
@@ -260,6 +365,9 @@ export default function AnalisisPedidos() {
     const cliMapY = {},
       cliMapM = {},
       cliMapW = {};
+    const prodTrendMap = {},
+      cliTrendMap = {};
+
     const activeClients = new Set(),
       allClients = new Set(),
       allModels = new Set();
@@ -284,6 +392,7 @@ export default function AnalisisPedidos() {
       const oc = row.oc_cliente || row.OC || row.oc;
       const op = row.op || row.OP;
       const prodKey = normalizeKey(prodName);
+      const cliKey = normalizeKey(cliName);
 
       if (isInWindow) {
         last12Months[idx].total++;
@@ -298,15 +407,18 @@ export default function AnalisisPedidos() {
         if (op && op !== "-" && op !== "0") uniqueOpsGlobal.add(op);
 
         if (cliName !== "Desconocido") {
-          const cliKey = normalizeKey(cliName);
           allClients.add(cliName);
           if (!isML) activeClients.add(cliName);
           cliMapY[cliKey] = (cliMapY[cliKey] || 0) + cantVendida;
+          if (!cliTrendMap[cliKey]) cliTrendMap[cliKey] = Array(12).fill(0);
+          cliTrendMap[cliKey][idx] += cantVendida;
         }
 
         if (prodName !== "Desconocido") {
           allModels.add(prodName);
           prodMapY[prodKey] = (prodMapY[prodKey] || 0) + cantVendida;
+          if (!prodTrendMap[prodKey]) prodTrendMap[prodKey] = Array(12).fill(0);
+          prodTrendMap[prodKey][idx] += cantVendida;
 
           const receta = normalizedRecetas[prodKey];
           if (receta && receta.length > 0) {
@@ -318,6 +430,7 @@ export default function AnalisisPedidos() {
                   total: 0,
                   months: Array(12).fill(0),
                   usedIn: {},
+                  history: [], // <--- NUEVO: Inicializamos historial
                 };
               }
               const cantidadConsumida = insumo.cantidad * cantVendida;
@@ -328,6 +441,12 @@ export default function AnalisisPedidos() {
               }
               consumoTotalPeriodo[insumoKey].usedIn[prodName] +=
                 cantidadConsumida;
+
+              // <--- NUEVO: Guardamos el registro histórico
+              consumoTotalPeriodo[insumoKey].history.push({
+                fecha: d.toLocaleDateString("es-AR"), // Formato DD/MM/YYYY
+                cant: cantidadConsumida,
+              });
             });
           } else {
             const causa = receta ? "Receta Vacía" : "Sin Receta";
@@ -342,7 +461,6 @@ export default function AnalisisPedidos() {
         }
       }
 
-      // Short term logic
       const startOfCurrentMonth = new Date(
         now.getFullYear(),
         now.getMonth(),
@@ -356,23 +474,40 @@ export default function AnalisisPedidos() {
 
       if (d >= startOfCurrentMonth) {
         if (cliName !== "Desconocido")
-          cliMapM[normalizeKey(cliName)] =
-            (cliMapM[normalizeKey(cliName)] || 0) + cantVendida;
+          cliMapM[cliKey] = (cliMapM[cliKey] || 0) + cantVendida;
         if (prodName !== "Desconocido")
           prodMapM[prodKey] = (prodMapM[prodKey] || 0) + cantVendida;
       }
       if (d >= startOfWeek) {
         if (cliName !== "Desconocido")
-          cliMapW[normalizeKey(cliName)] =
-            (cliMapW[normalizeKey(cliName)] || 0) + cantVendida;
+          cliMapW[cliKey] = (cliMapW[cliKey] || 0) + cantVendida;
         if (prodName !== "Desconocido")
           prodMapW[prodKey] = (prodMapW[prodKey] || 0) + cantVendida;
       }
     });
 
-    const getTop = (map, n) =>
+    const calculateTrend = (monthlyData) => {
+      if (!monthlyData) return "neutral";
+      const last6Months = monthlyData.slice(5, 11);
+      const total6Months = last6Months.reduce((acc, val) => acc + val, 0);
+      const avgBase = total6Months / 6;
+      const last2Months = monthlyData.slice(9, 11);
+      const total2Months = last2Months.reduce((acc, val) => acc + val, 0);
+      const avgRecent = total2Months / 2;
+      if (avgBase === 0) return "neutral";
+      if (avgRecent > avgBase * 1.1) return "up";
+      if (avgRecent < avgBase * 0.9) return "down";
+      return "neutral";
+    };
+
+    const getTop = (map, trendMap, n) =>
       Object.entries(map)
-        .map(([name, value]) => ({ name, value }))
+        .map(([name, value]) => ({
+          name,
+          value,
+          trend: calculateTrend(trendMap[name]),
+          history: (trendMap[name] || Array(12).fill(0)).slice(0, -1),
+        }))
         .sort((a, b) => b.value - a.value)
         .slice(0, n);
 
@@ -397,6 +532,8 @@ export default function AnalisisPedidos() {
 
     const paretoProd = calculatePareto(prodMapY);
     const paretoCli = calculatePareto(cliMapY);
+    const topProdY = getTop(prodMapY, prodTrendMap, 10);
+    const topCliY = getTop(cliMapY, cliTrendMap, 10);
 
     const salesByMonth = last12Months.map((m) => ({
       mes: m.label,
@@ -406,17 +543,20 @@ export default function AnalisisPedidos() {
       (a, b) => b.ventas - a.ventas
     )[0];
 
-    // CÁLCULO DE CONSUMO Y ALERTAS
-    let criticalItemsCount = 0; // Contador de alertas
+    let criticalItemsCount = 0;
     const consumoData = Object.values(consumoTotalPeriodo)
       .map((data) => {
         const stock = stockMap[normalizeKey(data.name)] || 0;
-        const promedioMensual = data.total / 12;
-        const promedioDiario = data.total / 365;
+        const last6Months = data.months.slice(5, 11);
+        const total6Months = last6Months.reduce((acc, val) => acc + val, 0);
+        const promedioMensual = total6Months / 6;
+        const promedioDiario = promedioMensual / 30;
         const diasRestantes =
           promedioDiario > 0 ? stock / promedioDiario : 9999;
 
-        if (diasRestantes < 7) criticalItemsCount++; // Alerta si < 7 días
+        if (diasRestantes < 7) criticalItemsCount++;
+
+        const trend = calculateTrend(data.months);
 
         return {
           name: data.name,
@@ -426,6 +566,7 @@ export default function AnalisisPedidos() {
           daily: promedioDiario.toFixed(2),
           daysLeft: diasRestantes === 9999 ? "∞" : diasRestantes.toFixed(1),
           daysLeftVal: diasRestantes,
+          trend: trend,
           chartData: last12Months.map((m, i) => ({
             mes: m.label,
             consumo: data.months[i] || 0,
@@ -434,6 +575,7 @@ export default function AnalisisPedidos() {
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 5),
+          history: data.history, // <--- NUEVO: Pasamos el historial al hijo
         };
       })
       .sort((a, b) => a.daysLeftVal - b.daysLeftVal);
@@ -456,26 +598,101 @@ export default function AnalisisPedidos() {
       recordMax: recordMonth?.ventas || 1,
       raw: filteredRaw,
       prod: {
-        y: getTop(prodMapY, 10),
-        m: getTop(prodMapM, 5),
-        w: getTop(prodMapW, 5),
+        y: topProdY,
+        m: getTop(prodMapM, prodTrendMap, 5),
+        w: getTop(prodMapW, prodTrendMap, 5),
         list: Array.from(allModels).sort(),
         pareto: paretoProd,
       },
       cli: {
-        y: getTop(cliMapY, 10),
+        y: topCliY,
         active: activeClients.size,
-        m: getTop(cliMapM, 5),
-        w: getTop(cliMapW, 5),
+        m: getTop(cliMapM, cliTrendMap, 5),
+        w: getTop(cliMapW, cliTrendMap, 5),
         list: Array.from(allClients).sort(),
         pareto: paretoCli,
       },
       consumo: consumoData,
-      criticalItemsCount, // Exportamos el conteo
+      criticalItemsCount,
       missingRecipes: missingData,
       daysAnalyzed: 365,
     };
   }, [datosPedidos, datosRecetas, datosStock]);
+
+  const mainChartData = useMemo(() => {
+    if (!datosPedidos || datosPedidos.length === 0) return [];
+    const now = new Date();
+
+    const getWeekNumber = (d) => {
+      d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+      return `${d.getUTCFullYear()}-W${weekNo}`;
+    };
+
+    const buckets = {};
+    let labels = [];
+
+    if (chartResolution === "DIARIA") {
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const label = d.toLocaleDateString("es-AR", {
+          day: "2-digit",
+          month: "2-digit",
+        });
+        const key = d.toISOString().split("T")[0];
+        buckets[key] = 0;
+        labels.push({ label, key });
+      }
+
+      datosPedidos.forEach((row) => {
+        const d = parseDate(row.fecha || row.FECHA);
+        if (!d) return;
+        const key = d.toISOString().split("T")[0];
+        if (
+          buckets.hasOwnProperty(key) &&
+          !row.estado?.toString().toUpperCase().includes("CANCELADO")
+        ) {
+          buckets[key] += 1;
+        }
+      });
+    } else if (chartResolution === "SEMANAL") {
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i * 7);
+        const weekKey = getWeekNumber(d);
+        const label = `Sem ${weekKey.split("-W")[1]}`;
+        buckets[weekKey] = 0;
+        labels.push({ label, key: weekKey });
+      }
+
+      datosPedidos.forEach((row) => {
+        const d = parseDate(row.fecha || row.FECHA);
+        if (!d) return;
+        const key = getWeekNumber(d);
+        if (
+          buckets.hasOwnProperty(key) &&
+          !row.estado?.toString().toUpperCase().includes("CANCELADO")
+        ) {
+          buckets[key] += 1;
+        }
+      });
+    } else {
+      if (!analysisData) return [];
+      return incluirMesActual
+        ? analysisData.salesByMonth
+        : analysisData.salesByMonth.slice(0, -1);
+    }
+
+    const result = labels.map((l) => ({
+      mes: l.label,
+      ventas: buckets[l.key],
+    }));
+
+    return result;
+  }, [datosPedidos, chartResolution, analysisData, incluirMesActual]);
 
   const handleSearch = (val) => {
     setBusqueda(val);
@@ -506,8 +723,6 @@ export default function AnalisisPedidos() {
 
     let total = 0;
     const pieMap = {};
-    const last12Keys = analysisData.salesByMonth.map((m) => m.mes);
-    const prodMonthMap = new Array(12).fill(0);
     const now = new Date();
 
     const getMonthIndex = (d) => {
@@ -530,11 +745,14 @@ export default function AnalisisPedidos() {
             ? r.modelo || r.MODELO
             : r.cliente || r.CLIENTE;
         pieMap[key] = (pieMap[key] || 0) + cant;
+
         const d = parseDate(r.fecha || r.FECHA);
+
+        let mIdx = -1;
         if (d) {
-          const idx = getMonthIndex(d);
-          if (idx >= 0 && idx < 12) prodMonthMap[idx] += cant;
+          mIdx = getMonthIndex(d);
         }
+
         return {
           fecha: d ? d.toLocaleDateString("es-AR") : "-",
           col: key,
@@ -545,6 +763,7 @@ export default function AnalisisPedidos() {
             .toString()
             .toLowerCase()
             .includes("mercadolibre"),
+          monthIndex: mIdx,
         };
       });
 
@@ -557,10 +776,7 @@ export default function AnalisisPedidos() {
         .slice(0, 5),
       history,
       last: history[0]?.fecha,
-      salesChart: last12Keys.map((l, i) => ({
-        mes: l,
-        ventas: prodMonthMap[i],
-      })),
+      salesChart: [],
     });
   };
 
@@ -636,6 +852,7 @@ export default function AnalisisPedidos() {
   let modalHistory = [],
     totalPages = 0,
     dynamicChartData = [];
+
   if (selectedItem) {
     const filtered = selectedItem.history.filter((h) =>
       historialFilter === "TODOS"
@@ -649,7 +866,22 @@ export default function AnalisisPedidos() {
       (modalPage - 1) * MODAL_ITEMS_PER_PAGE,
       modalPage * MODAL_ITEMS_PER_PAGE
     );
-    dynamicChartData = selectedItem.salesChart;
+
+    const aggregatedChart = new Array(12).fill(0);
+    filtered.forEach((h) => {
+      if (h.monthIndex >= 0 && h.monthIndex < 12) {
+        aggregatedChart[h.monthIndex] += h.cant;
+      }
+    });
+
+    const fullChartData = analysisData.salesByMonth.map((m, i) => ({
+      mes: m.mes,
+      ventas: aggregatedChart[i],
+    }));
+
+    dynamicChartData = incluirMesActualModal
+      ? fullChartData
+      : fullChartData.slice(0, -1);
   }
 
   const maxValTop = data.y[0]?.value || 1;
@@ -664,7 +896,6 @@ export default function AnalisisPedidos() {
 
   return (
     <div className="animate-in fade-in duration-500 relative pb-20">
-      {/* TABS CON ALERTAS */}
       <div className="mb-6 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto no-scrollbar">
         <div className="flex items-center gap-2 min-w-max pb-1 border-b border-slate-700">
           {[
@@ -687,7 +918,6 @@ export default function AnalisisPedidos() {
               }`}
             >
               {tab.icon} {tab.label}
-              {/* BADGE DE ALERTA */}
               {tab.alertCount > 0 && (
                 <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse shadow-sm shadow-red-500/50">
                   {tab.alertCount}
@@ -700,7 +930,6 @@ export default function AnalisisPedidos() {
 
       {view === "DASHBOARD" && (
         <>
-          {/* HEADER */}
           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
             <div>
               <h1 className="text-2xl md:text-4xl font-bold flex items-center gap-3 text-white">
@@ -748,9 +977,7 @@ export default function AnalisisPedidos() {
             </div>
           </div>
 
-          {/* GRID DASHBOARD */}
           <div className="flex flex-col gap-6 mb-12">
-            {/* FILA 1: KPIs */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
               <div
                 className={`bg-slate-800 p-6 rounded-xl border-l-4 shadow-lg flex flex-col justify-center h-full ${
@@ -837,7 +1064,6 @@ export default function AnalisisPedidos() {
               </div>
             </div>
 
-            {/* FILA 2: LISTAS SECUNDARIAS */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
               <div className="bg-slate-800 p-5 rounded-xl border-t-4 border-green-500 shadow-lg h-full">
                 <h3 className="text-gray-400 text-xs font-bold mb-4 uppercase tracking-wider text-center">
@@ -899,7 +1125,6 @@ export default function AnalisisPedidos() {
             </div>
           </div>
 
-          {/* FILA 3: TABLAS DE DATOS */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
             <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex flex-col h-full">
               <div className="p-4 border-b border-slate-700 bg-slate-800 sticky top-0">
@@ -914,8 +1139,8 @@ export default function AnalisisPedidos() {
                       <th className="px-4 py-3 w-10 text-center">#</th>
                       <th className="px-4 py-3">Producto / Cliente</th>
                       <th className="px-4 py-3 text-right">Total</th>
-                      <th className="px-4 py-3 w-32 hidden md:table-cell">
-                        Volumen
+                      <th className="px-4 py-3 w-32 hidden md:table-cell text-right pr-4">
+                        Evolución
                       </th>
                     </tr>
                   </thead>
@@ -923,22 +1148,21 @@ export default function AnalisisPedidos() {
                     {data.y.slice(0, 10).map((item, index) => (
                       <tr
                         key={index}
-                        className="hover:bg-slate-700/30 transition-colors"
+                        className="hover:bg-slate-700/30 transition-colors group"
                       >
                         <td className="px-4 py-3 text-center">
                           <RankIcon index={index} />
                         </td>
-                        <td className="px-4 py-3 font-medium text-white truncate max-w-[150px]">
+                        <td className="px-4 py-3 font-medium text-white truncate max-w-[150px] relative">
                           {item.name}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-blue-300">
-                          {item.value}
+                        <td className="px-4 py-3 text-right">
+                          <TrendWidget trend={item.trend} value={item.value} />
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell align-middle">
-                          <TableProgressBar
-                            value={item.value}
-                            max={maxValTop}
-                            colorClass={isCli ? "bg-purple-500" : "bg-blue-500"}
+                          <Sparkline
+                            data={item.history}
+                            color={isCli ? "#A28DFF" : "#3b82f6"}
                           />
                         </td>
                       </tr>
@@ -949,44 +1173,78 @@ export default function AnalisisPedidos() {
             </div>
 
             <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 overflow-hidden flex flex-col h-full p-4">
-              <div className="mb-4 border-b border-slate-700 pb-2 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <h3 className="text-lg font-bold text-gray-200 flex items-center gap-2">
-                  <FaCalendarCheck className="text-green-500" /> Evolución
-                  Mensual
-                </h3>
-                <div className="flex items-center gap-3">
-                  {incluirMesActual && (
-                    <div className="text-xs font-mono text-gray-400 bg-slate-900 px-2 py-1 rounded border border-slate-600 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>
-                      Proy:{" "}
-                      <span className="text-white font-bold">
-                        {projectedValue}
-                      </span>
-                      {currentSales === 0 && (
-                        <span className="text-[10px] text-gray-500">
-                          (Est. Histórica)
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setIncluirMesActual(!incluirMesActual)}
-                    className={`flex items-center gap-2 px-3 py-1 rounded text-xs font-bold transition-colors border ${
-                      incluirMesActual
-                        ? "bg-slate-700 text-green-400 border-green-500/50"
-                        : "bg-slate-800 text-gray-500 border-slate-600 hover:border-gray-400 hover:text-gray-300"
-                    }`}
-                  >
-                    {incluirMesActual ? <FaEye /> : <FaEyeSlash />}{" "}
-                    {incluirMesActual ? "Mes Actual: ON" : "Mes Actual: OFF"}
-                  </button>
+              <div className="mb-4 border-b border-slate-700 pb-2 flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <h3 className="text-lg font-bold text-gray-200 flex items-center gap-2">
+                    <FaCalendarCheck className="text-green-500" /> Evolución
+                  </h3>
+                  <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-600/50">
+                    <button
+                      onClick={() => setChartResolution("DIARIA")}
+                      className={`p-2 rounded text-xs transition-all ${
+                        chartResolution === "DIARIA"
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title="Diario (30 días)"
+                    >
+                      <FaCalendarDay />
+                    </button>
+                    <button
+                      onClick={() => setChartResolution("SEMANAL")}
+                      className={`p-2 rounded text-xs transition-all ${
+                        chartResolution === "SEMANAL"
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title="Semanal (12 semanas)"
+                    >
+                      <FaCalendarWeek />
+                    </button>
+                    <button
+                      onClick={() => setChartResolution("MENSUAL")}
+                      className={`p-2 rounded text-xs transition-all ${
+                        chartResolution === "MENSUAL"
+                          ? "bg-blue-600 text-white"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                      title="Mensual (12 meses)"
+                    >
+                      <FaCalendarAlt />
+                    </button>
+                  </div>
                 </div>
+
+                {chartResolution === "MENSUAL" && (
+                  <div className="flex items-center gap-3 justify-end">
+                    {incluirMesActual && (
+                      <div className="text-xs font-mono text-gray-400 bg-slate-900 px-2 py-1 rounded border border-slate-600 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-slate-400 animate-pulse"></span>
+                        Proy:{" "}
+                        <span className="text-white font-bold">
+                          {projectedValue}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => setIncluirMesActual(!incluirMesActual)}
+                      className={`flex items-center gap-2 px-3 py-1 rounded text-[10px] font-bold transition-colors border ${
+                        incluirMesActual
+                          ? "bg-slate-700 text-green-400 border-green-500/50"
+                          : "bg-slate-800 text-gray-500 border-slate-600 hover:border-gray-400 hover:text-gray-300"
+                      }`}
+                    >
+                      {incluirMesActual ? <FaEye /> : <FaEyeSlash />}{" "}
+                      {incluirMesActual ? "Mes Actual: ON" : "Mes Actual: OFF"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 min-h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart
-                    data={chartDataToShow}
+                    data={mainChartData}
                     margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
                   >
                     <CartesianGrid
@@ -997,9 +1255,9 @@ export default function AnalisisPedidos() {
                     <XAxis
                       dataKey="mes"
                       stroke="#94a3b8"
-                      fontSize={12}
+                      fontSize={10}
                       tickMargin={10}
-                      interval={0}
+                      interval={chartResolution === "DIARIA" ? 2 : 0}
                     />
                     <YAxis
                       stroke="#94a3b8"
@@ -1015,14 +1273,14 @@ export default function AnalisisPedidos() {
                       }}
                       itemStyle={{ color: "#4ade80" }}
                     />
-                    {incluirMesActual && (
+                    {chartResolution === "MENSUAL" && incluirMesActual && (
                       <ReferenceLine
                         y={projectedValue}
                         stroke="#94a3b8"
                         strokeDasharray="3 3"
                         label={{
                           position: "right",
-                          value: "Proyección",
+                          value: "Proy",
                           fill: "#94a3b8",
                           fontSize: 10,
                         }}
@@ -1035,12 +1293,13 @@ export default function AnalisisPedidos() {
                       stroke="#4ade80"
                       strokeWidth={3}
                       dot={{
-                        r: 4,
+                        r: 3,
                         fill: "#1e293b",
                         stroke: "#4ade80",
                         strokeWidth: 2,
                       }}
                       activeDot={{ r: 6, fill: "#4ade80" }}
+                      animationDuration={500}
                     />
                   </LineChart>
                 </ResponsiveContainer>
@@ -1066,6 +1325,8 @@ export default function AnalisisPedidos() {
           setHistorialFilter={setHistorialFilter}
           setSelectedItem={setSelectedItem}
           COLORS={COLORS}
+          showCurrentMonth={incluirMesActualModal}
+          setShowCurrentMonth={setIncluirMesActualModal}
         />
       )}
 
