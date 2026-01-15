@@ -267,6 +267,12 @@ function configurarBotAdmin(bot) {
     const texto = msg.text || "";
     const chatId = msg.chat.id;
 
+    // --- COMANDO PARA VER ID ---
+    if (texto === "/id") {
+      bot.sendMessage(chatId, `🆔 El ID de este chat es: ${chatId}`);
+      console.log("ID DETECTADO:", chatId);
+    }
+
     // Comando START
     if (texto === "/start") bot.sendMessage(chatId, "👷 Bot Conoflex Activo");
 
