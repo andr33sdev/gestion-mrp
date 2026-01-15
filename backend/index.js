@@ -71,12 +71,12 @@ async function iniciarServidor() {
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
     setInterval(sincronizarPedidos, 15 * 60 * 1000);
 
-    // Vigilancia Competencia (Cada 1 minuto)
+    // Vigilancia Competencia (Cada 30 minutos)
     setInterval(() => {
       const bot = getBot();
       const adminId = process.env.TELEGRAM_ADMIN_ID;
       if (bot && adminId) vigilarCompetencia(bot, adminId);
-    }, 1 * 60 * 1000);
+    }, 30 * 60 * 1000);
 
     // --- NUEVO: VIGILANCIA MANTENIMIENTO ---
     // Revisar tickets viejos cada 1 hora
