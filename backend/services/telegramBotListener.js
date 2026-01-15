@@ -263,7 +263,67 @@ function configurarBotAdmin(bot) {
   bot.on("message", async (msg) => {
     const texto = msg.text || "";
     const chatId = msg.chat.id;
+
+    // Comando START
     if (texto === "/start") bot.sendMessage(chatId, "🤖 Bot Admin Activo.");
+
+    // --- CÓDIGO RESTAURADO PARA ESPIAR ---
+    if (texto.startsWith("/espiar ")) {
+      // Formato esperado: /espiar https://... Nombre del Producto
+      const partes = texto.split(" ");
+      const url = partes[1];
+      const alias = partes.slice(2).join(" "); // Une el resto por si el nombre tiene espacios
+
+      if (!url || !alias) {
+        return bot.sendMessage(
+          chatId,
+          "⚠️ <b>Formato:</b> /espiar [URL] [Nombre]",
+          { parse_mode: "HTML" }
+        );
+      }
+
+      bot.sendMessage(chatId, `🕵️ <b>Procesando:</b> ${alias}...`, {
+        parse_mode: "HTML",
+      });
+
+      try {
+        // 1. Detectar el sitio automáticamente
+        let sitio = "GENERICO";
+        if (url.includes("mercadolibre")) sitio = "MERCADOLIBRE";
+
+        // 2. Guardar en Base de Datos (PostgreSQL)
+        const insertQuery = `
+          INSERT INTO competencia_tracking (url, alias, sitio, activo, ultimo_precio, ultima_revision)
+          VALUES ($1, $2, $3, TRUE, 0, NOW())
+          RETURNING *
+        `;
+        const res = await db.query(insertQuery, [url, alias, sitio]);
+        const nuevoItem = res.rows[0];
+
+        // 3. Escanear inmediatamente para tener el precio base
+        // (Aquí usamos la función que ya estaba importada en la línea 2)
+        const reporte = await escanearProducto(nuevoItem);
+
+        if (reporte) {
+          // Si devuelve reporte, lo mostramos
+          bot.sendMessage(chatId, reporte, { parse_mode: "Markdown" });
+        } else {
+          // Si no (ej. precio 0 o error de lectura), confirmamos guardado
+          bot.sendMessage(
+            chatId,
+            `✅ <b>Guardado.</b> Se monitoreará cada hora.`,
+            { parse_mode: "HTML" }
+          );
+        }
+      } catch (error) {
+        console.error("Error comando espiar:", error);
+        bot.sendMessage(
+          chatId,
+          "❌ Error al guardar. Verifica que la URL no sea demasiado larga o duplicada."
+        );
+      }
+    }
+    // -------------------------------------
   });
 }
 
