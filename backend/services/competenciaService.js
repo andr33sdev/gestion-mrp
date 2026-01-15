@@ -5,10 +5,24 @@ const db = require("../db");
 
 function parsearPrecio(texto) {
   if (!texto) return 0;
-  const limpio = texto
-    .toString()
-    .replace(/[^0-9,.]/g, "")
-    .replace(",", ".");
+
+  // 1. Convertimos a string por seguridad
+  let limpio = texto.toString();
+
+  // 2. Quitamos el símbolo de moneda y espacios si los hubiera (limpieza básica)
+  // Pero OJO: Primero eliminamos los PUNTOS de miles, antes de tocar decimales.
+
+  // Caso Argentina: "9.550,00" -> Queremos "9550.00"
+
+  // A. Eliminar todos los puntos (son separadores de miles)
+  limpio = limpio.replace(/\./g, "");
+
+  // B. Reemplazar la coma por punto (para que JS lo entienda como decimal)
+  limpio = limpio.replace(/,/g, ".");
+
+  // C. Limpiar cualquier otro caracter basura (ej: $, letras)
+  limpio = limpio.replace(/[^0-9.]/g, "");
+
   return parseFloat(limpio) || 0;
 }
 
