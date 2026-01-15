@@ -265,7 +265,23 @@ function configurarBotAdmin(bot) {
     const chatId = msg.chat.id;
 
     // Comando START
-    if (texto === "/start") bot.sendMessage(chatId, "🤖 Bot Admin Activo.");
+    if (texto === "/start") bot.sendMessage(chatId, "👷 Bot Conoflex Activo");
+
+    // 2. Agrega este bloque para el disparo manual:
+    if (texto === "/revisar") {
+      bot.sendMessage(
+        chatId,
+        "🕵️ Iniciando revisión completa de competencia..."
+      );
+      try {
+        // Ejecuta la misma función que antes hacía el automático
+        await vigilarCompetencia(bot, chatId);
+        bot.sendMessage(chatId, "✅ Revisión finalizada.");
+      } catch (error) {
+        console.error(error);
+        bot.sendMessage(chatId, "❌ Error al ejecutar la revisión.");
+      }
+    }
 
     // --- CÓDIGO RESTAURADO PARA ESPIAR ---
     if (texto.startsWith("/espiar ")) {
