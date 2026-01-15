@@ -1,6 +1,9 @@
 // backend/services/telegramBotListener.js
 const TelegramBot = require("node-telegram-bot-api");
-const { escanearProducto } = require("./competenciaService");
+const {
+  escanearProducto,
+  vigilarCompetencia,
+} = require("./competenciaService");
 const { agregarPedidoAlSheet } = require("../google-drive");
 const db = require("../db");
 
