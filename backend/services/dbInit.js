@@ -348,6 +348,14 @@ async function inicializarTablas() {
     );
     `);
 
+  // --- 18. FERIADOS (RRHH) ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS feriados (
+        fecha DATE PRIMARY KEY,
+        descripcion VARCHAR(255)
+      );
+    `);
+
   console.log("✔ Tablas verificadas y actualizadas correctamente.");
 }
 

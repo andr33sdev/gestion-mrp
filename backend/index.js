@@ -34,6 +34,7 @@ const logisticaRoutes = require("./routes/logistica");
 const analisisRoutes = require("./routes/analisis");
 const iaRoutes = require("./routes/ia");
 const mantenimientoRoutes = require("./routes/mantenimiento");
+const feriadosRoutes = require("./routes/feriados");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -51,6 +52,7 @@ app.use("/api/logistica", logisticaRoutes);
 app.use("/api/analisis", analisisRoutes);
 app.use("/api/ia", iaRoutes);
 app.use("/api/mantenimiento", mantenimientoRoutes);
+app.use("/api/feriados", feriadosRoutes);
 
 async function iniciarServidor() {
   try {

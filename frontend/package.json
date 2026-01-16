@@ -15,6 +15,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@tailwindcss/vite": "^4.1.17",
     "@yudiel/react-qr-scanner": "^2.4.1",
+    "date-fns": "^4.1.0",
     "framer-motion": "^12.23.24",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
@@ -27,7 +28,8 @@
     "react-router-dom": "^7.10.1",
     "react-to-print": "^3.2.0",
     "recharts": "^3.5.1",
-    "tailwindcss": "^4.1.17"
+    "tailwindcss": "^4.1.17",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

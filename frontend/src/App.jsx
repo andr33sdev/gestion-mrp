@@ -27,6 +27,7 @@ import {
   FaTools,
   FaChevronRight,
   FaChevronLeft,
+  FaUserClock, // <--- 1. IMPORTAMOS EL ÍCONO NUEVO
 } from "react-icons/fa";
 
 // Importación de Páginas
@@ -44,6 +45,7 @@ import RecepcionPage from "./pages/RecepcionPage.jsx";
 import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
 import CentroComando from "./pages/CentroComando";
 import MantenimientoPage from "./pages/MantenimientoPage";
+import RRHHPage from "./pages/RRHHPage"; // <--- 2. IMPORTAMOS LA PÁGINA NUEVA
 
 // Componentes Globales
 import ChatGerencia from "./components/ChatGerencia";
@@ -86,6 +88,12 @@ const NAV_LINKS = [
     label: "Personal",
     icon: <FaUsersCog />,
     roles: ["GERENCIA", "PANEL"],
+  },
+  {
+    path: "/rrhh", // <--- 3. AGREGAMOS EL LINK EN EL MENÚ LATERAL
+    label: "RRHH / Asistencia",
+    icon: <FaUserClock />,
+    roles: ["GERENCIA"],
   },
   {
     path: "/mantenimiento",
@@ -594,6 +602,16 @@ export default function App() {
             <ProtectedRoute allowedRoles={["GERENCIA"]}>
               <Layout>
                 <SolicitudesPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/rrhh" // <--- 4. AGREGAMOS LA RUTA PROTEGIDA
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <RRHHPage />
               </Layout>
             </ProtectedRoute>
           }
