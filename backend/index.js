@@ -35,6 +35,7 @@ const analisisRoutes = require("./routes/analisis");
 const iaRoutes = require("./routes/ia");
 const mantenimientoRoutes = require("./routes/mantenimiento");
 const feriadosRoutes = require("./routes/feriados");
+const rrhhRoutes = require("./routes/rrhh");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -53,6 +54,7 @@ app.use("/api/analisis", analisisRoutes);
 app.use("/api/ia", iaRoutes);
 app.use("/api/mantenimiento", mantenimientoRoutes);
 app.use("/api/feriados", feriadosRoutes);
+app.use("/api/rrhh", rrhhRoutes);
 
 async function iniciarServidor() {
   try {
@@ -74,18 +76,24 @@ async function iniciarServidor() {
     setInterval(sincronizarPedidos, 15 * 60 * 1000);
 
     // Vigilancia Competencia (Cada 30 minutos)
-    setInterval(() => {
-      const bot = getBot();
-      const adminId = process.env.TELEGRAM_ADMIN_ID;
-      if (bot && adminId) vigilarCompetencia(bot, adminId);
-    }, 30 * 60 * 1000);
+    setInterval(
+      () => {
+        const bot = getBot();
+        const adminId = process.env.TELEGRAM_ADMIN_ID;
+        if (bot && adminId) vigilarCompetencia(bot, adminId);
+      },
+      30 * 60 * 1000,
+    );
 
     // --- NUEVO: VIGILANCIA MANTENIMIENTO ---
     // Revisar tickets viejos cada 1 hora
-    setInterval(() => {
-      console.log("🔧 Chequeando alertas mantenimiento 24h...");
-      checkAlertasMantenimiento();
-    }, 60 * 60 * 1000);
+    setInterval(
+      () => {
+        console.log("🔧 Chequeando alertas mantenimiento 24h...");
+        checkAlertasMantenimiento();
+      },
+      60 * 60 * 1000,
+    );
   } catch (error) {
     console.error("❌ Error fatal:", error);
   }

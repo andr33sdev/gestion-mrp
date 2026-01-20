@@ -8,10 +8,10 @@ async function inicializarTablas() {
 
     // --- 1. TABLAS BASE (ESTADO Y LOGS) ---
     await client.query(
-      `CREATE TABLE IF NOT EXISTS estado_produccion (estacion_id INTEGER PRIMARY KEY, producto_actual TEXT);`
+      `CREATE TABLE IF NOT EXISTS estado_produccion (estacion_id INTEGER PRIMARY KEY, producto_actual TEXT);`,
     );
     await client.query(
-      `CREATE TABLE IF NOT EXISTS registros (id SERIAL PRIMARY KEY, fecha DATE, hora TIME, accion TEXT, tipo VARCHAR(50), productos_json TEXT);`
+      `CREATE TABLE IF NOT EXISTS registros (id SERIAL PRIMARY KEY, fecha DATE, hora TIME, accion TEXT, tipo VARCHAR(50), productos_json TEXT);`,
     );
 
     // --- 2. SEMIELABORADOS ---
@@ -43,7 +43,7 @@ async function inicializarTablas() {
     for (const col of columnasStock) {
       try {
         await client.query(
-          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`
+          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`,
         );
       } catch (e) {}
     }
@@ -51,26 +51,26 @@ async function inicializarTablas() {
     for (const col of columnasAlerta) {
       try {
         await client.query(
-          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`
+          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`,
         );
       } catch (e) {}
     }
 
     // --- 3. MATERIAS PRIMAS E INGENIERÍA ---
     await client.query(
-      `CREATE TABLE IF NOT EXISTS materias_primas (id SERIAL PRIMARY KEY, codigo VARCHAR(100) UNIQUE NOT NULL, nombre VARCHAR(255), stock_actual NUMERIC DEFAULT 0, stock_minimo NUMERIC DEFAULT 0, ultima_actualizacion TIMESTAMP DEFAULT NOW());`
+      `CREATE TABLE IF NOT EXISTS materias_primas (id SERIAL PRIMARY KEY, codigo VARCHAR(100) UNIQUE NOT NULL, nombre VARCHAR(255), stock_actual NUMERIC DEFAULT 0, stock_minimo NUMERIC DEFAULT 0, ultima_actualizacion TIMESTAMP DEFAULT NOW());`,
     );
     try {
       await client.query(
-        `ALTER TABLE materias_primas ADD COLUMN stock_minimo NUMERIC DEFAULT 0;`
+        `ALTER TABLE materias_primas ADD COLUMN stock_minimo NUMERIC DEFAULT 0;`,
       );
     } catch (e) {}
 
     await client.query(
-      `CREATE TABLE IF NOT EXISTS productos_ingenieria (nombre VARCHAR(255) PRIMARY KEY);`
+      `CREATE TABLE IF NOT EXISTS productos_ingenieria (nombre VARCHAR(255) PRIMARY KEY);`,
     );
     await client.query(
-      `CREATE TABLE IF NOT EXISTS recetas (id SERIAL PRIMARY KEY, producto_terminado VARCHAR(255) REFERENCES productos_ingenieria(nombre) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad NUMERIC DEFAULT 1, ultima_actualizacion TIMESTAMP DEFAULT NOW());`
+      `CREATE TABLE IF NOT EXISTS recetas (id SERIAL PRIMARY KEY, producto_terminado VARCHAR(255) REFERENCES productos_ingenieria(nombre) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad NUMERIC DEFAULT 1, ultima_actualizacion TIMESTAMP DEFAULT NOW());`,
     );
     await client.query(`
       CREATE TABLE IF NOT EXISTS recetas_semielaborados (
@@ -95,34 +95,34 @@ async function inicializarTablas() {
 
     // --- 4. PLANIFICACIÓN ---
     await client.query(
-      `CREATE TABLE IF NOT EXISTS planes_produccion (id SERIAL PRIMARY KEY, nombre VARCHAR(255) NOT NULL, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'ABIERTO');`
+      `CREATE TABLE IF NOT EXISTS planes_produccion (id SERIAL PRIMARY KEY, nombre VARCHAR(255) NOT NULL, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'ABIERTO');`,
     );
     await client.query(
-      `CREATE TABLE IF NOT EXISTS planes_items (id SERIAL PRIMARY KEY, plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad_requerida NUMERIC NOT NULL DEFAULT 0, cantidad_producida NUMERIC NOT NULL DEFAULT 0, fecha_inicio_estimada DATE DEFAULT CURRENT_DATE, ritmo_turno NUMERIC DEFAULT 50);`
+      `CREATE TABLE IF NOT EXISTS planes_items (id SERIAL PRIMARY KEY, plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad_requerida NUMERIC NOT NULL DEFAULT 0, cantidad_producida NUMERIC NOT NULL DEFAULT 0, fecha_inicio_estimada DATE DEFAULT CURRENT_DATE, ritmo_turno NUMERIC DEFAULT 50);`,
     );
     // Migraciones Planes
     try {
       await client.query(
-        `ALTER TABLE planes_items ADD COLUMN cantidad_producida NUMERIC NOT NULL DEFAULT 0;`
+        `ALTER TABLE planes_items ADD COLUMN cantidad_producida NUMERIC NOT NULL DEFAULT 0;`,
       );
     } catch (e) {}
     try {
       await client.query(
-        `ALTER TABLE planes_items ADD COLUMN fecha_inicio_estimada DATE DEFAULT CURRENT_DATE;`
+        `ALTER TABLE planes_items ADD COLUMN fecha_inicio_estimada DATE DEFAULT CURRENT_DATE;`,
       );
     } catch (e) {}
     try {
       await client.query(
-        `ALTER TABLE planes_items ADD COLUMN ritmo_turno NUMERIC DEFAULT 50;`
+        `ALTER TABLE planes_items ADD COLUMN ritmo_turno NUMERIC DEFAULT 50;`,
       );
     } catch (e) {}
 
     // --- 5. OPERARIOS Y REGISTROS ---
     await client.query(
-      `CREATE TABLE IF NOT EXISTS operarios (id SERIAL PRIMARY KEY, nombre VARCHAR(255) UNIQUE NOT NULL, activo BOOLEAN DEFAULT true);`
+      `CREATE TABLE IF NOT EXISTS operarios (id SERIAL PRIMARY KEY, nombre VARCHAR(255) UNIQUE NOT NULL, activo BOOLEAN DEFAULT true);`,
     );
     await client.query(
-      `CREATE TABLE IF NOT EXISTS registros_produccion (id SERIAL PRIMARY KEY, plan_item_id INTEGER REFERENCES planes_items(id) ON DELETE SET NULL, semielaborado_id INTEGER REFERENCES semielaborados(id) NOT NULL, operario_id INTEGER REFERENCES operarios(id) NOT NULL, cantidad_ok NUMERIC NOT NULL DEFAULT 0, cantidad_scrap NUMERIC NOT NULL DEFAULT 0, motivo_scrap VARCHAR(255), turno VARCHAR(50) NOT NULL DEFAULT 'Diurno', fecha_produccion TIMESTAMP NOT NULL DEFAULT NOW());`
+      `CREATE TABLE IF NOT EXISTS registros_produccion (id SERIAL PRIMARY KEY, plan_item_id INTEGER REFERENCES planes_items(id) ON DELETE SET NULL, semielaborado_id INTEGER REFERENCES semielaborados(id) NOT NULL, operario_id INTEGER REFERENCES operarios(id) NOT NULL, cantidad_ok NUMERIC NOT NULL DEFAULT 0, cantidad_scrap NUMERIC NOT NULL DEFAULT 0, motivo_scrap VARCHAR(255), turno VARCHAR(50) NOT NULL DEFAULT 'Diurno', fecha_produccion TIMESTAMP NOT NULL DEFAULT NOW());`,
     );
 
     // --- 6. LOGÍSTICA ---
@@ -142,12 +142,12 @@ async function inicializarTablas() {
     `);
     try {
       await client.query(
-        `ALTER TABLE movimientos_logistica ADD COLUMN codigo_remito VARCHAR(100);`
+        `ALTER TABLE movimientos_logistica ADD COLUMN codigo_remito VARCHAR(100);`,
       );
     } catch (e) {}
     try {
       await client.query(
-        `ALTER TABLE movimientos_logistica ADD COLUMN chofer VARCHAR(100);`
+        `ALTER TABLE movimientos_logistica ADD COLUMN chofer VARCHAR(100);`,
       );
     } catch (e) {}
 
@@ -188,10 +188,10 @@ async function inicializarTablas() {
 
     // --- 8. COMPRAS ---
     await client.query(
-      `CREATE TABLE IF NOT EXISTS solicitudes_compra (id SERIAL PRIMARY KEY, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'PENDIENTE');`
+      `CREATE TABLE IF NOT EXISTS solicitudes_compra (id SERIAL PRIMARY KEY, fecha_creacion TIMESTAMP DEFAULT NOW(), estado VARCHAR(50) DEFAULT 'PENDIENTE');`,
     );
     await client.query(
-      `CREATE TABLE IF NOT EXISTS solicitudes_items (id SERIAL PRIMARY KEY, solicitud_id INTEGER REFERENCES solicitudes_compra(id) ON DELETE CASCADE, materia_prima_id INTEGER REFERENCES materias_primas(id), cantidad NUMERIC NOT NULL, proveedor_recomendado VARCHAR(255), cantidad_recibida NUMERIC DEFAULT 0, estado VARCHAR(50) DEFAULT 'PENDIENTE');`
+      `CREATE TABLE IF NOT EXISTS solicitudes_items (id SERIAL PRIMARY KEY, solicitud_id INTEGER REFERENCES solicitudes_compra(id) ON DELETE CASCADE, materia_prima_id INTEGER REFERENCES materias_primas(id), cantidad NUMERIC NOT NULL, proveedor_recomendado VARCHAR(255), cantidad_recibida NUMERIC DEFAULT 0, estado VARCHAR(50) DEFAULT 'PENDIENTE');`,
     );
 
     // --- 9. LOGÍSTICA INTERNA ---
@@ -251,13 +251,13 @@ async function inicializarTablas() {
     // MIGRACIÓN
     try {
       await client.query(
-        "ALTER TABLE programacion_maquinas ADD COLUMN grupo_id INTEGER DEFAULT 1;"
+        "ALTER TABLE programacion_maquinas ADD COLUMN grupo_id INTEGER DEFAULT 1;",
       );
     } catch (e) {}
 
     try {
       await client.query(
-        "ALTER TABLE programacion_maquinas ADD COLUMN brazo VARCHAR(50) DEFAULT 'Estación 1';"
+        "ALTER TABLE programacion_maquinas ADD COLUMN brazo VARCHAR(50) DEFAULT 'Estación 1';",
       );
       console.log("✅ Columna 'brazo' agregada/verificada.");
     } catch (e) {
@@ -294,7 +294,7 @@ async function inicializarTablas() {
   // MIGRACIÓN AUTOMÁTICA: Si la tabla ya existe, agregamos la columna
   try {
     await client.query(
-      "ALTER TABLE tickets_mantenimiento ADD COLUMN IF NOT EXISTS alerta_24h_enviada BOOLEAN DEFAULT FALSE;"
+      "ALTER TABLE tickets_mantenimiento ADD COLUMN IF NOT EXISTS alerta_24h_enviada BOOLEAN DEFAULT FALSE;",
     );
   } catch (e) {
     // Ignorar si ya existe
@@ -353,6 +353,36 @@ async function inicializarTablas() {
       CREATE TABLE IF NOT EXISTS feriados (
         fecha DATE PRIMARY KEY,
         descripcion VARCHAR(255)
+      );
+    `);
+
+  // --- 19. RRHH CATEGORÍAS Y PERSONAL ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS rrhh_categorias (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) UNIQUE NOT NULL,
+        valor_hora NUMERIC DEFAULT 0,
+        activo BOOLEAN DEFAULT TRUE
+      );
+    `);
+
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS rrhh_personal (
+        nombre VARCHAR(255) PRIMARY KEY, -- Usamos el nombre del Excel como ID
+        categoria_id INTEGER REFERENCES rrhh_categorias(id) ON DELETE SET NULL,
+        fecha_actualizacion TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+  // --- 20. RRHH HISTORIAL DE CIERRES ---
+  await client.query(`
+      CREATE TABLE IF NOT EXISTS rrhh_cierres (
+        id SERIAL PRIMARY KEY,
+        fecha_creacion TIMESTAMP DEFAULT NOW(),
+        nombre_periodo VARCHAR(100) NOT NULL, -- Ej: "Enero 1ra Quincena"
+        total_pagado NUMERIC(15, 2),
+        cantidad_empleados INTEGER,
+        datos_snapshot JSONB NOT NULL -- Aquí guardamos TODO el array de datos procesados
       );
     `);
 

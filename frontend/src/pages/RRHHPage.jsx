@@ -13,7 +13,6 @@ import {
   FaCalendarAlt,
   FaEraser,
   FaMoon,
-  FaCheckDouble,
   FaCalendarCheck,
   FaTimes,
   FaChevronLeft,
@@ -23,19 +22,331 @@ import {
   FaStopwatch,
   FaMoneyBillWave,
   FaFilePdf,
+  FaUsersCog,
+  FaPlus,
+  FaEdit,
+  FaTrash,
+  FaGripVertical,
+  FaDollarSign,
+  FaTag,
+  FaFileInvoiceDollar,
+  FaSave,
+  FaHistory,
+  FaPrint,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  DndContext,
+  useDraggable,
+  useDroppable,
+  DragOverlay,
+} from "@dnd-kit/core";
 import { API_BASE_URL, authFetch } from "../utils";
 
-// --- COMPONENTE: CALENDARIO FERIADOS ---
+// --- FUNCIÓN AUXILIAR PARA COLOR DE TAGS ---
+const getCategoryColor = (catName) => {
+  if (!catName) return "bg-slate-800 text-gray-400 border-slate-700";
+  const colors = [
+    "bg-blue-100 text-blue-800 border-blue-200",
+    "bg-purple-100 text-purple-800 border-purple-200",
+    "bg-teal-100 text-teal-800 border-teal-200",
+    "bg-orange-100 text-orange-800 border-orange-200",
+    "bg-pink-100 text-pink-800 border-pink-200",
+  ];
+  const index = catName.length % colors.length;
+  return colors[index];
+};
+
+// --- COMPONENTES AUXILIARES (DRAG & DROP) ---
+function DraggableEmployee({ name, categoryId }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: name, data: { name, categoryId } });
+  const style = transform
+    ? {
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        zIndex: 999,
+      }
+    : undefined;
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className={`bg-slate-700 hover:bg-slate-600 p-1.5 rounded mb-1 text-xs text-white flex items-center gap-2 cursor-grab active:cursor-grabbing shadow-sm border border-slate-600 ${
+        isDragging ? "opacity-50 ring-2 ring-blue-500" : ""
+      }`}
+    >
+      <FaGripVertical className="text-slate-500" />{" "}
+      <span className="truncate">{name}</span>
+    </div>
+  );
+}
+
+function DroppableCategory({ category, employees, onEdit, onDelete }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `cat-${category.id}`,
+    data: { categoryId: category.id },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex flex-col h-64 bg-slate-800 rounded-lg border-2 transition-all shadow-md overflow-hidden ${
+        isOver
+          ? "border-blue-500 bg-blue-900/10 ring-2 ring-blue-500/50"
+          : "border-slate-700 hover:border-slate-600"
+      }`}
+    >
+      <div className="px-3 py-2 border-b border-slate-700 bg-slate-900 flex justify-between items-center shrink-0">
+        <div className="min-w-0">
+          <h4
+            className="font-bold text-white text-xs truncate uppercase"
+            title={category.nombre}
+          >
+            {category.nombre}
+          </h4>
+          <span className="text-[10px] text-green-400 font-mono flex items-center gap-1">
+            <FaDollarSign size={8} /> {category.valor_hora}
+          </span>
+        </div>
+        <div className="flex gap-1 ml-2">
+          <button
+            onClick={() => onEdit(category)}
+            className="p-1 text-gray-500 hover:text-blue-400 hover:bg-slate-800 rounded"
+          >
+            <FaEdit size={10} />
+          </button>
+          <button
+            onClick={() => onDelete(category.id)}
+            className="p-1 text-gray-500 hover:text-red-400 hover:bg-slate-800 rounded"
+          >
+            <FaTrash size={10} />
+          </button>
+        </div>
+      </div>
+      <div className="p-2 overflow-y-auto custom-scrollbar flex-1 bg-slate-800/50">
+        {employees.map((emp) => (
+          <DraggableEmployee key={emp} name={emp} categoryId={category.id} />
+        ))}
+        {employees.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center text-gray-600 text-[10px] italic opacity-60">
+            <span>Arrastra aquí</span>
+          </div>
+        )}
+      </div>
+      <div className="px-2 py-1 bg-slate-900/50 border-t border-slate-700 text-[9px] text-gray-500 text-center">
+        {employees.length} Operarios
+      </div>
+    </div>
+  );
+}
+
+// --- MODAL GESTION PERSONAL ---
+function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
+  const [categorias, setCategorias] = useState([]);
+  const [asignaciones, setAsignaciones] = useState({});
+  const [activeId, setActiveId] = useState(null);
+  const [editCat, setEditCat] = useState(null);
+  const [formCat, setFormCat] = useState({ nombre: "", valor_hora: "" });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [resCat, resPers] = await Promise.all([
+        authFetch(`${API_BASE_URL}/rrhh/categorias`),
+        authFetch(`${API_BASE_URL}/rrhh/personal`),
+      ]);
+      const cats = await resCat.json();
+      const pers = await resPers.json();
+      setCategorias(cats);
+      const mapAsign = {};
+      pers.forEach((p) => (mapAsign[p.nombre] = p.categoria_id));
+      setAsignaciones(mapAsign);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDragEnd = async (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+    if (over && over.id.toString().startsWith("cat-")) {
+      const empName = active.id;
+      const catId = Number(over.id.split("-")[1]);
+      setAsignaciones((prev) => ({ ...prev, [empName]: catId }));
+      try {
+        await authFetch(`${API_BASE_URL}/rrhh/personal/asignar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nombre: empName, categoria_id: catId }),
+        });
+        onUpdate();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const handleSaveCat = async () => {
+    if (!formCat.nombre) return;
+    try {
+      const url = editCat
+        ? `${API_BASE_URL}/rrhh/categorias/${editCat.id}`
+        : `${API_BASE_URL}/rrhh/categorias`;
+      const method = editCat ? "PUT" : "POST";
+      await authFetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formCat),
+      });
+      setFormCat({ nombre: "", valor_hora: "" });
+      setEditCat(null);
+      loadData();
+      onUpdate();
+    } catch (e) {
+      alert("Error");
+    }
+  };
+
+  const handleDeleteCat = async (id) => {
+    if (!confirm("¿Eliminar?")) return;
+    await authFetch(`${API_BASE_URL}/rrhh/categorias/${id}`, {
+      method: "DELETE",
+    });
+    loadData();
+    onUpdate();
+  };
+
+  const unassigned = empleadosExcel.filter((name) => !asignaciones[name]);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden"
+      >
+        <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+          <h2 className="text-xl font-bold text-white flex items-center gap-3">
+            <FaUsersCog className="text-blue-500" /> Asignación de Personal
+          </h2>
+          <button onClick={onClose}>
+            <FaTimes className="text-gray-400 hover:text-white" />
+          </button>
+        </div>
+        <div className="px-6 py-3 bg-slate-900 border-b border-slate-800 flex gap-3 items-end shadow-sm z-10">
+          <div>
+            <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">
+              Categoría
+            </label>
+            <input
+              className="block w-48 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+              value={formCat.nombre}
+              onChange={(e) =>
+                setFormCat({ ...formCat, nombre: e.target.value })
+              }
+              placeholder="Ej: Oficial"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">
+              Valor ($)
+            </label>
+            <input
+              type="number"
+              className="block w-28 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+              value={formCat.valor_hora}
+              onChange={(e) =>
+                setFormCat({ ...formCat, valor_hora: e.target.value })
+              }
+              placeholder="0.00"
+            />
+          </div>
+          <button
+            onClick={handleSaveCat}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg h-[38px]"
+          >
+            {editCat ? <FaEdit /> : <FaPlus />} {editCat ? "Guardar" : "Crear"}
+          </button>
+          {editCat && (
+            <button
+              onClick={() => {
+                setEditCat(null);
+                setFormCat({ nombre: "", valor_hora: "" });
+              }}
+              className="text-gray-500 hover:text-white underline text-xs h-[38px] flex items-center"
+            >
+              Cancelar
+            </button>
+          )}
+        </div>
+        <DndContext
+          onDragStart={(e) => setActiveId(e.active.id)}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="flex-1 flex overflow-hidden bg-slate-950">
+            <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col p-4 shrink-0 shadow-xl z-10">
+              <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center justify-between">
+                <span>
+                  <FaUsers className="inline mr-2" /> Sin Categoría
+                </span>
+                <span className="bg-slate-800 px-2 py-0.5 rounded text-white">
+                  {unassigned.length}
+                </span>
+              </h3>
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                <div className="flex flex-col gap-1">
+                  {unassigned.map((name) => (
+                    <DraggableEmployee key={name} name={name} />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-10">
+                {categorias.map((cat) => (
+                  <DroppableCategory
+                    key={cat.id}
+                    category={cat}
+                    employees={empleadosExcel.filter(
+                      (name) => asignaciones[name] === cat.id,
+                    )}
+                    onEdit={(c) => {
+                      setEditCat(c);
+                      setFormCat({
+                        nombre: c.nombre,
+                        valor_hora: c.valor_hora,
+                      });
+                    }}
+                    onDelete={handleDeleteCat}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+          <DragOverlay>
+            {activeId ? (
+              <div className="bg-blue-600 p-2 rounded-lg text-white text-xs shadow-2xl font-bold border border-white/20 transform rotate-2 cursor-grabbing w-48 truncate flex items-center gap-2">
+                <FaGripVertical /> {activeId}
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </motion.div>
+    </div>
+  );
+}
+
+// --- MODAL CALENDARIO ---
 function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-
   const getDaysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
   const getFirstDayOfMonth = (y, m) => new Date(y, m, 1).getDay();
-
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
   const blanks = Array(firstDay).fill(null);
@@ -67,7 +378,7 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
           <h3 className="text-white font-bold flex items-center gap-3 text-lg">
             <div className="p-2 bg-red-500/20 rounded-lg text-red-500">
               <FaCalendarCheck />
-            </div>
+            </div>{" "}
             Gestionar Feriados
           </h3>
           <button
@@ -110,10 +421,7 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
               <div key={`blank-${i}`} />
             ))}
             {days.map((d) => {
-              const dateStr = `${year}-${String(month + 1).padStart(
-                2,
-                "0"
-              )}-${String(d).padStart(2, "0")}`;
+              const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
               const isFeriado = feriadosSet.has(dateStr);
               const dayOfWeek = new Date(year, month, d).getDay();
               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
@@ -123,19 +431,15 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
                   whileTap={{ scale: 0.95 }}
                   key={d}
                   onClick={() => onToggleDate(dateStr)}
-                  className={`
-                    h-9 rounded-lg text-xs font-bold transition-all relative flex items-center justify-center
-                    ${
-                      isFeriado
-                        ? "bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg shadow-red-900/50 ring-1 ring-red-400"
-                        : "bg-slate-800/50 text-gray-400 hover:bg-slate-700 hover:text-white"
-                    }
-                    ${
-                      !isFeriado && isWeekend
-                        ? "text-orange-400 bg-orange-900/10 border border-orange-500/20"
-                        : ""
-                    }
-                  `}
+                  className={`h-9 rounded-lg text-xs font-bold transition-all relative flex items-center justify-center ${
+                    isFeriado
+                      ? "bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg shadow-red-900/50 ring-1 ring-red-400"
+                      : "bg-slate-800/50 text-gray-400 hover:bg-slate-700 hover:text-white"
+                  } ${
+                    !isFeriado && isWeekend
+                      ? "text-orange-400 bg-orange-900/10 border border-orange-500/20"
+                      : ""
+                  }`}
                 >
                   {d}
                 </motion.button>
@@ -143,8 +447,8 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
             })}
           </div>
           <div className="mt-6 flex items-center justify-center gap-2 text-xs text-gray-500 bg-white/5 p-3 rounded-lg border border-white/5">
-            <FaInfoCircle /> Los días marcados en{" "}
-            <span className="text-red-400 font-bold">ROJO</span> pagan al 100%.
+            <FaInfoCircle /> Rojo = Feriado (100%). Naranja = Fin de Semana
+            (Extra).
           </div>
         </div>
       </motion.div>
@@ -152,13 +456,115 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
   );
 }
 
+// --- MODAL HISTORIAL ---
+function HistorialModal({ onClose, onPrint }) {
+  const [cierres, setCierres] = useState([]);
+  useEffect(() => {
+    authFetch(`${API_BASE_URL}/rrhh/cierres`)
+      .then((res) => res.json())
+      .then(setCierres)
+      .catch(console.error);
+  }, []);
+
+  const handleDelete = async (id) => {
+    if (
+      !confirm(
+        "¿Estás seguro de que deseas eliminar este cierre? Esta acción no se puede deshacer.",
+      )
+    )
+      return;
+    try {
+      await authFetch(`${API_BASE_URL}/rrhh/cierres/${id}`, {
+        method: "DELETE",
+      });
+      setCierres((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      alert("Error al eliminar el cierre.");
+    }
+  };
+
+  const handlePrint = async (id) => {
+    try {
+      const res = await authFetch(`${API_BASE_URL}/rrhh/cierres/${id}`);
+      const data = await res.json();
+      onPrint(data.datos_snapshot, data.nombre_periodo);
+    } catch (e) {
+      alert("Error");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden relative"
+      >
+        <div className="p-5 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+          <h3 className="text-white font-bold flex items-center gap-3 text-lg">
+            <FaHistory className="text-purple-500" /> Historial de Cierres
+          </h3>
+          <button onClick={onClose}>
+            <FaTimes className="text-gray-400 hover:text-white" />
+          </button>
+        </div>
+        <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+          {cierres.length === 0 ? (
+            <p className="text-center text-gray-500 italic">
+              No hay cierres guardados.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {cierres.map((c) => (
+                <div
+                  key={c.id}
+                  className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center hover:bg-slate-750 transition-colors"
+                >
+                  <div>
+                    <h4 className="text-white font-bold">{c.nombre_periodo}</h4>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Guardado:{" "}
+                      {new Date(c.fecha_creacion).toLocaleDateString()} | Total:{" "}
+                      <span className="text-emerald-400 font-bold">
+                        ${Number(c.total_pagado).toLocaleString()}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handlePrint(c.id)}
+                      className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg text-sm flex items-center gap-2 shadow transition-colors"
+                    >
+                      <FaPrint /> Recibos
+                    </button>
+                    {/* BOTÓN ELIMINAR ACTUALIZADO CON TEXTO */}
+                    <button
+                      onClick={() => handleDelete(c.id)}
+                      className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-lg text-sm flex items-center gap-2 shadow transition-colors"
+                      title="Eliminar Cierre"
+                    >
+                      <FaTrash /> Eliminar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// --- COMPONENTE PRINCIPAL ---
 export default function RRHHPage() {
   const [datosProcesados, setDatosProcesados] = useState([]);
   const [jornadaLaboral, setJornadaLaboral] = useState(9);
   const [feriadosSet, setFeriadosSet] = useState(new Set());
+  const [personalMap, setPersonalMap] = useState({});
   const [showFeriadosModal, setShowFeriadosModal] = useState(false);
-
-  // Filtros
+  const [showGestionModal, setShowGestionModal] = useState(false);
+  const [showHistorialModal, setShowHistorialModal] = useState(false);
   const [filtroOperario, setFiltroOperario] = useState("");
   const [fechaInicio, setFechaInicio] = useState("");
   const [fechaFin, setFechaFin] = useState("");
@@ -166,17 +572,32 @@ export default function RRHHPage() {
 
   useEffect(() => {
     cargarFeriados();
+    cargarPersonalMap();
   }, []);
 
   const cargarFeriados = async () => {
     try {
       const res = await authFetch(`${API_BASE_URL}/feriados`);
-      if (res.ok) {
-        const fechas = await res.json();
-        setFeriadosSet(new Set(fechas));
-      }
+      if (res.ok) setFeriadosSet(new Set(await res.json()));
     } catch (e) {
-      console.error("Error feriados", e);
+      console.error(e);
+    }
+  };
+
+  const cargarPersonalMap = async () => {
+    try {
+      const res = await authFetch(`${API_BASE_URL}/rrhh/personal`);
+      const data = await res.json();
+      const map = {};
+      data.forEach((p) => {
+        map[p.nombre] = {
+          categoria: p.categoria_nombre || "Sin Categoría",
+          valorHora: Number(p.valor_hora) || 0,
+        };
+      });
+      setPersonalMap(map);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -214,7 +635,7 @@ export default function RRHHPage() {
 
   useEffect(() => {
     if (rawDataCache) procesarDatos(rawDataCache);
-  }, [feriadosSet, jornadaLaboral, rawDataCache]);
+  }, [feriadosSet, jornadaLaboral, rawDataCache, personalMap]);
 
   const procesarDatos = (rawData) => {
     const porPersona = {};
@@ -294,7 +715,7 @@ export default function RRHHPage() {
         const fechaFiltro = new Date(
           year,
           entrada.fecha.getMonth(),
-          entrada.fecha.getDate()
+          entrada.fecha.getDate(),
         );
         const entradaStr = entrada.fecha.toLocaleTimeString("es-AR", {
           hour: "2-digit",
@@ -323,7 +744,9 @@ export default function RRHHPage() {
               hsExtras100 = 0;
             }
           } else if (esFinDeSemana) {
-            if (horasTotales > 0) hsExtras = Math.floor(horasTotales * 2) / 2;
+            const rawExtra = horasTotales;
+            if (rawExtra > 0) hsExtras = Math.floor(rawExtra * 2) / 2;
+            hsNormales = 0;
           } else {
             if (horasTotales > jornadaLaboral) {
               hsNormales = jornadaLaboral;
@@ -338,9 +761,22 @@ export default function RRHHPage() {
           estado = "INCOMPLETO";
         }
 
+        const personalInfo = personalMap[nombre] || {
+          categoria: "",
+          valorHora: 0,
+        };
+        const valorHora = personalInfo.valorHora;
+        const liquidacionExtra = hsExtras * (valorHora * 1.5);
+        const liquidacionFeriado = hsFeriado100 * (valorHora * 2);
+        const liquidacionExtra100 = hsExtras100 * (valorHora * 2);
+        const totalLiquidacion =
+          liquidacionExtra + liquidacionFeriado + liquidacionExtra100;
+
         resultados.push({
           id: nombre + entrada.fecha.getTime(),
           nombre,
+          categoria: personalInfo.categoria,
+          valorHora,
           fechaVisual,
           nombreDia,
           esFinDeSemana,
@@ -353,6 +789,10 @@ export default function RRHHPage() {
           hsFeriado100: Number(hsFeriado100.toFixed(2)),
           hsExtras100: Number(hsExtras100.toFixed(2)),
           horasTotales: Number(horasTotales.toFixed(2)),
+          liquidacionExtra,
+          liquidacionFeriado,
+          liquidacionExtra100,
+          totalLiquidacion,
           estado,
           esNocturno,
         });
@@ -364,13 +804,13 @@ export default function RRHHPage() {
       resultados.sort((a, b) => {
         if (a.nombre === b.nombre) return a.fechaFiltro - b.fechaFiltro;
         return a.nombre.localeCompare(b.nombre);
-      })
+      }),
     );
   };
 
   const listaEmpleados = useMemo(
     () => Array.from(new Set(datosProcesados.map((d) => d.nombre))).sort(),
-    [datosProcesados]
+    [datosProcesados],
   );
 
   const datosFiltrados = useMemo(() => {
@@ -395,8 +835,9 @@ export default function RRHHPage() {
         extra: acc.extra + curr.hsExtras,
         fer100: acc.fer100 + curr.hsFeriado100,
         ex100: acc.ex100 + curr.hsExtras100,
+        totalPesos: acc.totalPesos + curr.totalLiquidacion,
       }),
-      { norm: 0, extra: 0, fer100: 0, ex100: 0 }
+      { norm: 0, extra: 0, fer100: 0, ex100: 0, totalPesos: 0 },
     );
   }, [datosFiltrados]);
 
@@ -405,45 +846,64 @@ export default function RRHHPage() {
     setFechaInicio("");
     setFechaFin("");
   };
+  const formatCurrency = (val) =>
+    new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      minimumFractionDigits: 0,
+    }).format(val);
 
-  // --- FUNCIÓN EXPORTAR PDF ---
+  // --- REPORTES PDF ---
   const generarReportePDF = () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF("l", "mm", "a4");
     const fecha = new Date().toLocaleDateString("es-AR");
     const hora = new Date().toLocaleTimeString("es-AR", {
       hour: "2-digit",
       minute: "2-digit",
+      hour12: false,
     });
 
-    // Encabezado
-    doc.setFillColor(15, 23, 42); // Slate 900
-    doc.rect(0, 0, 210, 30, "F");
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, 297, 30, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
-    doc.text("REPORTE DE ASISTENCIA Y HORAS", 14, 18);
-
+    doc.text("REPORTE DE ASISTENCIA Y LIQUIDACIÓN", 14, 18);
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(148, 163, 184); // Slate 400
+    doc.setTextColor(148, 163, 184);
     doc.text(`Generado: ${fecha} ${hora}`, 14, 25);
-    doc.text("Gestión MRP - Módulo RRHH", 195, 18, { align: "right" });
+    doc.text("Gestión MRP - Módulo RRHH", 280, 18, { align: "right" });
 
-    // Tabla de Resumen
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
     doc.text("Resumen de Totales", 14, 40);
 
+    const isSingle = !!filtroOperario;
+    const pInfo = isSingle ? personalMap[filtroOperario] : null;
+    const valBase = pInfo ? pInfo.valorHora : 0;
+
+    const hNorm = isSingle
+      ? `Hs Normales\n(Base: ${formatCurrency(valBase)})`
+      : "Hs Normales";
+    const hExtra = isSingle
+      ? `Hs Extras\n(x1.5: ${formatCurrency(valBase * 1.5)})`
+      : "Hs Extras";
+    const hFer = isSingle
+      ? `Feriado 100%\n(x2: ${formatCurrency(valBase * 2)})`
+      : "Feriado 100%";
+
     autoTable(doc, {
       startY: 42,
-      head: [["Hs Normales", "Hs Extras", "Feriado 100%", "Extra 100%"]],
+      head: [[hNorm, hExtra, hFer, "Extra 100%", "Total a Liquidar ($)"]],
       body: [
         [
           resumen.norm.toFixed(2),
           resumen.extra.toFixed(2),
           resumen.fer100.toFixed(2),
           resumen.ex100.toFixed(2),
+          formatCurrency(resumen.totalPesos),
         ],
       ],
       theme: "grid",
@@ -455,29 +915,25 @@ export default function RRHHPage() {
       },
       bodyStyles: { fontStyle: "bold", halign: "center" },
       columnStyles: {
-        1: { textColor: [16, 185, 129] }, // Emerald
-        2: { textColor: [249, 115, 22] }, // Orange
-        3: { textColor: [220, 38, 38] }, // Red
+        4: { fontStyle: "bold", fontSize: 11, textColor: [30, 41, 59] },
       },
     });
 
-    // Tabla Detallada
     doc.text(
       `Detalle de Movimientos (${datosFiltrados.length} registros)`,
       14,
-      doc.lastAutoTable.finalY + 15
+      doc.lastAutoTable.finalY + 15,
     );
-
     const bodyData = datosFiltrados.map((r) => [
       r.nombre,
+      r.categoria || "-",
       `${r.fechaVisual} ${r.esFeriado ? "(FER)" : ""}`,
       `${r.entrada} - ${r.salida}`,
       r.hsNormales || "-",
       r.hsExtras || "-",
-      r.hsFeriado100 ? `${r.hsFeriado100} (${r.hsFeriado100 * 2})` : "-",
-      r.hsExtras100 ? `${r.hsExtras100} (${r.hsExtras100 * 2})` : "-",
-      r.horasTotales,
-      r.estado,
+      r.hsFeriado100 || "-",
+      r.hsExtras100 || "-",
+      formatCurrency(r.totalLiquidacion),
     ]);
 
     autoTable(doc, {
@@ -485,45 +941,192 @@ export default function RRHHPage() {
       head: [
         [
           "Empleado",
+          "Cat",
           "Fecha",
           "Horario",
           "Norm",
           "Extra",
           "100%",
           "Ex 100%",
-          "Total",
-          "Estado",
+          "Total $",
         ],
       ],
       body: bodyData,
       theme: "striped",
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [30, 41, 59], textColor: 255 }, // Slate 800
-      columnStyles: {
-        4: { fontStyle: "bold", textColor: [16, 185, 129] },
-        5: { fontStyle: "bold", textColor: [249, 115, 22] },
-        6: { fontStyle: "bold", textColor: [220, 38, 38] },
-        7: { fontStyle: "bold", halign: "center" },
-        8: { fontSize: 7, halign: "center" },
+      styles: { fontSize: 8, cellPadding: 2, valign: "middle" },
+      headStyles: {
+        fillColor: [30, 41, 59],
+        textColor: 255,
+        halign: "center",
       },
-      didParseCell: function (data) {
-        if (data.column.index === 8 && data.cell.raw === "INCOMPLETO") {
-          data.cell.styles.textColor = [220, 38, 38];
-          data.cell.styles.fontStyle = "bold";
-        }
+      columnStyles: {
+        4: { halign: "center" },
+        5: { halign: "center", fontStyle: "bold", textColor: [22, 163, 74] },
+        6: { halign: "center", fontStyle: "bold", textColor: [234, 88, 12] },
+        7: { halign: "center", fontStyle: "bold", textColor: [220, 38, 38] },
+        8: { fontStyle: "bold", halign: "right", fontSize: 9 },
       },
     });
+    doc.save(`Liquidacion_${fecha.replace(/\//g, "-")}.pdf`);
+  };
 
-    // Footer con número de página
-    const pages = doc.internal.getNumberOfPages();
-    for (let j = 1; j <= pages; j++) {
-      doc.setPage(j);
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text(`Página ${j} de ${pages}`, 105, 290, { align: "center" });
+  const generarRecibosPDF = (dataToPrint = datosFiltrados, titulo = null) => {
+    const doc = new jsPDF("p", "mm", "a4");
+    const fechaGen = new Date().toLocaleDateString("es-AR");
+
+    const dataNormalizada = dataToPrint.map((r) => ({
+      ...r,
+      categoria: r.categoria || personalMap[r.nombre]?.categoria || "-",
+      valorHora: r.valorHora || personalMap[r.nombre]?.valorHora || 0,
+    }));
+
+    const empleados = {};
+    dataNormalizada.forEach((row) => {
+      if (!empleados[row.nombre]) empleados[row.nombre] = [];
+      empleados[row.nombre].push(row);
+    });
+    const nombres = Object.keys(empleados);
+
+    nombres.forEach((nombre, index) => {
+      if (index > 0) doc.addPage();
+      const regs = empleados[nombre];
+      const info = {
+        categoria: regs[0].categoria,
+        valorHora: regs[0].valorHora,
+      };
+
+      const totalNorm = regs.reduce((a, b) => a + b.hsNormales, 0);
+      const totalExtra = regs.reduce((a, b) => a + b.hsExtras, 0);
+      const totalFer = regs.reduce((a, b) => a + b.hsFeriado100, 0);
+      const totalEx100 = regs.reduce((a, b) => a + b.hsExtras100, 0);
+      const totalPlata = regs.reduce((a, b) => a + b.totalLiquidacion, 0);
+
+      doc.setFillColor(30, 41, 59);
+      doc.rect(0, 0, 210, 25, "F");
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(255);
+      doc.text(
+        titulo
+          ? `RECIBO HISTÓRICO: ${titulo}`
+          : "DETALLE DE LIQUIDACIÓN PROVISORIA",
+        10,
+        16,
+      );
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(148, 163, 184);
+      doc.text(`FECHA EMISIÓN: ${fechaGen}`, 195, 16, { align: "right" });
+
+      doc.setDrawColor(200);
+      doc.setFillColor(248, 250, 252);
+      doc.rect(10, 35, 190, 20, "F");
+      doc.rect(10, 35, 190, 20, "S");
+      doc.setTextColor(0);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("EMPLEADO:", 15, 42);
+      doc.setFont("helvetica", "normal");
+      doc.text(nombre.toUpperCase(), 45, 42);
+      doc.setFont("helvetica", "bold");
+      doc.text("CATEGORÍA:", 15, 50);
+      doc.setFont("helvetica", "normal");
+      doc.text(info.categoria, 45, 50);
+      doc.setFont("helvetica", "bold");
+      doc.text("VALOR HORA:", 120, 50);
+      doc.setFont("helvetica", "normal");
+      doc.text(formatCurrency(info.valorHora), 150, 50);
+
+      const bodyRecibo = regs.map((r) => [
+        r.fechaVisual,
+        `${r.entrada} - ${r.salida}`,
+        r.hsNormales || "-",
+        r.hsExtras || "-",
+        r.hsFeriado100 || "-",
+        r.hsExtras100 || "-",
+        formatCurrency(r.totalLiquidacion),
+      ]);
+
+      autoTable(doc, {
+        startY: 65,
+        head: [
+          ["Fecha", "Horario", "Norm", "Extra", "100%", "Ex 100%", "Total"],
+        ],
+        body: bodyRecibo,
+        theme: "striped",
+        styles: { fontSize: 9, cellPadding: 2, valign: "middle" },
+        headStyles: { fillColor: [51, 65, 85], textColor: 255 },
+        columnStyles: { 6: { halign: "right", fontStyle: "bold" } },
+      });
+
+      const finalY = doc.lastAutoTable.finalY + 10;
+      autoTable(doc, {
+        startY: finalY,
+        head: [["Concepto", "Cant.", "Subtotal"]],
+        body: [
+          ["Horas Normales", totalNorm.toFixed(2), "-"],
+          [
+            "Extras (50%)",
+            totalExtra.toFixed(2),
+            formatCurrency(totalExtra * info.valorHora * 1.5),
+          ],
+          [
+            "Feriados (100%)",
+            totalFer.toFixed(2),
+            formatCurrency(totalFer * info.valorHora * 2),
+          ],
+          [
+            "Extras 100%",
+            totalEx100.toFixed(2),
+            formatCurrency(totalEx100 * info.valorHora * 2),
+          ],
+        ],
+        theme: "plain",
+        styles: { fontSize: 9, cellPadding: 1.5 },
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { cellWidth: 20, halign: "center" },
+          2: { cellWidth: 30, halign: "right" },
+        },
+        margin: { left: 110 },
+      });
+
+      const totalY = doc.lastAutoTable.finalY + 5;
+      doc.setFillColor(30, 41, 59);
+      doc.rect(110, totalY, 90, 10, "F");
+      doc.setTextColor(255);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("TOTAL A PERCIBIR", 115, totalY + 7);
+      doc.text(formatCurrency(totalPlata), 195, totalY + 7, { align: "right" });
+    });
+    const fName = titulo
+      ? `Recibos_${titulo.replace(/\s+/g, "_")}.pdf`
+      : `Recibos_Individuales_${fechaGen.replace(/\//g, "-")}.pdf`;
+    doc.save(fName);
+  };
+
+  const handleGuardarCierre = async () => {
+    const nombrePeriodo = prompt(
+      "Nombre para este cierre (Ej: Enero 1ra Quincena):",
+    );
+    if (!nombrePeriodo) return;
+    try {
+      await authFetch(`${API_BASE_URL}/rrhh/cierres`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre_periodo: nombrePeriodo,
+          total_pagado: resumen.totalPesos,
+          cantidad_empleados: new Set(datosProcesados.map((d) => d.nombre))
+            .size,
+          datos_snapshot: datosProcesados,
+        }),
+      });
+      alert("¡Cierre guardado exitosamente!");
+    } catch (e) {
+      alert("Error al guardar cierre");
     }
-
-    doc.save(`Nomina_${fecha.replace(/\//g, "-")}.pdf`);
   };
 
   return (
@@ -536,36 +1139,57 @@ export default function RRHHPage() {
             onToggleDate={toggleFeriado}
           />
         )}
+        {showGestionModal && (
+          <GestionPersonalModal
+            onClose={() => setShowGestionModal(false)}
+            empleadosExcel={listaEmpleados}
+            onUpdate={cargarPersonalMap}
+          />
+        )}
+        {showHistorialModal && (
+          <HistorialModal
+            onClose={() => setShowHistorialModal(false)}
+            onPrint={generarRecibosPDF}
+          />
+        )}
       </AnimatePresence>
 
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 rounded-2xl border border-slate-700/50 shadow-2xl flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 relative overflow-hidden">
+      {/* HEADER PRINCIPAL */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-4 rounded-2xl border border-slate-700/50 shadow-2xl relative overflow-hidden flex flex-col gap-4">
+        {/* Glow de fondo */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mt-20 -mr-20"></div>
 
-        <div className="z-10">
-          <h1 className="text-3xl md:text-4xl font-black text-white flex items-center gap-4 tracking-tight">
-            <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-700 rounded-xl shadow-lg">
-              <FaUserClock className="text-white text-2xl" />
+        {/* FILA 1: TÍTULO COMPACTO */}
+        <div className="z-10 flex items-center justify-between w-full border-b border-white/5 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-gradient-to-br from-emerald-500 to-teal-700 rounded-lg shadow-sm">
+              <FaUserClock className="text-white text-sm" />
             </div>
-            Gestión RRHH
-          </h1>
-          <p className="text-gray-400 text-sm mt-2 ml-1 flex items-center gap-2">
-            <FaCheckDouble className="text-emerald-500" /> Algoritmo de Turno
-            Continuo & Feriados
-          </p>
+            <div>
+              <h1 className="text-sm font-bold text-white tracking-wide uppercase">
+                Gestión RRHH
+              </h1>
+              <p className="text-[10px] text-gray-400 font-mono">
+                Control de Asistencia & Liquidación
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-4 w-full xl:w-auto items-end md:items-center z-10">
-          <div className="flex flex-col md:flex-row gap-3 bg-white/5 p-3 rounded-2xl border border-white/10 backdrop-blur-sm w-full md:w-auto shadow-inner">
-            <div className="flex items-center bg-slate-950/50 rounded-xl border border-slate-700 px-3 py-1 flex-1">
+        {/* FILA 2: CONTROLES & TOOLBAR - ESTRUCTURA IZQUIERDA | CENTRO | DERECHA */}
+        <div className="flex flex-col xl:flex-row gap-4 w-full items-end xl:items-center justify-between z-10">
+          {/* 1. IZQUIERDA: FILTROS (Buscador y Fechas) */}
+          <div className="flex flex-col md:flex-row gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10 backdrop-blur-sm shadow-inner w-full xl:w-auto">
+            <div className="flex items-center bg-slate-950/50 rounded-lg border border-slate-700 px-3 py-1 flex-1">
               <FaSearch className="text-gray-500 mr-2" />
               <select
                 value={filtroOperario}
                 onChange={(e) => setFiltroOperario(e.target.value)}
-                className="bg-transparent text-white text-sm p-2 outline-none cursor-pointer w-full md:w-48 appearance-none font-medium"
+                className="bg-transparent text-white text-xs p-1.5 outline-none cursor-pointer w-full md:w-40 appearance-none font-medium"
                 disabled={datosProcesados.length === 0}
               >
                 <option value="" className="bg-slate-900">
-                  Todos los Empleados
+                  Todos
                 </option>
                 {listaEmpleados.map((emp) => (
                   <option
@@ -578,27 +1202,25 @@ export default function RRHHPage() {
                 ))}
               </select>
             </div>
-
             <div className="flex items-center gap-2">
               <input
                 type="date"
                 value={fechaInicio}
                 onChange={(e) => setFechaInicio(e.target.value)}
-                className="bg-slate-950/50 border border-slate-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none cursor-pointer hover:border-slate-500 transition-colors"
+                className="bg-slate-950/50 border border-slate-700 text-white text-[10px] rounded-lg px-2 py-1.5 outline-none cursor-pointer hover:border-slate-500 transition-colors"
               />
               <span className="text-gray-600 font-bold">→</span>
               <input
                 type="date"
                 value={fechaFin}
                 onChange={(e) => setFechaFin(e.target.value)}
-                className="bg-slate-950/50 border border-slate-700 text-white text-xs rounded-xl px-3 py-2.5 outline-none cursor-pointer hover:border-slate-500 transition-colors"
+                className="bg-slate-950/50 border border-slate-700 text-white text-[10px] rounded-lg px-2 py-1.5 outline-none cursor-pointer hover:border-slate-500 transition-colors"
               />
             </div>
-
             {(filtroOperario || fechaInicio || fechaFin) && (
               <button
                 onClick={limpiarFiltros}
-                className="p-2.5 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all border border-red-500/20"
+                className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-all border border-red-500/20"
                 title="Limpiar filtros"
               >
                 <FaEraser />
@@ -606,22 +1228,61 @@ export default function RRHHPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowFeriadosModal(true)}
-              className="bg-slate-800 hover:bg-slate-700 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 border border-slate-600 transition-all shadow-md hover:shadow-lg active:scale-95"
-            >
-              <FaCalendarCheck className="text-red-400" /> Feriados
-            </button>
-            <button
-              onClick={generarReportePDF}
-              disabled={datosProcesados.length === 0}
-              className="bg-red-600 hover:bg-red-500 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
-            >
-              <FaFilePdf /> PDF
-            </button>
-            <label className="cursor-pointer bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/30 transition-all active:scale-95 whitespace-nowrap border border-white/10">
-              <FaUpload /> Importar
+          {/* 2. CENTRO: BOTONES DE ACCIÓN (Grupo central) */}
+          <div className="flex items-center bg-slate-900/80 backdrop-blur-sm border border-slate-700 p-1.5 rounded-xl shadow-lg gap-3">
+            <div className="flex gap-1">
+              <button
+                onClick={() => setShowGestionModal(true)}
+                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-blue-400 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase"
+              >
+                <FaUsersCog className="text-sm" /> Personal
+              </button>
+              <button
+                onClick={() => setShowFeriadosModal(true)}
+                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-red-400 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase"
+              >
+                <FaCalendarCheck className="text-sm" /> Feriados
+              </button>
+            </div>
+            <div className="w-px h-6 bg-slate-700 hidden md:block"></div>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setShowHistorialModal(true)}
+                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-purple-400 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase"
+              >
+                <FaHistory className="text-sm" /> Historial
+              </button>
+              <button
+                onClick={handleGuardarCierre}
+                disabled={datosProcesados.length === 0}
+                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2 text-[10px] font-bold uppercase"
+              >
+                <FaSave className="text-sm" /> Guardar
+              </button>
+            </div>
+            <div className="w-px h-6 bg-slate-700 hidden md:block"></div>
+            <div className="flex gap-1">
+              <button
+                onClick={generarReportePDF}
+                disabled={datosProcesados.length === 0}
+                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2 text-[10px] font-bold uppercase"
+              >
+                <FaFilePdf className="text-sm" /> Lista
+              </button>
+              <button
+                onClick={() => generarRecibosPDF()}
+                disabled={datosProcesados.length === 0}
+                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2 text-[10px] font-bold uppercase"
+              >
+                <FaFileInvoiceDollar className="text-sm" /> Recibos
+              </button>
+            </div>
+          </div>
+
+          {/* 3. DERECHA: BOTÓN IMPORTAR (Separado) */}
+          <div>
+            <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/30 transition-all active:scale-95 whitespace-nowrap border border-white/10 text-[10px] uppercase">
+              <FaUpload /> <span className="hidden md:inline">Importar</span>
               <input
                 type="file"
                 accept=".xls,.xlsx,.csv"
@@ -634,7 +1295,7 @@ export default function RRHHPage() {
       </div>
 
       {datosProcesados.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
             {
               label: "Hs Normales",
@@ -653,7 +1314,7 @@ export default function RRHHPage() {
               icon: <FaStopwatch />,
             },
             {
-              label: "Feriado 100% (Base)",
+              label: "Feriado 100%",
               val: resumen.fer100,
               color: "text-orange-400",
               border: "border-orange-500/50",
@@ -661,11 +1322,20 @@ export default function RRHHPage() {
               icon: <FaStar />,
             },
             {
-              label: "Extra 100% (Exceso)",
+              label: "Extra 100%",
               val: resumen.ex100,
               color: "text-red-400",
               border: "border-red-500/50",
               bg: "from-red-900/20 to-slate-900",
+              icon: <FaFire />,
+            },
+            {
+              label: "Total Liquidación",
+              val: resumen.totalPesos,
+              isMoney: true,
+              color: "text-blue-300",
+              border: "border-blue-500/50",
+              bg: "from-blue-900/30 to-slate-900",
               icon: <FaMoneyBillWave />,
             },
           ].map((kpi, idx) => (
@@ -684,8 +1354,10 @@ export default function RRHHPage() {
               <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1">
                 {kpi.label}
               </p>
-              <p className={`text-3xl font-black ${kpi.color} font-mono`}>
-                {kpi.val.toFixed(1)}
+              <p
+                className={`text-2xl md:text-3xl font-black ${kpi.color} font-mono truncate`}
+              >
+                {kpi.isMoney ? formatCurrency(kpi.val) : kpi.val.toFixed(2)}
               </p>
             </motion.div>
           ))}
@@ -707,7 +1379,6 @@ export default function RRHHPage() {
             {datosFiltrados.length} Registros
           </span>
         </div>
-
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-300">
             <thead className="bg-slate-950 text-gray-400 uppercase text-[10px] font-extrabold tracking-wider border-b border-slate-800">
@@ -717,7 +1388,7 @@ export default function RRHHPage() {
                 <th className="p-5 text-center">Fichada (E / S)</th>
                 <th className="p-5 text-center bg-slate-900/50">Normales</th>
                 <th className="p-5 text-center bg-emerald-900/10 text-emerald-500">
-                  Extras
+                  Hs Extras
                 </th>
                 <th className="p-5 text-center bg-orange-900/10 text-orange-400">
                   100% (Base)
@@ -725,18 +1396,27 @@ export default function RRHHPage() {
                 <th className="p-5 text-center bg-red-900/10 text-red-400">
                   Extra 100%
                 </th>
-                <th className="p-5 text-center text-white">Total Hs</th>
+                <th className="p-5 text-right text-white bg-blue-900/20">
+                  Liquidación
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {datosFiltrados.map((row, idx) => (
                 <tr
                   key={row.id}
-                  className={`transition-all hover:bg-slate-800/60 ${
-                    idx % 2 === 0 ? "bg-transparent" : "bg-slate-800/20"
-                  }`}
+                  className={`transition-all hover:bg-slate-800/60 ${idx % 2 === 0 ? "bg-transparent" : "bg-slate-800/20"}`}
                 >
-                  <td className="p-5 font-bold text-white">{row.nombre}</td>
+                  <td className="p-5 font-bold text-white">
+                    <div>{row.nombre}</div>
+                    {row.categoria && (
+                      <span
+                        className={`inline-flex items-center gap-1 mt-1 text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${getCategoryColor(row.categoria)}`}
+                      >
+                        <FaTag size={8} /> {row.categoria}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-5 font-mono text-gray-400">
                     <div className="flex flex-col gap-1">
                       <span className="flex items-center gap-2">
@@ -785,9 +1465,6 @@ export default function RRHHPage() {
                     {row.hsFeriado100 ? (
                       <div className="flex flex-col items-center">
                         <span>{row.hsFeriado100}</span>
-                        <span className="text-[10px] text-orange-500/60 font-normal">
-                          ({row.hsFeriado100 * 2})
-                        </span>
                       </div>
                     ) : (
                       "-"
@@ -797,16 +1474,13 @@ export default function RRHHPage() {
                     {row.hsExtras100 ? (
                       <div className="flex flex-col items-center">
                         <span>{row.hsExtras100}</span>
-                        <span className="text-[10px] text-red-500/60 font-normal">
-                          ({row.hsExtras100 * 2})
-                        </span>
                       </div>
                     ) : (
                       "-"
                     )}
                   </td>
-                  <td className="p-5 text-center font-black text-white text-lg">
-                    {row.horasTotales}
+                  <td className="p-5 text-right font-black text-white bg-blue-900/10 border-l border-blue-500/20 text-sm">
+                    {formatCurrency(row.totalLiquidacion)}
                   </td>
                 </tr>
               ))}
