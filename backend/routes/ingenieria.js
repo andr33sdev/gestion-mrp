@@ -16,7 +16,7 @@ router.use(protect);
 router.get("/semielaborados", async (req, res) => {
   try {
     const { rows } = await db.query(
-      "SELECT * FROM semielaborados ORDER BY nombre ASC"
+      "SELECT * FROM semielaborados ORDER BY nombre ASC",
     );
     res.json(rows);
   } catch (err) {
@@ -24,14 +24,86 @@ router.get("/semielaborados", async (req, res) => {
   }
 });
 
+// 1. OBTENER MATERIAS PRIMAS (Con datos de Iglú)
 router.get("/materias-primas", async (req, res) => {
   try {
     const { rows } = await db.query(
-      "SELECT * FROM materias_primas ORDER BY nombre ASC"
+      "SELECT * FROM materias_primas ORDER BY nombre ASC",
     );
     res.json(rows);
   } catch (err) {
     res.status(500).send(err.message);
+  }
+});
+
+// 2. GUARDAR CONFIGURACIÓN DEL IGLÚ (NUEVO)
+router.put("/materias-primas/:id/iglu", async (req, res) => {
+  const { id } = req.params;
+  const { en_iglu, fila_iglu, lado_iglu, color_hex } = req.body;
+
+  try {
+    await db.query(
+      `UPDATE materias_primas 
+       SET en_iglu = $1, fila_iglu = $2, lado_iglu = $3, color_hex = $4 
+       WHERE id = $5`,
+      [en_iglu, fila_iglu || 0, lado_iglu || 0, color_hex || "#888888", id],
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// 1. Obtener todos los pallets ubicados
+router.get("/deposito/pallets", async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT u.*, mp.nombre, mp.codigo, mp.color_hex 
+      FROM ubicaciones_iglu u
+      JOIN materias_primas mp ON u.materia_prima_id = mp.id
+    `);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// 2. Crear un nuevo pallet
+router.post("/deposito/pallets", async (req, res) => {
+  const { materia_prima_id, cantidad, fila, lado } = req.body;
+  try {
+    await db.query(
+      "INSERT INTO ubicaciones_iglu (materia_prima_id, cantidad, fila, lado) VALUES ($1, $2, $3, $4)",
+      [materia_prima_id, cantidad, fila || 0, lado || 0],
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// 3. Modificar pallet (Mover o ajustar cantidad)
+router.put("/deposito/pallets/:id", async (req, res) => {
+  const { id } = req.params;
+  const { cantidad, fila, lado } = req.body;
+  try {
+    await db.query(
+      "UPDATE ubicaciones_iglu SET cantidad=$1, fila=$2, lado=$3 WHERE id=$4",
+      [cantidad, fila, lado, id],
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// 4. Eliminar pallet (Se consumió o salió del iglú)
+router.delete("/deposito/pallets/:id", async (req, res) => {
+  try {
+    await db.query("DELETE FROM ubicaciones_iglu WHERE id=$1", [req.params.id]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).send(e.message);
   }
 });
 
@@ -64,7 +136,7 @@ router.get("/recetas/:producto", async (req, res) => {
       `SELECT r.*, s.codigo, s.nombre, s.stock_actual, 
       (SELECT TO_CHAR(MAX(ultima_actualizacion), 'DD/MM/YYYY HH24:MI') FROM recetas WHERE producto_terminado = $1) as fecha_receta 
       FROM recetas r JOIN semielaborados s ON r.semielaborado_id = s.id WHERE r.producto_terminado = $1`,
-      [req.params.producto]
+      [req.params.producto],
     );
     res.json(rows);
   } catch (err) {
@@ -76,7 +148,7 @@ router.get("/recetas-semielaborados/all", async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT r.semielaborado_id, r.cantidad, mp.id as materia_prima_id, mp.codigo, mp.nombre as mp_nombre 
-       FROM recetas_semielaborados r JOIN materias_primas mp ON r.materia_prima_id = mp.id`
+       FROM recetas_semielaborados r JOIN materias_primas mp ON r.materia_prima_id = mp.id`,
     );
     const agrupadas = rows.reduce((acc, row) => {
       if (!acc[row.semielaborado_id]) acc[row.semielaborado_id] = [];
@@ -100,7 +172,7 @@ router.get("/recetas-semielaborados/:id", async (req, res) => {
       `SELECT r.*, mp.codigo, mp.nombre, mp.stock_actual 
        FROM recetas_semielaborados r JOIN materias_primas mp ON r.materia_prima_id = mp.id 
        WHERE r.semielaborado_id = $1`,
-      [req.params.id]
+      [req.params.id],
     );
     res.json(rows);
   } catch (e) {
@@ -115,7 +187,7 @@ router.get("/ficha/:id", async (req, res) => {
     // 1. Info Básica + Stock
     const semiRes = await db.query(
       "SELECT * FROM semielaborados WHERE id = $1",
-      [id]
+      [id],
     );
     if (semiRes.rowCount === 0)
       return res.status(404).json({ msg: "Producto no encontrado" });
@@ -129,7 +201,7 @@ router.get("/ficha/:id", async (req, res) => {
             WHERE rs.semielaborado_id = $1
             ORDER BY mp.nombre ASC
         `,
-      [id]
+      [id],
     );
 
     // 3. Historial de Producción (Últimos 10 registros)
@@ -142,7 +214,7 @@ router.get("/ficha/:id", async (req, res) => {
             ORDER BY rp.fecha_produccion DESC
             LIMIT 10
         `,
-      [id]
+      [id],
     );
 
     // 4. Estadísticas Simples
@@ -154,7 +226,7 @@ router.get("/ficha/:id", async (req, res) => {
             FROM registros_produccion 
             WHERE semielaborado_id = $1
         `,
-      [id]
+      [id],
     );
 
     // 5. Cajón de Recetas (Versiones Guardadas)
@@ -165,7 +237,7 @@ router.get("/ficha/:id", async (req, res) => {
             WHERE semielaborado_id = $1 
             ORDER BY fecha_guardado DESC
         `,
-      [id]
+      [id],
     );
 
     res.json({
@@ -279,7 +351,7 @@ router.post("/recetas", async (req, res) => {
     await client.query("BEGIN");
     await client.query(
       "INSERT INTO productos_ingenieria (nombre) VALUES ($1) ON CONFLICT (nombre) DO NOTHING",
-      [producto_terminado]
+      [producto_terminado],
     );
     await client.query("DELETE FROM recetas WHERE producto_terminado = $1", [
       producto_terminado,
@@ -288,7 +360,7 @@ router.post("/recetas", async (req, res) => {
       for (const item of items) {
         await client.query(
           `INSERT INTO recetas (producto_terminado, semielaborado_id, cantidad) VALUES ($1, $2, $3)`,
-          [producto_terminado, item.id, item.cantidad || 1]
+          [producto_terminado, item.id, item.cantidad || 1],
         );
       }
     }
@@ -312,12 +384,12 @@ router.post("/recetas-semielaborados", async (req, res) => {
     // A. Actualizar Receta ACTIVA
     await client.query(
       "DELETE FROM recetas_semielaborados WHERE semielaborado_id = $1",
-      [semielaborado_id]
+      [semielaborado_id],
     );
     for (const item of items) {
       await client.query(
         "INSERT INTO recetas_semielaborados (semielaborado_id, materia_prima_id, cantidad) VALUES ($1, $2, $3)",
-        [semielaborado_id, item.id, item.cantidad || 1]
+        [semielaborado_id, item.id, item.cantidad || 1],
       );
     }
 
@@ -325,7 +397,7 @@ router.post("/recetas-semielaborados", async (req, res) => {
     if (nombre_version) {
       await client.query(
         "INSERT INTO historial_recetas (semielaborado_id, nombre_version, ingredientes_json) VALUES ($1, $2, $3)",
-        [semielaborado_id, nombre_version, JSON.stringify(items)]
+        [semielaborado_id, nombre_version, JSON.stringify(items)],
       );
     }
 

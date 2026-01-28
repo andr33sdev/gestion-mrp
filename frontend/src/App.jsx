@@ -27,7 +27,8 @@ import {
   FaTools,
   FaChevronRight,
   FaChevronLeft,
-  FaUserClock, // <--- 1. IMPORTAMOS EL ÍCONO NUEVO
+  FaUserClock,
+  FaHistory,
 } from "react-icons/fa";
 
 // Importación de Páginas
@@ -45,7 +46,10 @@ import RecepcionPage from "./pages/RecepcionPage.jsx";
 import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
 import CentroComando from "./pages/CentroComando";
 import MantenimientoPage from "./pages/MantenimientoPage";
-import RRHHPage from "./pages/RRHHPage"; // <--- 2. IMPORTAMOS LA PÁGINA NUEVA
+import RRHHPage from "./pages/RRHHPage";
+import ChangelogPage from "./pages/ChangelogPage";
+import DetalleProducto from "./pages/DetalleProducto";
+import DepositoPage from "./pages/DepositoPage.jsx";
 
 // Componentes Globales
 import ChatGerencia from "./components/ChatGerencia";
@@ -90,7 +94,7 @@ const NAV_LINKS = [
     roles: ["GERENCIA", "PANEL"],
   },
   {
-    path: "/rrhh", // <--- 3. AGREGAMOS EL LINK EN EL MENÚ LATERAL
+    path: "/rrhh",
     label: "RRHH / Asistencia",
     icon: <FaUserClock />,
     roles: ["GERENCIA"],
@@ -99,7 +103,6 @@ const NAV_LINKS = [
     path: "/mantenimiento",
     label: "Mantenimiento",
     icon: <FaTools />,
-    // AQUI AGREGAMOS "PANEL" ADEMÁS DE "OPERARIO" PARA ASEGURARNOS
     roles: ["GERENCIA", "MANTENIMIENTO", "OPERARIO", "PANEL"],
   },
   {
@@ -127,6 +130,12 @@ const NAV_LINKS = [
     roles: ["GERENCIA"],
   },
   {
+    path: "/changelog",
+    label: "Historial Productos",
+    icon: <FaHistory />,
+    roles: ["GERENCIA"],
+  },
+  {
     path: "/compras",
     label: "Compras",
     icon: <FaBox />,
@@ -137,6 +146,12 @@ const NAV_LINKS = [
     label: "Recepción",
     icon: <FaWarehouse />,
     roles: ["GERENCIA"],
+  },
+  {
+    path: "/deposito-3d",
+    label: "Iglú (3D)",
+    icon: <FaWarehouse />,
+    roles: ["GERENCIA", "DEPOSITO", "PANEL"],
   },
 ];
 
@@ -156,7 +171,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 };
 
 // --- HELPER: LOGO COMPARTIDO ---
-const Logo = ({ subtext = "v2.5 PRO", showText = true }) => (
+const Logo = ({ subtext = "v2.7 PRO", showText = true }) => (
   <div className="flex items-center gap-3">
     <div className="bg-gradient-to-br from-blue-600 to-indigo-600 p-2 rounded-lg shadow-lg">
       <FaIndustry className="text-white text-lg" />
@@ -187,7 +202,6 @@ const DesktopSidebar = ({
         isCollapsed ? "w-20" : "w-64"
       }`}
     >
-      {/* BOTÓN SOLAPA */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
         className="absolute -right-3 top-8 z-50 w-6 h-6 rounded-full bg-slate-900 text-gray-400 hover:text-white border border-slate-700 shadow-lg flex items-center justify-center transition-colors hover:border-blue-500 hover:bg-slate-800"
@@ -199,7 +213,6 @@ const DesktopSidebar = ({
         )}
       </button>
 
-      {/* HEADER */}
       <div
         className={`h-16 flex items-center ${
           isCollapsed ? "justify-center" : "px-6"
@@ -208,7 +221,6 @@ const DesktopSidebar = ({
         <Logo showText={!isCollapsed} />
       </div>
 
-      {/* NAV */}
       <nav className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
         {!isCollapsed && (
           <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-2 px-2">
@@ -237,7 +249,6 @@ const DesktopSidebar = ({
         })}
       </nav>
 
-      {/* FOOTER */}
       <div className="p-4 border-t border-slate-800 bg-slate-900/50">
         <div
           className={`flex items-center gap-3 mb-3 ${
@@ -274,12 +285,11 @@ const DesktopSidebar = ({
   );
 };
 
-// --- COMPONENTE 2: MENÚ MÓVIL (DRAWER DESLIZANTE) ---
+// --- COMPONENTE 2: MENÚ MÓVIL ---
 const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
   const location = useLocation();
   return (
     <>
-      {/* Backdrop oscuro */}
       <div
         className={`fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
           isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
@@ -287,13 +297,11 @@ const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
         onClick={onClose}
       />
 
-      {/* Drawer Panel */}
       <div
         className={`fixed inset-y-0 left-0 z-[70] w-72 bg-slate-900 border-r border-slate-800 shadow-2xl transform transition-transform duration-300 ease-in-out lg:hidden flex flex-col ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        {/* Header Móvil */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900">
           <Logo />
           <button
@@ -304,7 +312,6 @@ const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
           </button>
         </div>
 
-        {/* User Card Móvil */}
         <div className="p-4 bg-slate-800/50 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <div
@@ -321,7 +328,6 @@ const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
           </div>
         </div>
 
-        {/* Links Móvil */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-1">
           {links.map((link) => {
             const isActive = location.pathname === link.path;
@@ -346,7 +352,6 @@ const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
           })}
         </nav>
 
-        {/* Footer Móvil */}
         <div className="p-4 border-t border-slate-800">
           <button
             onClick={handleLogout}
@@ -363,8 +368,8 @@ const MobileMenu = ({ isOpen, onClose, links, handleLogout, userBadge }) => {
 // --- COMPONENTE: LAYOUT PRINCIPAL ---
 const Layout = ({ children }) => {
   const navigate = useNavigate();
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Estado Móvil
-  const [isCollapsed, setIsCollapsed] = useState(false); // Estado Escritorio
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const { role } = getAuthData();
 
@@ -373,7 +378,6 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
-  // Configuración del Badge de Usuario
   let userBadge = {
     icon: <FaHardHat />,
     text: "OPERARIO",
@@ -394,18 +398,13 @@ const Layout = ({ children }) => {
   else if (role === "MANTENIMIENTO")
     userBadge = { icon: <FaTools />, text: "TÉCNICO", color: "text-red-400" };
 
-  // Filtrar links permitidos
   const allowedLinks = NAV_LINKS.filter((link) => {
-    // Normalizamos el rol a mayúsculas y sin espacios por si acaso
     const currentRole = role ? role.toString().trim().toUpperCase() : "";
-
-    // Si es Gerencia ve todo, si no, buscamos en el array
     return currentRole === "GERENCIA" || link.roles.includes(currentRole);
   });
 
   return (
     <div className="flex h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden selection:bg-blue-500 selection:text-white">
-      {/* 1. SIDEBAR DE ESCRITORIO (Fijo) */}
       <DesktopSidebar
         links={allowedLinks}
         isCollapsed={isCollapsed}
@@ -413,8 +412,6 @@ const Layout = ({ children }) => {
         handleLogout={handleLogout}
         userBadge={userBadge}
       />
-
-      {/* 2. MENÚ MÓVIL (Off-canvas) */}
       <MobileMenu
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -422,10 +419,7 @@ const Layout = ({ children }) => {
         handleLogout={handleLogout}
         userBadge={userBadge}
       />
-
-      {/* 3. ÁREA PRINCIPAL */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-950 relative">
-        {/* HEADER MÓVIL (Solo visible en LG y menor) */}
         <header className="h-16 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 lg:hidden shrink-0 z-30 shadow-md">
           <div className="flex items-center gap-3">
             <button
@@ -443,7 +437,6 @@ const Layout = ({ children }) => {
           </div>
         </header>
 
-        {/* CONTENIDO SCROLLABLE */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth custom-scrollbar">
           <div className="max-w-[1600px] mx-auto">{children}</div>
         </main>
@@ -467,7 +460,6 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Layout>
-                {/* 2. PERO... Si es DEPOSITO, lo redirigimos forzosamente a Logística */}
                 {getAuthData().role === "DEPOSITO" ? (
                   <Navigate to="/logistica" replace />
                 ) : (
@@ -478,7 +470,6 @@ export default function App() {
           }
         />
 
-        {/* Rutas Específicas */}
         <Route
           path="/panel-control"
           element={
@@ -509,7 +500,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        {/* MODIFICADO: MANTENIMIENTO ACCESIBLE A OPERARIOS Y PANEL */}
         <Route
           path="/mantenimiento"
           element={
@@ -542,8 +532,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Rutas Gerencia */}
         <Route
           path="/analisis-pedidos"
           element={
@@ -597,6 +585,27 @@ export default function App() {
           }
         />
         <Route
+          path="/changelog"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA"]}>
+              <Layout>
+                <ChangelogPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        {/* 2. ¡AQUÍ ESTÁ LA RUTA QUE FALTABA! */}
+        <Route
+          path="/producto/:nombre"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA", "PANEL", "OPERARIO"]}>
+              <Layout>
+                <DetalleProducto />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/compras"
           element={
             <ProtectedRoute allowedRoles={["GERENCIA"]}>
@@ -607,11 +616,21 @@ export default function App() {
           }
         />
         <Route
-          path="/rrhh" // <--- 4. AGREGAMOS LA RUTA PROTEGIDA
+          path="/rrhh"
           element={
             <ProtectedRoute allowedRoles={["GERENCIA"]}>
               <Layout>
                 <RRHHPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/deposito-3d"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA", "DEPOSITO", "PANEL"]}>
+              <Layout>
+                <DepositoPage />
               </Layout>
             </ProtectedRoute>
           }

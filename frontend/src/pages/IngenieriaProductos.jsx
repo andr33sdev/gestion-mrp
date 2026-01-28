@@ -1,5 +1,6 @@
 // frontend/src/pages/IngenieriaProductos.jsx
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom"; // <--- 1. IMPORTANTE: Importamos el hook
 import {
   DndContext,
   useDraggable,
@@ -19,7 +20,7 @@ import {
   FaLeaf,
   FaEye,
   FaFileAlt,
-  FaHistory,
+  FaHistory, // <--- Importamos ícono historial
   FaTimes,
   FaClipboardList,
   FaArchive,
@@ -47,7 +48,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
     const cargarFicha = async () => {
       try {
         const res = await authFetch(
-          `${API_BASE_URL}/ingenieria/ficha/${semiId}`
+          `${API_BASE_URL}/ingenieria/ficha/${semiId}`,
         );
         if (res.ok) setData(await res.json());
       } catch (e) {
@@ -293,7 +294,7 @@ function CalculadoraMinimosModal({ onClose }) {
     setLoading(true);
     try {
       const res = await authFetch(
-        `${API_BASE_URL}/ingenieria/sugerencias-stock-minimo`
+        `${API_BASE_URL}/ingenieria/sugerencias-stock-minimo`,
       );
       if (res.ok) setItems(await res.json());
     } catch (e) {
@@ -332,7 +333,9 @@ function CalculadoraMinimosModal({ onClose }) {
     doc.setTextColor(...colors.text);
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
-    doc.text("REPORTE DE SUGERENCIAS DE STOCK MIN", 105, 20, { align: "center" });
+    doc.text("REPORTE DE SUGERENCIAS DE STOCK MIN", 105, 20, {
+      align: "center",
+    });
 
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
@@ -417,7 +420,7 @@ function CalculadoraMinimosModal({ onClose }) {
         `Página ${i} de ${pageCount} — Generado automáticamente por Sistema de Gestión MRP`,
         105,
         290,
-        { align: "center" }
+        { align: "center" },
       );
     }
 
@@ -427,7 +430,7 @@ function CalculadoraMinimosModal({ onClose }) {
   const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
   const currentItems = items.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
+    currentPage * ITEMS_PER_PAGE,
   );
 
   const goToPrev = () => setCurrentPage((p) => Math.max(1, p - 1));
@@ -564,8 +567,8 @@ function CalculadoraMinimosModal({ onClose }) {
   );
 }
 
-// ... (DraggableItem y DroppableArea se mantienen IGUALES) ...
-function DraggableItem({ item, isOverlay, onVerFicha }) {
+// --- ITEM DRAGGABLE MODIFICADO PARA INCLUIR BOTÓN HISTORIAL ---
+function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: `source-${item.id}`, data: item, disabled: isOverlay });
   const style = transform
@@ -597,18 +600,39 @@ function DraggableItem({ item, isOverlay, onVerFicha }) {
           {item.nombre || "Sin Nombre"}
         </p>
       </div>
-      {!isOverlay && onVerFicha && (
-        <button
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            onVerFicha(item);
-          }}
-          className="p-2 text-gray-500 hover:text-blue-400 hover:bg-slate-800 rounded transition-colors mr-2"
-          title="Ver Ficha Técnica"
-        >
-          <FaEye />
-        </button>
+
+      {!isOverlay && (
+        <div className="flex gap-1 mr-2">
+          {/* NUEVO: Botón de Historial */}
+          {onVerHistorial && (
+            <button
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onVerHistorial(item);
+              }}
+              className="p-1.5 text-gray-400 hover:text-purple-400 hover:bg-slate-800 rounded transition-colors"
+              title="Ver Historial de Cambios"
+            >
+              <FaHistory />
+            </button>
+          )}
+
+          {/* Botón Ficha Técnica */}
+          {onVerFicha && (
+            <button
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                onVerFicha(item);
+              }}
+              className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-slate-800 rounded transition-colors"
+              title="Ver Ficha Técnica"
+            >
+              <FaEye />
+            </button>
+          )}
+        </div>
       )}
+
       <span
         className={`text-xs px-2 py-1 rounded font-bold ${
           item.stock_actual > 0
@@ -682,7 +706,9 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
   );
 }
 
+// --- COMPONENTE PRINCIPAL ---
 export default function IngenieriaProductos() {
+  const navigate = useNavigate(); // <--- 2. IMPORTANTE: Inicializamos el hook
   const [productos, setProductos] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -752,7 +778,7 @@ export default function IngenieriaProductos() {
             ...d,
             cantidad: Number(d.cantidad) || 1,
             id: d.materia_prima_id || d.semielaborado_id,
-          }))
+          })),
         );
         if (data.length > 0 && data[0].fecha_receta)
           setUltimaModificacion(data[0].fecha_receta);
@@ -791,7 +817,7 @@ export default function IngenieriaProductos() {
       const sugerencia = `Versión ${new Date().toLocaleDateString("es-AR")}`;
       nombreVersion = prompt(
         "Nombre para guardar esta receta en el historial:",
-        sugerencia
+        sugerencia,
       );
       if (nombreVersion === null) return;
 
@@ -814,7 +840,7 @@ export default function IngenieriaProductos() {
       alert(
         modo === "PRODUCTO"
           ? "Receta guardada."
-          : "✅ Receta guardada y archivada correctamente."
+          : "✅ Receta guardada y archivada correctamente.",
       );
     } catch (e) {
       alert("Error al guardar: " + e.message);
@@ -834,12 +860,12 @@ export default function IngenieriaProductos() {
 
       if (modo === "PRODUCTO") {
         const res = await authFetch(
-          `${API_BASE_URL}/ingenieria/semielaborados`
+          `${API_BASE_URL}/ingenieria/semielaborados`,
         );
         setSemielaborados(await res.json());
       } else {
         const res = await authFetch(
-          `${API_BASE_URL}/ingenieria/materias-primas`
+          `${API_BASE_URL}/ingenieria/materias-primas`,
         );
         setMateriasPrimas(await res.json());
       }
@@ -863,7 +889,7 @@ export default function IngenieriaProductos() {
           `Cantidad de "${itemData.nombre}" (${
             modo === "PRODUCTO" ? "Unidades" : "Kg/Unidad"
           }):`,
-          defaultQty
+          defaultQty,
         );
         if (cantidadStr === null) return;
         const cantidad = Number(cantidadStr);
@@ -881,28 +907,28 @@ export default function IngenieriaProductos() {
     const item = receta[indexToChange];
     const cantidadStr = prompt(
       `Modificar cantidad de "${item.nombre}":`,
-      String(item.cantidad)
+      String(item.cantidad),
     );
     if (cantidadStr === null) return;
     const cantidad = Number(cantidadStr);
     if (isNaN(cantidad) || cantidad <= 0) return;
     setReceta((prev) =>
       prev.map((r, index) =>
-        index === indexToChange ? { ...r, cantidad: cantidad } : r
-      )
+        index === indexToChange ? { ...r, cantidad: cantidad } : r,
+      ),
     );
   };
 
   let listaIzquierdaVisible = [];
   if (modo === "PRODUCTO") {
     listaIzquierdaVisible = productos.filter((p) =>
-      (p || "").toLowerCase().includes(filtroIzq.toLowerCase())
+      (p || "").toLowerCase().includes(filtroIzq.toLowerCase()),
     );
   } else {
     listaIzquierdaVisible = semielaborados.filter(
       (s) =>
         (s.nombre || "").toLowerCase().includes(filtroIzq.toLowerCase()) ||
-        (s.codigo || "").toLowerCase().includes(filtroIzq.toLowerCase())
+        (s.codigo || "").toLowerCase().includes(filtroIzq.toLowerCase()),
     );
   }
 
@@ -911,7 +937,7 @@ export default function IngenieriaProductos() {
   const listaDerechaVisible = listaDerechaSource.filter(
     (i) =>
       (i.nombre || "").toLowerCase().includes(filtroDer.toLowerCase()) ||
-      (i.codigo || "").toLowerCase().includes(filtroDer.toLowerCase())
+      (i.codigo || "").toLowerCase().includes(filtroDer.toLowerCase()),
   );
 
   const activeItemData = activeDragId
@@ -1063,23 +1089,50 @@ export default function IngenieriaProductos() {
                       }`}
                       onClick={() => cargarReceta(item)}
                     >
-                      <span className="truncate">{label || "Sin Nombre"}</span>
-                      {modo === "SEMIELABORADO" && (
+                      <span className="truncate flex-1 mr-2">
+                        {label || "Sin Nombre"}
+                      </span>
+
+                      <div className="flex items-center gap-1">
+                        {/* BOTÓN HISTORIAL (Hoja de Vida) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            setFichaSeleccionada(item);
+                            // Obtenemos el nombre limpio sea Producto o Semielaborado
+                            const nombreParaUrl =
+                              modo === "PRODUCTO" ? item : item.nombre;
+                            navigate(
+                              `/producto/${encodeURIComponent(nombreParaUrl)}`,
+                            );
                           }}
                           className={`p-1.5 rounded hover:bg-white/20 transition-colors ${
                             isSelected
                               ? "text-white"
-                              : "text-gray-500 hover:text-white"
+                              : "text-gray-500 hover:text-purple-400"
                           }`}
-                          title="Ver Ficha Técnica"
+                          title="Ver Historial de Cambios"
                         >
-                          <FaEye />
+                          <FaHistory />
                         </button>
-                      )}
+
+                        {/* BOTÓN FICHA TÉCNICA (Solo Semielaborados) */}
+                        {modo === "SEMIELABORADO" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFichaSeleccionada(item);
+                            }}
+                            className={`p-1.5 rounded hover:bg-white/20 transition-colors ${
+                              isSelected
+                                ? "text-white"
+                                : "text-gray-500 hover:text-white"
+                            }`}
+                            title="Ver Ficha Técnica"
+                          >
+                            <FaEye />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })

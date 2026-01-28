@@ -76,7 +76,7 @@ async function sincronizarBaseDeDatos() {
     await client.query("BEGIN");
 
     const { rows: currentProdRows } = await client.query(
-      "SELECT * FROM estado_produccion FOR UPDATE"
+      "SELECT * FROM estado_produccion FOR UPDATE",
     );
     const currentProduccion = currentProdRows.reduce((acc, row) => {
       try {
@@ -93,12 +93,12 @@ async function sincronizarBaseDeDatos() {
       return acc;
     }, {});
     const { rows: dbTriggers } = await client.query(
-      `SELECT fecha, hora, accion FROM registros WHERE tipo = 'EVENTO' AND accion LIKE 'Se inicio ciclo%'`
+      `SELECT fecha, hora, accion FROM registros WHERE tipo = 'EVENTO' AND accion LIKE 'Se inicio ciclo%'`,
     );
     const dbTriggerSet = new Set(
       dbTriggers.map(
-        (r) => `${r.fecha.toISOString().split("T")[0]}T${r.hora}_${r.accion}`
-      )
+        (r) => `${r.fecha.toISOString().split("T")[0]}T${r.hora}_${r.accion}`,
+      ),
     );
     const newArchiveRecords = [];
     for (const reg of registrosOriginales) {
@@ -144,8 +144,8 @@ async function sincronizarBaseDeDatos() {
       await client.query(
         format(
           "INSERT INTO registros (fecha, hora, accion, tipo, productos_json) VALUES %L",
-          valores
-        )
+          valores,
+        ),
       );
     }
     await client.query("COMMIT");
@@ -244,7 +244,7 @@ async function sincronizarPedidos() {
           const query = format(
             `INSERT INTO pedidos_clientes (fecha, periodo, op, cliente, modelo, detalles, oc_cliente, cantidad, estado, programado)
              VALUES %L`,
-            lote
+            lote,
           );
           await client.query(query);
         }
@@ -252,7 +252,7 @@ async function sincronizarPedidos() {
 
       await client.query("COMMIT");
       console.log(
-        `✅ Sync Pedidos: ${valoresTotales.length} filas insertadas correctamente.`
+        `✅ Sync Pedidos: ${valoresTotales.length} filas insertadas correctamente.`,
       );
     } catch (err) {
       await client.query("ROLLBACK");
@@ -271,7 +271,7 @@ async function sincronizarPedidos() {
 }
 
 // =====================================================
-// 3. SYNC STOCK + ALERTAS
+// 3. SYNC STOCK + ALERTAS (CORREGIDO PARA NO CREAR BASURA)
 // =====================================================
 async function sincronizarStockSemielaborados() {
   const client = await db.connect();
@@ -314,16 +314,19 @@ async function sincronizarStockSemielaborados() {
         else if (kSinEspacios.includes("ALERTA3") || kSinEspacios === "MAXIMO")
           a3 = limpiarNumero(row[key]);
       }
-      if (codigo)
-        mapaAlertas.set(codigo, [codigo, nombre || "Sin Nombre", a1, a2, a3]);
+
+      // FILTRO: Solo agregar si tiene código Y nombre
+      if (codigo && nombre && nombre.trim() !== "") {
+        mapaAlertas.set(codigo, [codigo, nombre, a1, a2, a3]);
+      }
     }
     const alertasArr = Array.from(mapaAlertas.values());
     if (alertasArr.length > 0) {
       await client.query(
         format(
           `INSERT INTO semielaborados (codigo, nombre, alerta_1, alerta_2, alerta_3) VALUES %L ON CONFLICT (codigo) DO UPDATE SET alerta_1=EXCLUDED.alerta_1, alerta_2=EXCLUDED.alerta_2, alerta_3=EXCLUDED.alerta_3, nombre=COALESCE(EXCLUDED.nombre, semielaborados.nombre), ultima_actualizacion=NOW()`,
-          alertasArr
-        )
+          alertasArr,
+        ),
       );
     }
 
@@ -337,7 +340,7 @@ async function sincronizarStockSemielaborados() {
     let totalUpdates = 0;
     for (const [sheetNameKey, dbColumn] of Object.entries(sheetMapping)) {
       const realSheetName = workbook.SheetNames.find(
-        (s) => s.toUpperCase().trim() === sheetNameKey
+        (s) => s.toUpperCase().trim() === sheetNameKey,
       );
       if (!realSheetName) continue;
       await client.query(`UPDATE semielaborados SET ${dbColumn} = 0`);
@@ -368,8 +371,11 @@ async function sincronizarStockSemielaborados() {
           else if (kSin === "STOCK" || kSin === "SALDO")
             stock = limpiarNumero(row[key]);
         }
-        if (codigo)
-          mapaStock.set(codigo, [codigo, nombre || "Sin Nombre", stock]);
+
+        // CORRECCIÓN: Evitar "Sin Nombre". Si no hay nombre, no se procesa.
+        if (codigo && nombre && nombre.trim() !== "") {
+          mapaStock.set(codigo, [codigo, nombre, stock]);
+        }
       }
       const vals = Array.from(mapaStock.values());
       if (vals.length > 0) {
@@ -379,8 +385,8 @@ async function sincronizarStockSemielaborados() {
             dbColumn,
             vals,
             dbColumn,
-            dbColumn
-          )
+            dbColumn,
+          ),
         );
         totalUpdates += vals.length;
       }
@@ -440,7 +446,9 @@ async function sincronizarMateriasPrimas() {
         else if (kSin.includes("STOCKMIN") || kSin.includes("MINIMO"))
           minimo = limpiarNumero(row[key]);
       }
-      if (codigo && nombre && codigo.length < 30)
+
+      // FILTRO: Solo si tiene nombre y código válido
+      if (codigo && nombre && nombre.trim() !== "" && codigo.length < 30)
         mapaMP.set(codigo, [codigo, nombre, stock, minimo, new Date()]);
     }
     const vals = Array.from(mapaMP.values());
@@ -449,8 +457,8 @@ async function sincronizarMateriasPrimas() {
       await client.query(
         format(
           `INSERT INTO materias_primas (codigo, nombre, stock_actual, stock_minimo, ultima_actualizacion) VALUES %L ON CONFLICT (codigo) DO UPDATE SET stock_actual=EXCLUDED.stock_actual, stock_minimo=EXCLUDED.stock_minimo, nombre=COALESCE(EXCLUDED.nombre, materias_primas.nombre), ultima_actualizacion=NOW()`,
-          vals
-        )
+          vals,
+        ),
       );
       await client.query("COMMIT");
       console.log(`✅ [SYNC MP] ${vals.length} MPs actualizadas.`);
