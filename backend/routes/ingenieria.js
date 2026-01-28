@@ -70,11 +70,20 @@ router.get("/deposito/pallets", async (req, res) => {
 
 // 2. Crear un nuevo pallet
 router.post("/deposito/pallets", async (req, res) => {
-  const { materia_prima_id, cantidad, fila, lado } = req.body;
+  const { materia_prima_id, cantidad, fila, lado, columna } = req.body; // <--- Agregado columna
   try {
+    // Validación básica de colisión (Opcional en backend, fuerte en frontend)
+    const existe = await db.query(
+      "SELECT id FROM ubicaciones_iglu WHERE fila=$1 AND lado=$2 AND columna=$3",
+      [fila, lado, columna],
+    );
+    if (existe.rowCount > 0) {
+      return res.status(400).json({ msg: "Ubicación ocupada" });
+    }
+
     await db.query(
-      "INSERT INTO ubicaciones_iglu (materia_prima_id, cantidad, fila, lado) VALUES ($1, $2, $3, $4)",
-      [materia_prima_id, cantidad, fila || 0, lado || 0],
+      "INSERT INTO ubicaciones_iglu (materia_prima_id, cantidad, fila, lado, columna) VALUES ($1, $2, $3, $4, $5)",
+      [materia_prima_id, cantidad, fila || 0, lado || 0, columna || 0],
     );
     res.json({ success: true });
   } catch (e) {

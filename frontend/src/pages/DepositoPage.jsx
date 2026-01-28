@@ -7,87 +7,123 @@ import {
   Grid,
   Environment,
   ContactShadows,
-  Float,
 } from "@react-three/drei";
 import {
   FaWarehouse,
-  FaInfoCircle,
   FaCog,
   FaTimes,
   FaSearch,
-  FaMapMarkerAlt,
   FaPlus,
   FaTrash,
   FaBox,
-  FaCubes,
+  FaArrowLeft,
+  FaExclamationTriangle,
+  FaBan,
 } from "react-icons/fa";
 import { API_BASE_URL, authFetch } from "../utils";
 import { motion, AnimatePresence } from "framer-motion";
 import * as THREE from "three";
 
-// --- CONSTANTES DE DIMENSIONES ---
-const ANCHO_PALLET = 1.2;
-const LARGO_PALLET = 1.2;
-const GAP = 0.3; // Espacio de aire
-const ANCHO_PASILLO = 3.5; // Pasillo central generoso
+// --- CONSTANTES DE INGENIERÍA ---
+const ANCHO_PALLET = 1.2; // Eje X (Profundidad)
+const LARGO_PALLET = 1.0; // Eje Z (Fila)
+const GAP = 0.15; // Aire entre pallets
+const ANCHO_PASILLO = 4.0; // Pasillo central generoso
 
-// Cálculo de posición en la grilla
-const getPosition = (fila, lado) => {
-  // Z = Filas (Hacia el fondo)
+// CAPACIDADES (FIJAS)
+const ROWS_LADO_1 = 8; // Izquierda (0 a 7)
+const ROWS_LADO_2 = 6; // Derecha (0 a 5) -> Pigmentos en 6 y 7
+const DEPTH_PER_SIDE = 2; // "Uno delante del otro"
+
+// --- LÓGICA DE POSICIONAMIENTO EXACTO ---
+const getPosition = (fila, lado, profundidad) => {
+  // Eje Z: Fila (0 es la más cercana a la entrada/cámara)
   const z = fila * (LARGO_PALLET + GAP);
 
-  // X = Lados
   let x = 0;
-  // Offset desde el centro del pasillo
-  const distCentro = ANCHO_PASILLO / 2 + ANCHO_PALLET / 2;
-  const pasoLateral = ANCHO_PALLET + GAP;
+  // Offset del pasillo (desde el centro 0)
+  const startX = ANCHO_PASILLO / 2 + ANCHO_PALLET / 2;
+  const pasoX = ANCHO_PALLET + GAP;
 
-  switch (Number(lado)) {
-    case 0:
-      x = -(distCentro + pasoLateral);
-      break; // Lado 1 (Fondo)
-    case 1:
-      x = -distCentro;
-      break; // Lado 1 (Pasillo)
-    case 2:
-      x = distCentro;
-      break; // Lado 2 (Pasillo)
-    case 3:
-      x = distCentro + pasoLateral;
-      break; // Lado 2 (Fondo)
-    default:
-      x = 0;
+  if (lado === 1) {
+    // LADO 1 (Izquierda): X negativo
+    x = -(startX + profundidad * pasoX);
+  } else {
+    // LADO 2 (Derecha): X positivo
+    x = startX + profundidad * pasoX;
   }
+
   return [x, 0, z];
 };
 
-// --- COMPONENTE: PALLET REALISTA (PRO) ---
+// --- COMPONENTE: CUARTO DE PIGMENTOS (MARKING PLANO) ---
+function PigmentRoomMarking() {
+  // Ubicación: LADO 2 (Derecha), en el espacio "sobrante" (Filas 6 y 7)
+  const filaInicio = 6;
+  const prof = 0.5; // Centro de las 2 profundidades (columnas 0 y 1)
+  const lado = 2; // Lado Derecha
+
+  // Posición central del cuarto
+  const pos = getPosition(filaInicio + 0.5, lado, prof);
+
+  // Tamaño: 2 Filas de largo x 2 Pallets de ancho
+  const largo = (LARGO_PALLET + GAP) * 2;
+  const ancho = (ANCHO_PALLET + GAP) * 2;
+
+  return (
+    <group position={[pos[0], 0.005, pos[2]]}>
+      {/* Área Prohibida (Hatched) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[ancho, largo]} />
+        <meshBasicMaterial color="#334155" opacity={0.8} transparent />
+      </mesh>
+
+      {/* Borde Amarillo Advertencia */}
+      <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
+        <edgesGeometry args={[new THREE.PlaneGeometry(ancho, largo)]} />
+        <lineBasicMaterial color="#facc15" linewidth={2} />
+      </lineSegments>
+
+      {/* Texto en el suelo */}
+      <Text
+        position={[0, 0.01, 0]}
+        rotation={[-Math.PI / 2, 0, -Math.PI / 2]} // Rotado para leerse desde el pasillo
+        fontSize={0.4}
+        color="#facc15"
+        anchorX="center"
+        anchorY="middle"
+      >
+        PIGMENTOS
+      </Text>
+
+      {/* Icono/Texto de Prohibido */}
+      <Text
+        position={[0, 0.01, 0.5]}
+        rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
+        fontSize={0.2}
+        color="#ef4444"
+      >
+        (NO ESTIBAR)
+      </Text>
+    </group>
+  );
+}
+
+// --- PALLET REALISTA ---
 function RealisticPallet({ data, onClick, isSelected }) {
   const [hovered, setHover] = useState(false);
   const position = useMemo(
-    () => getPosition(data.fila, data.lado),
-    [data.fila, data.lado],
+    () => getPosition(data.fila, data.lado, data.columna),
+    [data.fila, data.lado, data.columna],
   );
   const groupRef = useRef();
 
-  // Animación suave al aparecer/moverse
   useFrame((state, delta) => {
     if (groupRef.current) {
-      const targetY = isSelected ? 0.2 : 0; // Levantar si está seleccionado
-      groupRef.current.position.x = THREE.MathUtils.lerp(
-        groupRef.current.position.x,
-        position[0],
-        delta * 5,
-      );
-      groupRef.current.position.z = THREE.MathUtils.lerp(
-        groupRef.current.position.z,
-        position[2],
-        delta * 5,
-      );
-      groupRef.current.position.y = THREE.MathUtils.lerp(
-        groupRef.current.position.y,
-        targetY,
-        delta * 5,
+      const targetY = isSelected ? 0.3 : 0;
+      groupRef.current.position.lerp(
+        new THREE.Vector3(position[0], targetY, position[2]),
+        delta * 8,
       );
     }
   });
@@ -97,32 +133,17 @@ function RealisticPallet({ data, onClick, isSelected }) {
 
   return (
     <group ref={groupRef} position={position}>
-      {/* CORRECCIÓN: Solo mostramos el cartel si está en Hover (quitamos "|| isSelected") */}
       {hovered && (
         <Html
-          position={[0, alturaCarga + 0.8, 0]}
+          position={[0, alturaCarga + 0.5, 0]}
           center
           zIndexRange={[100, 0]}
         >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-slate-900/90 backdrop-blur-md border border-indigo-500/50 p-3 rounded-lg shadow-[0_0_20px_rgba(99,102,241,0.4)] text-center min-w-[120px] pointer-events-none select-none"
-          >
-            <h4 className="text-indigo-300 font-bold text-[10px] uppercase tracking-wider mb-1">
-              {data.nombre}
-            </h4>
-            <div className="bg-black/40 rounded px-2 py-1 mb-1">
-              <span className="text-white font-mono text-sm font-bold">
-                {data.cantidad}
-              </span>
-              <span className="text-gray-500 text-[10px] ml-1">kg</span>
-            </div>
-            <div className="flex justify-between text-[9px] text-gray-400 border-t border-white/10 pt-1 mt-1">
-              <span>Fila: {data.fila}</span>
-              <span>Pos: {data.lado}</span>
-            </div>
-          </motion.div>
+          <div className="bg-black/80 text-white text-[10px] px-2 py-1 rounded border border-white/20 whitespace-nowrap pointer-events-none select-none">
+            <span className="font-bold text-yellow-400">{data.nombre}</span>
+            <br />
+            {data.cantidad} kg
+          </div>
         </Html>
       )}
 
@@ -142,48 +163,23 @@ function RealisticPallet({ data, onClick, isSelected }) {
           document.body.style.cursor = "auto";
         }}
       >
-        {/* CARGA (Bolsas) con Efecto Plástico */}
-        <mesh
-          position={[0, 0.15 + alturaCarga / 2, 0]}
-          castShadow
-          receiveShadow
-        >
+        <mesh position={[0, 0.1 + alturaCarga / 2, 0]} castShadow receiveShadow>
           <boxGeometry
             args={[ANCHO_PALLET * 0.95, alturaCarga, LARGO_PALLET * 0.95]}
           />
-          <meshPhysicalMaterial
-            color={hovered ? "#ffffff" : colorMaterial} // Brilla al hover
-            emissive={hovered ? colorMaterial : "#000"}
-            emissiveIntensity={0.2}
-            roughness={0.2} // Liso como plástico
-            metalness={0.1}
-            clearcoat={1} // Capa de brillo extra (film stretch)
-            clearcoatRoughness={0.1}
-            transparent
-            opacity={0.95}
+          <meshStandardMaterial
+            color={hovered ? "#fff" : colorMaterial}
+            emissive={hovered ? "#444" : "#000"}
+            roughness={0.4}
           />
         </mesh>
-
-        {/* BASE DE MADERA (Geometría compuesta simple) */}
-        <group position={[0, 0.08, 0]}>
-          {/* Tabla superior */}
-          <mesh position={[0, 0.06, 0]} castShadow receiveShadow>
-            <boxGeometry args={[ANCHO_PALLET, 0.04, LARGO_PALLET]} />
-            <meshStandardMaterial color="#8d6e63" roughness={0.9} />
-          </mesh>
-          {/* Tacos (Patas) */}
-          {[-0.4, 0, 0.4].map((x) => (
-            <mesh key={x} position={[x, 0, 0]} castShadow>
-              <boxGeometry args={[0.15, 0.1, LARGO_PALLET]} />
-              <meshStandardMaterial color="#5d4037" roughness={1} />
-            </mesh>
-          ))}
-        </group>
-
-        {/* Outline de selección (Anillo en el piso) */}
+        <mesh position={[0, 0.05, 0]} castShadow>
+          <boxGeometry args={[ANCHO_PALLET, 0.1, LARGO_PALLET]} />
+          <meshStandardMaterial color="#5d4037" />
+        </mesh>
         {isSelected && (
           <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.6, 0.7, 32]} />
+            <ringGeometry args={[0.5, 0.6, 32]} />
             <meshBasicMaterial color="#6366f1" opacity={0.8} transparent />
           </mesh>
         )}
@@ -192,236 +188,319 @@ function RealisticPallet({ data, onClick, isSelected }) {
   );
 }
 
-// --- MARCADORES DE ÁREA EN EL SUELO ---
-function AreaMarkers({ maxFila }) {
-  const largoTotal = (maxFila + 2) * (LARGO_PALLET + GAP);
-  const anchoBloque = ANCHO_PALLET * 2 + GAP + 0.5; // Un poco más ancho para el borde
-  const xOffset = ANCHO_PASILLO / 2 + anchoBloque / 2 - 0.25;
-  const zCenter = largoTotal / 2 - 1;
+// --- SUELO (DELIMITACIÓN DE ÁREAS) ---
+function AreaMarkers() {
+  // El largo total se define por el lado más largo (Lado 1 = 8 filas)
+  const maxRows = ROWS_LADO_1;
+  const largoTotal = maxRows * (LARGO_PALLET + GAP);
+
+  // Ancho de cada bloque (2 pallets de profundidad)
+  const anchoBloque = ANCHO_PALLET * DEPTH_PER_SIDE + GAP;
+
+  // Posiciones X (Centros de los bloques)
+  const offsetPasillo = ANCHO_PASILLO / 2;
+  const centerL1 = -(offsetPasillo + anchoBloque / 2);
+  const centerL2 = offsetPasillo + anchoBloque / 2;
+
+  // El origen Z=0 está en la fila 0. Centramos el plano visual.
+  const zCenter = largoTotal / 2 - LARGO_PALLET / 2;
 
   return (
-    <group position={[0, 0.02, zCenter]}>
-      {/* Área LADO 1 (Izquierda) */}
-      <group position={[-xOffset, 0, 0]}>
+    <group position={[0, 0.01, zCenter]}>
+      {/* LADO 1 (Izquierda) - 8 Filas */}
+      <group position={[centerL1, 0, 0]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[anchoBloque, largoTotal]} />
           <meshBasicMaterial color="#3b82f6" opacity={0.05} transparent />
         </mesh>
-        {/* Borde */}
         <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
           <edgesGeometry
             args={[new THREE.PlaneGeometry(anchoBloque, largoTotal)]}
           />
-          <lineBasicMaterial color="#3b82f6" opacity={0.3} transparent />
+          <lineBasicMaterial color="#3b82f6" opacity={0.2} transparent />
         </lineSegments>
         <Text
-          position={[0, 0.1, -largoTotal / 2 - 1]}
-          fontSize={0.8}
+          position={[0, 0.02, -largoTotal / 2 - 0.5]}
+          fontSize={0.5}
           color="#3b82f6"
+          rotation={[-Math.PI / 2, 0, 0]}
         >
           LADO 1
         </Text>
       </group>
 
-      {/* Área LADO 2 (Derecha) */}
-      <group position={[xOffset, 0, 0]}>
+      {/* LADO 2 (Derecha) - 6 Filas (Dibujamos suelo más corto) */}
+      {/* Calculamos el largo de 6 filas y lo centramos en su propia posición Z */}
+      <group
+        position={[
+          centerL2,
+          0,
+          (ROWS_LADO_2 * (LARGO_PALLET + GAP)) / 2 - largoTotal / 2,
+        ]}
+      >
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[anchoBloque, largoTotal]} />
+          <planeGeometry
+            args={[anchoBloque, ROWS_LADO_2 * (LARGO_PALLET + GAP)]}
+          />
           <meshBasicMaterial color="#10b981" opacity={0.05} transparent />
         </mesh>
-        {/* Borde */}
         <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
           <edgesGeometry
-            args={[new THREE.PlaneGeometry(anchoBloque, largoTotal)]}
+            args={[
+              new THREE.PlaneGeometry(
+                anchoBloque,
+                ROWS_LADO_2 * (LARGO_PALLET + GAP),
+              ),
+            ]}
           />
-          <lineBasicMaterial color="#10b981" opacity={0.3} transparent />
+          <lineBasicMaterial color="#10b981" opacity={0.2} transparent />
         </lineSegments>
         <Text
-          position={[0, 0.1, -largoTotal / 2 - 1]}
-          fontSize={0.8}
+          position={[0, 0.02, -(ROWS_LADO_2 * (LARGO_PALLET + GAP)) / 2 - 0.5]}
+          fontSize={0.5}
           color="#10b981"
+          rotation={[-Math.PI / 2, 0, 0]}
         >
           LADO 2
         </Text>
       </group>
 
-      {/* Pasillo Central */}
+      {/* LEYENDAS EXTREMOS (Relativos al grupo 'zCenter') */}
+
+      {/* Entrada (Z Negativo local) */}
       <Text
-        position={[0, 0.1, 0]}
-        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
+        position={[0, 0.01, -largoTotal / 2 - 1.5]}
+        rotation={[-Math.PI / 2, 0, 0]}
         fontSize={0.6}
-        color="#64748b"
-        fillOpacity={0.4}
+        color="#fff"
       >
-        PASILLO CENTRAL
+        ↓ ENTRADA ↓
+      </Text>
+
+      {/* Patio (Z Positivo local) */}
+      <Text
+        position={[0, 0.01, largoTotal / 2 + 1.5]}
+        rotation={[-Math.PI / 2, 0, Math.PI]}
+        fontSize={0.6}
+        color="#94a3b8"
+      >
+        ↑ PATIO ↑
       </Text>
     </group>
   );
 }
 
-// --- GESTOR DE PALLETS (PANEL DERECHO) ---
-function PalletManager({ mp, pallets, onAdd, onDelete, onUpdateColor }) {
+// --- PANEL DE GESTIÓN ---
+function PalletManager({
+  mp,
+  pallets,
+  allPallets,
+  onAdd,
+  onDelete,
+  onUpdateColor,
+}) {
   const stockTotal = Number(mp.stock_actual);
   const stockUbicado = pallets.reduce((acc, p) => acc + Number(p.cantidad), 0);
   const stockSuelto = stockTotal - stockUbicado;
 
   const [newQty, setNewQty] = useState("");
-  const [newFila, setNewFila] = useState(0);
-  const [newLado, setNewLado] = useState(0);
+  const [newFila, setNewFila] = useState("0");
+  const [newLado, setNewLado] = useState("1");
+  const [newProf, setNewProf] = useState("0");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const handleAdd = () => {
-    if (!newQty || Number(newQty) <= 0) return;
-    onAdd(mp.id, Number(newQty), Number(newFila), Number(newLado));
+    setErrorMsg("");
+    if (!newQty || Number(newQty) <= 0)
+      return setErrorMsg("Ingresa una cantidad válida.");
+
+    const f = Number(newFila);
+    const l = Number(newLado);
+    const p = Number(newProf);
+
+    // 1. Validar Límites de Filas
+    if (l === 1 && f >= ROWS_LADO_1)
+      return setErrorMsg(`Lado 1: solo filas 0 a ${ROWS_LADO_1 - 1}.`);
+    if (l === 2 && f >= ROWS_LADO_2)
+      return setErrorMsg(`Lado 2: solo filas 0 a ${ROWS_LADO_2 - 1}.`);
+
+    // 2. Validar Cuarto de Pigmentos (Ya está visualmente ocupado)
+    // El cuarto está en Lado 2, filas 6 y 7.
+    // Como el select de filas solo deja elegir hasta el límite de la constante,
+    // y ROWS_LADO_2 = 6 (filas 0-5), el usuario NO podrá elegir fila 6 o 7 para el lado 2
+    // desde el selector estándar. La lógica visual del cuarto es "extra" a la capacidad.
+
+    // 3. Validar Ocupación (Colisión)
+    const ocupado = allPallets.find(
+      (pal) =>
+        Number(pal.lado) === l &&
+        Number(pal.fila) === f &&
+        Number(pal.columna) === p,
+    );
+
+    if (ocupado) return setErrorMsg(`Lugar ocupado por: ${ocupado.nombre}`);
+
+    onAdd(mp.id, Number(newQty), f, l, p);
     setNewQty("");
   };
 
   return (
     <div className="mt-4 border-t border-slate-700 pt-4 animate-in slide-in-from-right">
-      <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-md">
-        <h4 className="font-bold text-white text-base mb-3 flex items-center gap-2">
-          <FaBox className="text-blue-400" /> {mp.nombre}
-        </h4>
-
-        {/* Barra de Distribución */}
-        <div className="relative h-6 w-full bg-slate-950 rounded-full overflow-hidden flex text-[10px] font-bold uppercase tracking-wider mb-2 border border-slate-700">
-          <div
-            style={{
-              width: `${Math.min(100, (stockUbicado / stockTotal) * 100)}%`,
-            }}
-            className="bg-blue-600 flex items-center justify-center text-white transition-all duration-500 shadow-[0_0_10px_rgba(37,99,235,0.5)_inset]"
-          >
-            {stockUbicado > 0 && "IGLÚ"}
-          </div>
-          <div
-            style={{
-              width: `${Math.min(100, (stockSuelto / stockTotal) * 100)}%`,
-            }}
-            className="bg-slate-700/50 text-gray-400 flex items-center justify-center transition-all duration-500"
-          >
-            {stockSuelto > 0 && "SUELTO"}
+      <div className="bg-slate-800 p-4 rounded-xl mb-4 border border-slate-700">
+        <div className="flex justify-between items-start mb-2">
+          <h4 className="font-bold text-white text-base truncate pr-2">
+            {mp.nombre}
+          </h4>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-500 uppercase">Color</span>
+            <input
+              type="color"
+              className="w-5 h-5 bg-transparent border-0 cursor-pointer rounded overflow-hidden p-0"
+              value={mp.color_hex || "#3b82f6"}
+              onChange={(e) => onUpdateColor(mp, e.target.value)}
+            />
           </div>
         </div>
-        <div className="flex justify-between text-xs text-gray-400 font-mono">
-          <span>
-            Ubicado: <strong className="text-blue-400">{stockUbicado}</strong>
+        <div className="flex gap-2 text-xs font-mono">
+          <span className="bg-blue-900/40 text-blue-200 px-2 py-1 rounded">
+            Ubicado: {stockUbicado}
           </span>
-          <span>
-            Total: <strong className="text-white">{stockTotal}</strong>
+          <span className="bg-slate-700/40 text-gray-300 px-2 py-1 rounded">
+            Suelto: {stockSuelto}
           </span>
-        </div>
-
-        {/* Selector de Color */}
-        <div className="mt-4 flex items-center gap-3 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
-          <label className="text-xs text-gray-400 uppercase font-bold">
-            Identificador:
-          </label>
-          <input
-            type="color"
-            className="w-8 h-8 bg-transparent border-0 cursor-pointer rounded-full overflow-hidden"
-            value={mp.color_hex || "#3b82f6"}
-            onChange={(e) => onUpdateColor(mp, e.target.value)}
-          />
         </div>
       </div>
 
-      {/* Form Nuevo Pallet */}
-      <div className="bg-slate-900/80 p-4 rounded-xl border border-blue-500/20 border-dashed my-4">
-        <p className="text-xs text-blue-400 font-bold mb-3 flex items-center gap-2 uppercase tracking-wide">
-          <FaPlus /> Ingresar Pallet Físico
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-4 rounded-xl border border-indigo-500/20 shadow-lg mb-6">
+        <p className="text-xs text-indigo-400 font-bold mb-3 uppercase flex items-center gap-2">
+          <FaPlus /> Nuevo Ingreso
         </p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div className="col-span-2">
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
+              CANTIDAD (KG)
+            </label>
             <input
               type="number"
-              placeholder="Cantidad (Kg)"
-              className="w-full bg-slate-950 text-white text-sm p-2 rounded border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+              className="w-full bg-slate-950 text-white text-sm p-2 rounded-lg border border-slate-700 focus:border-indigo-500 outline-none"
               value={newQty}
               onChange={(e) => setNewQty(e.target.value)}
+              placeholder="Ej: 500"
             />
           </div>
-          <div>
-            <label className="text-[9px] text-gray-500 uppercase font-bold block mb-1">
-              Fila
-            </label>
-            <input
-              type="number"
-              className="w-full bg-slate-950 text-white text-sm p-2 rounded border border-slate-700 text-center"
-              value={newFila}
-              onChange={(e) => setNewFila(e.target.value)}
-            />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
+                LADO
+              </label>
+              <select
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs outline-none"
+                value={newLado}
+                onChange={(e) => {
+                  setNewLado(Number(e.target.value));
+                  setNewFila(0);
+                }}
+              >
+                <option value="1">Lado 1 (8 filas)</option>
+                <option value="2">Lado 2 (6 filas)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
+                FILA
+              </label>
+              <select
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs outline-none"
+                value={newFila}
+                onChange={(e) => setNewFila(e.target.value)}
+              >
+                {Array.from({
+                  length: Number(newLado) === 1 ? ROWS_LADO_1 : ROWS_LADO_2,
+                }).map((_, i) => (
+                  <option key={i} value={i}>
+                    Fila {i}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+
           <div>
-            <label className="text-[9px] text-gray-500 uppercase font-bold block mb-1">
-              Ubicación
+            <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
+              POSICIÓN
             </label>
-            <select
-              className="w-full bg-slate-950 text-white text-[10px] p-2 rounded border border-slate-700 outline-none"
-              value={newLado}
-              onChange={(e) => setNewLado(e.target.value)}
-            >
-              <option value="0">L1 - Fondo</option>
-              <option value="1">L1 - Pasillo</option>
-              <option disabled>──────</option>
-              <option value="2">L2 - Pasillo</option>
-              <option value="3">L2 - Fondo</option>
-            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setNewProf("0")}
+                className={`flex-1 py-2 rounded text-xs border ${newProf === "0" ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-950 text-gray-400 border-slate-700"}`}
+              >
+                Frente (Pasillo)
+              </button>
+              <button
+                onClick={() => setNewProf("1")}
+                className={`flex-1 py-2 rounded text-xs border ${newProf === "1" ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-950 text-gray-400 border-slate-700"}`}
+              >
+                Fondo (Pared)
+              </button>
+            </div>
           </div>
+
+          {errorMsg && (
+            <div className="bg-red-900/20 border border-red-500/30 text-red-300 p-2 rounded text-xs flex items-center gap-2">
+              <FaExclamationTriangle /> {errorMsg}
+            </div>
+          )}
+
+          <button
+            onClick={handleAdd}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg text-sm transition-transform active:scale-95 shadow-lg"
+          >
+            UBICAR
+          </button>
         </div>
-        <button
-          onClick={handleAdd}
-          className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-3 rounded-lg transition-all shadow-lg shadow-blue-900/20 active:scale-95"
-        >
-          UBICAR EN 3D
-        </button>
       </div>
 
-      {/* Lista de Pallets */}
-      <h5 className="text-xs font-bold text-gray-500 uppercase mb-2 pl-1">
-        Pallets en Iglú ({pallets.length})
+      <h5 className="text-xs font-bold text-gray-500 uppercase mb-3 pl-1">
+        Pallets Ubicados ({pallets.length})
       </h5>
-      <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
+
+      <div className="space-y-2 mb-6 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
         {pallets.map((p) => (
           <div
             key={p.id}
-            className="bg-slate-800 p-3 rounded-lg flex justify-between items-center border border-slate-700 hover:border-slate-500 transition-colors group"
+            className="flex justify-between items-center p-2 bg-slate-800/50 rounded border border-slate-700 text-xs"
           >
-            <div className="flex flex-col">
-              <span className="text-white font-bold text-sm flex items-center gap-2">
-                <FaCubes className="text-slate-600 text-xs" /> {p.cantidad} Kg
+            <div>
+              <span className="font-bold text-white block">
+                {p.cantidad} Kg
               </span>
-              <span className="text-gray-500 text-[10px] mt-0.5">
-                Fila {p.fila} •{" "}
-                {["L1 Fondo", "L1 Frente", "L2 Frente", "L2 Fondo"][p.lado]}
+              <span className="text-gray-500">
+                L{p.lado} • F{p.fila} • {p.columna === 0 ? "Frente" : "Fondo"}
               </span>
             </div>
             <button
               onClick={() => onDelete(p.id)}
-              className="text-slate-600 hover:text-red-400 p-2 rounded hover:bg-slate-700 transition-colors"
+              className="text-slate-500 hover:text-red-400 p-2"
             >
               <FaTrash />
             </button>
           </div>
         ))}
-        {pallets.length === 0 && (
-          <div className="text-center py-6 border-2 border-dashed border-slate-800 rounded-lg">
-            <p className="text-gray-600 text-xs italic">
-              No hay pallets ubicados.
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-// --- PÁGINA PRINCIPAL ---
+// --- COMPONENTE PRINCIPAL ---
 export default function DepositoPage() {
   const [materiales, setMateriales] = useState([]);
   const [pallets, setPallets] = useState([]);
   const [showConfig, setShowConfig] = useState(false);
   const [selectedMpId, setSelectedMpId] = useState(null);
   const [search, setSearch] = useState("");
-  const [selectedPalletId, setSelectedPalletId] = useState(null); // Para resaltar en 3D
+  const [selectedPalletId, setSelectedPalletId] = useState(null);
 
   const cargarDatos = async () => {
     try {
@@ -440,26 +519,34 @@ export default function DepositoPage() {
     cargarDatos();
   }, []);
 
-  const handleAddPallet = async (mpId, cant, f, l) => {
+  const handleAddPallet = async (mpId, cant, f, l, p) => {
     try {
-      await authFetch(`${API_BASE_URL}/ingenieria/deposito/pallets`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          materia_prima_id: mpId,
-          cantidad: cant,
-          fila: f,
-          lado: l,
-        }),
-      });
-      cargarDatos();
+      const res = await authFetch(
+        `${API_BASE_URL}/ingenieria/deposito/pallets`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            materia_prima_id: mpId,
+            cantidad: cant,
+            fila: f,
+            lado: l,
+            columna: p,
+          }),
+        },
+      );
+      if (res.ok) cargarDatos();
+      else {
+        const err = await res.json();
+        alert(err.msg || "Error");
+      }
     } catch (e) {
-      alert("Error");
+      alert("Error al guardar");
     }
   };
 
   const handleDeletePallet = async (id) => {
-    if (!confirm("¿Quitar pallet del sistema?")) return;
+    if (!confirm("¿Retirar pallet?")) return;
     try {
       await authFetch(`${API_BASE_URL}/ingenieria/deposito/pallets/${id}`, {
         method: "DELETE",
@@ -497,8 +584,6 @@ export default function DepositoPage() {
     setShowConfig(true);
   };
 
-  const maxFila =
-    pallets.length > 0 ? Math.max(...pallets.map((p) => p.fila)) : 10;
   const filteredMaterials = materiales.filter((m) =>
     m.nombre.toLowerCase().includes(search.toLowerCase()),
   );
@@ -508,72 +593,53 @@ export default function DepositoPage() {
   );
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] animate-in fade-in relative bg-slate-950 overflow-hidden">
-      {/* HEADER FLOTANTE ESTILIZADO */}
-      <div className="absolute top-4 left-6 z-10 flex flex-col gap-2 pointer-events-none">
-        <div className="bg-slate-900/90 backdrop-blur-xl p-5 rounded-2xl border border-slate-700/50 shadow-2xl pointer-events-auto min-w-[280px]">
-          <h1 className="text-xl font-extrabold text-white flex items-center gap-3">
-            <FaWarehouse className="text-indigo-500 text-2xl" /> IGLÚ DIGITAL
+    <div className="flex flex-col h-[calc(100vh-64px)] md:h-[calc(100vh-80px)] animate-in fade-in relative bg-slate-950 overflow-hidden">
+      {/* HEADER FLOTANTE */}
+      <div className="absolute top-4 left-4 z-10 pointer-events-none">
+        <div className="bg-slate-900/90 backdrop-blur-xl p-3 md:p-4 rounded-xl border border-slate-700/50 shadow-2xl pointer-events-auto">
+          <h1 className="text-lg font-extrabold text-white flex items-center gap-2">
+            <FaWarehouse className="text-indigo-500" /> IGLÚ DIGITAL
           </h1>
-          <div className="h-px bg-slate-700 my-3"></div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
-                Ocupación
-              </p>
-              <p className="text-2xl font-mono text-white">{pallets.length}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">
-                Materiales
-              </p>
-              <p className="text-2xl font-mono text-blue-400">
-                {materiales.length}
-              </p>
-            </div>
-          </div>
+          <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-wide">
+            {pallets.length} Pallets • {materiales.length} SKUs
+          </p>
         </div>
       </div>
 
-      <div className="absolute top-4 right-6 z-10">
+      <div className="absolute top-4 right-4 z-10">
         <button
           onClick={() => setShowConfig(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center gap-2 transition-all active:scale-95 pointer-events-auto border border-indigo-400/20"
+          className="bg-indigo-600 hover:bg-indigo-500 text-white p-3 md:px-5 md:py-2.5 rounded-full md:rounded-xl font-bold shadow-lg flex items-center gap-2 pointer-events-auto transition-transform active:scale-95"
         >
-          <FaCog /> Administrar Stock
+          <FaCog /> <span className="hidden md:inline">Gestionar</span>
         </button>
       </div>
 
-      {/* ESCENA 3D MEJORADA */}
-      <div className="flex-1 w-full h-full cursor-move">
+      {/* VISOR 3D */}
+      <div className="flex-1 w-full h-full cursor-move bg-gradient-to-b from-[#0f172a] to-[#020617]">
         <Canvas
-          camera={{ position: [8, 12, 18], fov: 50 }}
+          camera={{ position: [0, 18, 15], fov: 50 }}
           shadows
           dpr={[1, 2]}
         >
-          <color attach="background" args={["#0b0f19"]} />
-          <fog attach="fog" args={["#0b0f19", 15, 60]} />
-
           <Environment preset="city" />
-
           <ambientLight intensity={0.4} />
           <directionalLight
-            position={[10, 20, 5]}
+            position={[10, 30, 10]}
             intensity={1.2}
             castShadow
-            shadow-mapSize={[2048, 2048]}
           />
 
           <OrbitControls
             minPolarAngle={0}
             maxPolarAngle={Math.PI / 2.1}
-            target={[0, 0, maxFila / 2]}
+            target={[0, 0, 4]}
             dampingFactor={0.05}
           />
 
-          <AreaMarkers maxFila={maxFila} />
+          <AreaMarkers />
+          <PigmentRoomMarking />
 
-          {/* PALLETS REALES */}
           <group>
             {pallets.map((p) => (
               <RealisticPallet
@@ -585,7 +651,6 @@ export default function DepositoPage() {
             ))}
           </group>
 
-          {/* SUELO Y GRILLA */}
           <ContactShadows
             position={[0, -0.01, 0]}
             opacity={0.6}
@@ -600,30 +665,28 @@ export default function DepositoPage() {
             cellColor="#1e293b"
             sectionColor="#334155"
             fadeDistance={35}
-            sectionThickness={1}
-            cellThickness={0.5}
             infiniteGrid
           />
         </Canvas>
       </div>
 
-      {/* PANEL LATERAL */}
+      {/* DRAWER RESPONSIVE */}
       <AnimatePresence>
         {showConfig && (
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 30, stiffness: 300 }}
-            className="absolute top-0 right-0 h-full w-[400px] bg-slate-900 border-l border-slate-700 z-50 flex flex-col shadow-2xl"
+            transition={{ type: "spring", damping: 28 }}
+            className="absolute top-0 right-0 h-full w-full md:w-[400px] bg-slate-900 border-l border-slate-700 z-50 flex flex-col shadow-2xl"
           >
-            <div className="p-5 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+            <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
               <h3 className="text-white font-bold text-lg flex items-center gap-2">
                 <FaBox className="text-indigo-500" /> Inventario
               </h3>
               <button
                 onClick={() => setShowConfig(false)}
-                className="text-gray-400 hover:text-white transition-colors bg-slate-800 p-2 rounded-full"
+                className="text-gray-400 hover:text-white p-2"
               >
                 <FaTimes />
               </button>
@@ -633,10 +696,10 @@ export default function DepositoPage() {
               <>
                 <div className="p-4 bg-slate-900 border-b border-slate-800">
                   <div className="relative group">
-                    <FaSearch className="absolute left-4 top-3.5 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
+                    <FaSearch className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
                     <input
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-sm text-white focus:border-blue-500 outline-none transition-all shadow-inner placeholder-gray-600"
-                      placeholder="Buscar Materia Prima..."
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-white focus:border-indigo-500 outline-none"
+                      placeholder="Buscar..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       autoFocus
@@ -652,26 +715,21 @@ export default function DepositoPage() {
                       <div
                         key={m.id}
                         onClick={() => setSelectedMpId(m.id)}
-                        className="p-4 rounded-xl bg-slate-800 border border-slate-700/50 hover:border-indigo-500 hover:bg-slate-800/80 cursor-pointer transition-all group shadow-sm hover:shadow-md"
+                        className="p-3 rounded-lg bg-slate-800 border border-slate-700 hover:border-indigo-500 cursor-pointer transition-all flex justify-between items-center group"
                       >
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-bold text-gray-200 text-sm group-hover:text-white transition-colors">
+                        <div>
+                          <p className="font-bold text-gray-200 text-sm group-hover:text-white">
                             {m.nombre}
-                          </span>
-                          {ubicados > 0 && (
-                            <span className="bg-indigo-500/20 text-indigo-300 text-[10px] font-bold px-2 py-0.5 rounded-full border border-indigo-500/30">
-                              {ubicados} pallets
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex justify-between items-center mt-2">
-                          <span className="text-[10px] text-gray-500 font-mono bg-slate-950 px-1.5 py-0.5 rounded">
+                          </p>
+                          <p className="text-[10px] text-gray-500">
                             {m.codigo}
-                          </span>
-                          <span className="text-xs text-gray-400 font-bold">
-                            {m.stock_actual} Kg
-                          </span>
+                          </p>
                         </div>
+                        {ubicados > 0 && (
+                          <span className="bg-indigo-900 text-indigo-200 text-[10px] px-2 py-1 rounded font-bold">
+                            {ubicados}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -684,13 +742,14 @@ export default function DepositoPage() {
                     setSelectedMpId(null);
                     setSelectedPalletId(null);
                   }}
-                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 mb-4 flex items-center gap-1 self-start uppercase tracking-wider"
+                  className="text-xs font-bold text-indigo-400 mb-4 flex items-center gap-2"
                 >
-                  <FaTimes /> Volver al listado
+                  <FaArrowLeft /> VOLVER
                 </button>
                 <PalletManager
                   mp={selectedMp}
                   pallets={selectedMpPallets}
+                  allPallets={pallets}
                   onAdd={handleAddPallet}
                   onDelete={handleDeletePallet}
                   onUpdateColor={handleUpdateColor}
