@@ -6,23 +6,24 @@ import {
   Text,
   Grid,
   Environment,
-  ContactShadows,
+  RoundedBox,
+  // Stars eliminado
 } from "@react-three/drei";
 import {
   FaWarehouse,
   FaCog,
   FaTimes,
   FaSearch,
-  FaPlus,
-  FaTrash,
-  FaBox,
-  FaArrowLeft,
-  FaExclamationTriangle,
-  FaQrcode,
+  FaList,
+  FaCube,
   FaCamera,
+  FaQrcode,
+  FaTrash,
+  FaArrowLeft,
   FaPrint,
-  FaSave,
-  FaExchangeAlt,
+  FaBox,
+  FaChevronDown,
+  FaChevronRight,
 } from "react-icons/fa";
 import { API_BASE_URL, authFetch } from "../utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -30,54 +31,208 @@ import * as THREE from "three";
 import QRCode from "qrcode";
 import { Scanner } from "@yudiel/react-qr-scanner";
 
-// --- CONSTANTES ---
+// --- CONSTANTES DE INGENIERÍA ---
 const ANCHO_PALLET = 1.2;
 const LARGO_PALLET = 1.0;
 const GAP = 0.15;
 const ANCHO_PASILLO = 4.0;
-const ROWS_LADO_1 = 8;
-const ROWS_LADO_2 = 6;
+const VISUAL_ROWS = 8;
 const DEPTH_PER_SIDE = 2;
 
 // --- POSICIONAMIENTO ---
 const getPosition = (fila, lado, profundidad) => {
   const z = fila * (LARGO_PALLET + GAP);
-  let x = 0;
   const startX = ANCHO_PASILLO / 2 + ANCHO_PALLET / 2;
   const pasoX = ANCHO_PALLET + GAP;
-
-  if (lado === 1) {
-    // Izquierda
-    x = -(startX + profundidad * pasoX);
-  } else {
-    // Derecha
-    x = startX + profundidad * pasoX;
-  }
+  const x =
+    lado === 1 ? -(startX + profundidad * pasoX) : startX + profundidad * pasoX;
   return [x, 0, z];
 };
 
-// --- COMPONENTES 3D (Pigmentos, Pallet, Suelo) ---
-function PigmentRoomMarking() {
-  const filaInicio = 6;
-  const pos = getPosition(filaInicio + 0.5, 2, 0.5); // Lado 2
-  const largo = (LARGO_PALLET + GAP) * 2;
-  const ancho = (ANCHO_PALLET + GAP) * 2;
+// --- COMPONENTES 3D ---
+
+// 1. ENTORNO INDUSTRIAL (Estrellas eliminadas)
+function IndustrialEnvironment() {
+  return <group>{/* Fondo negro limpio */}</group>;
+}
+
+// 2. ESTRUCTURA IGLÚ
+function IglooStructure() {
+  const largoTotal = VISUAL_ROWS * (LARGO_PALLET + GAP) + 3;
+  const zCenter = (VISUAL_ROWS * (LARGO_PALLET + GAP)) / 2 - LARGO_PALLET / 2;
+  const radio = 5.2;
+  const zStep = largoTotal / 8;
+  const zFirstArch = 1 * zStep - largoTotal / 2;
+  const posLuz = [0, 4.5, zFirstArch];
+  const tubeRadius = 0.08;
+  const curve = useMemo(() => {
+    const points = [];
+    for (let i = 0; i <= 32; i++) {
+      const t = (i / 32) * Math.PI;
+      points.push(
+        new THREE.Vector3(-Math.cos(t) * radio, Math.sin(t) * radio, 0),
+      );
+    }
+    return new THREE.CatmullRomCurve3(points);
+  }, []);
 
   return (
+    <group position={[0, 0, zCenter]}>
+      <spotLight
+        position={posLuz}
+        angle={0.8}
+        penumbra={0.4}
+        intensity={5}
+        color="#e0e7ff"
+        target-position={[0, 0, largoTotal]}
+      />
+      <mesh position={posLuz}>
+        <sphereGeometry args={[0.15, 16, 16]} />
+        <meshBasicMaterial color="#fff" toneMapped={false} />
+      </mesh>
+      <pointLight
+        position={posLuz}
+        intensity={1.5}
+        distance={10}
+        color="#fff"
+      />
+      {Array.from({ length: 9 }).map((_, i) => {
+        if (i === 0) return null;
+        const zRel = i * zStep - largoTotal / 2;
+        return (
+          <group key={i} position={[0, tubeRadius, zRel]}>
+            <mesh>
+              <tubeGeometry args={[curve, 64, tubeRadius, 8, false]} />
+              <meshStandardMaterial
+                color="#cbd5e1"
+                metalness={0.5}
+                roughness={0.2}
+                transparent
+                opacity={0.35}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+            <mesh position={[radio, 0.1, 0]}>
+              <boxGeometry args={[0.3, 0.2, 0.3]} />
+              <meshStandardMaterial color="#334155" />
+            </mesh>
+            <mesh position={[-radio, 0.1, 0]}>
+              <boxGeometry args={[0.3, 0.2, 0.3]} />
+              <meshStandardMaterial color="#334155" />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+// 3. ESTRUCTURA ENTREPISO
+function MezzanineStructure() {
+  const pasoZ = LARGO_PALLET + GAP;
+  const zStart = 3 * pasoZ + LARGO_PALLET / 2 + GAP / 2;
+  const zEnd = 7 * pasoZ + LARGO_PALLET / 2 + GAP / 2;
+  const zLength = zEnd - zStart;
+  const zCenter = zStart + zLength / 2;
+  const alturaTechoBajo = 2.1;
+  const anchoTechoLado = ANCHO_PALLET * DEPTH_PER_SIDE + 0.4;
+  const xOffsetLado = ANCHO_PASILLO / 2 + anchoTechoLado / 2 - 0.2;
+  const columnaWidth = 0.12;
+  const columnGaps = [3, 4, 5, 6, 7];
+  const transparentMat = {
+    transparent: true,
+    opacity: 0.3,
+    roughness: 0.5,
+    metalness: 0.5,
+    side: THREE.DoubleSide,
+  };
+  const roofMat = { ...transparentMat, color: "#94a3b8" };
+  const columnMat = { ...transparentMat, color: "#64748b", opacity: 0.4 };
+  return (
+    <group>
+      <mesh position={[-xOffsetLado, alturaTechoBajo, zCenter]}>
+        <boxGeometry args={[anchoTechoLado, 0.05, zLength]} />
+        <meshStandardMaterial {...roofMat} />
+      </mesh>
+      <mesh position={[xOffsetLado, alturaTechoBajo, zCenter]}>
+        <boxGeometry args={[anchoTechoLado, 0.05, zLength]} />
+        <meshStandardMaterial {...roofMat} />
+      </mesh>
+      {columnGaps.map((gapIndex) => {
+        const zCol = gapIndex * pasoZ + LARGO_PALLET / 2 + GAP / 2;
+        const xInnerAbs = ANCHO_PASILLO / 2 + 0.15;
+        const xOuterAbs = ANCHO_PASILLO / 2 + ANCHO_PALLET * 2 + 0.15;
+        return (
+          <group
+            key={`col-gap-${gapIndex}`}
+            position={[0, alturaTechoBajo / 2, zCol]}
+          >
+            <mesh position={[-xInnerAbs, 0, 0]}>
+              <boxGeometry
+                args={[columnaWidth, alturaTechoBajo, columnaWidth]}
+              />
+              <meshStandardMaterial {...columnMat} />
+            </mesh>
+            <mesh position={[-xOuterAbs, 0, 0]}>
+              <boxGeometry
+                args={[columnaWidth, alturaTechoBajo, columnaWidth]}
+              />
+              <meshStandardMaterial {...columnMat} />
+            </mesh>
+            <mesh position={[xInnerAbs, 0, 0]}>
+              <boxGeometry
+                args={[columnaWidth, alturaTechoBajo, columnaWidth]}
+              />
+              <meshStandardMaterial {...columnMat} />
+            </mesh>
+            <mesh position={[xOuterAbs, 0, 0]}>
+              <boxGeometry
+                args={[columnaWidth, alturaTechoBajo, columnaWidth]}
+              />
+              <meshStandardMaterial {...columnMat} />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+// 4. PIGMENTOS
+function PigmentRoomMarking() {
+  const filaInicio = 6;
+  const lado = 2;
+  const profPromedio = 0.5;
+  const pos = getPosition(filaInicio + 0.5, lado, profPromedio);
+  const largo = (LARGO_PALLET + GAP) * 2;
+  const ancho = (ANCHO_PALLET + GAP) * 2;
+  const stripeMaterial = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          color1: { value: new THREE.Color("#1e293b") },
+          color2: { value: new THREE.Color("#ca8a04") },
+        },
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `varying vec2 vUv; uniform vec3 color1; uniform vec3 color2; void main() { float p = vUv.x * 6.0 + vUv.y * 6.0; float stripe = step(0.5, mod(p, 1.0)); gl_FragColor = vec4(mix(color1, color2, stripe), 0.7); }`,
+        transparent: true,
+      }),
+    [],
+  );
+  return (
     <group position={[pos[0], 0.005, pos[2]]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} material={stripeMaterial}>
         <planeGeometry args={[ancho, largo]} />
-        <meshBasicMaterial color="#334155" opacity={0.8} transparent />
       </mesh>
       <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
         <edgesGeometry args={[new THREE.PlaneGeometry(ancho, largo)]} />
-        <lineBasicMaterial color="#facc15" linewidth={2} />
+        <lineBasicMaterial color="#d97706" linewidth={3} />
       </lineSegments>
       <Text
         position={[0, 0.01, 0]}
         rotation={[-Math.PI / 2, 0, -Math.PI / 2]}
-        fontSize={0.4}
-        color="#facc15"
+        fontSize={0.35}
+        color="#fbbf24"
         anchorX="center"
         anchorY="middle"
       >
@@ -87,6 +242,7 @@ function PigmentRoomMarking() {
   );
 }
 
+// 6. PALLET REALISTA
 function RealisticPallet({ data, onClick, isSelected }) {
   const [hovered, setHover] = useState(false);
   const position = useMemo(
@@ -98,28 +254,49 @@ function RealisticPallet({ data, onClick, isSelected }) {
   useFrame((state, delta) => {
     if (groupRef.current) {
       const targetY = isSelected ? 0.3 : 0;
-      groupRef.current.position.lerp(
-        new THREE.Vector3(position[0], targetY, position[2]),
-        delta * 8,
-      );
+      groupRef.current.position.x +=
+        (position[0] - groupRef.current.position.x) * 0.15;
+      groupRef.current.position.z +=
+        (position[2] - groupRef.current.position.z) * 0.15;
+      groupRef.current.position.y +=
+        (targetY - groupRef.current.position.y) * 0.15;
     }
   });
 
-  const alturaCarga = Math.max(0.3, data.cantidad / 1000);
+  const alturaTotal = Math.max(0.35, data.cantidad / 900);
   const colorMaterial = data.color_hex || "#ccc";
+  const ALTURA_CAPA = 0.12;
+  const numCapas = Math.max(1, Math.floor(alturaTotal / ALTURA_CAPA));
+  const gapCapas = 0;
+
+  const bagMaterial = useMemo(
+    () => (
+      <meshStandardMaterial
+        color={isSelected ? "#6366f1" : colorMaterial}
+        roughness={0.9}
+        metalness={0.1}
+        emissive={isSelected ? "#4338ca" : hovered ? colorMaterial : "#000"}
+        emissiveIntensity={isSelected ? 1.5 : hovered ? 0.2 : 0}
+      />
+    ),
+    [isSelected, hovered, colorMaterial],
+  );
 
   return (
     <group ref={groupRef} position={position}>
       {hovered && (
         <Html
-          position={[0, alturaCarga + 0.5, 0]}
+          position={[0, alturaTotal + 0.5, 0]}
           center
           zIndexRange={[100, 0]}
         >
-          <div className="bg-black/80 text-white text-[10px] px-2 py-1 rounded border border-white/20 whitespace-nowrap pointer-events-none select-none z-50">
-            <span className="font-bold text-yellow-400">{data.nombre}</span>
-            <br />
-            {data.cantidad} kg
+          <div className="bg-slate-900 text-white text-[10px] px-2 py-1 rounded border border-slate-500 whitespace-nowrap pointer-events-none select-none z-50 shadow-xl">
+            <span className="font-bold text-blue-400 block mb-0.5">
+              {data.nombre}
+            </span>
+            <div className="flex justify-between gap-3 text-gray-400 font-mono">
+              <span>{data.cantidad} kg</span>
+            </div>
           </div>
         </Html>
       )}
@@ -139,24 +316,38 @@ function RealisticPallet({ data, onClick, isSelected }) {
           document.body.style.cursor = "auto";
         }}
       >
-        <mesh position={[0, 0.1 + alturaCarga / 2, 0]} castShadow receiveShadow>
-          <boxGeometry
-            args={[ANCHO_PALLET * 0.95, alturaCarga, LARGO_PALLET * 0.95]}
-          />
-          <meshStandardMaterial
-            color={hovered ? "#fff" : colorMaterial}
-            emissive={hovered ? "#444" : "#000"}
-            roughness={0.4}
-          />
-        </mesh>
-        <mesh position={[0, 0.05, 0]} castShadow>
-          <boxGeometry args={[ANCHO_PALLET, 0.1, LARGO_PALLET]} />
-          <meshStandardMaterial color="#5d4037" />
-        </mesh>
+        {Array.from({ length: numCapas }).map((_, i) => (
+          <RoundedBox
+            key={i}
+            args={[ANCHO_PALLET * 0.98, ALTURA_CAPA, LARGO_PALLET * 0.98]}
+            radius={0.03}
+            smoothness={4}
+            position={[
+              0,
+              0.12 + i * (ALTURA_CAPA + gapCapas) + ALTURA_CAPA / 2,
+              0,
+            ]}
+          >
+            {bagMaterial}
+          </RoundedBox>
+        ))}
+        <RoundedBox
+          args={[ANCHO_PALLET, 0.12, LARGO_PALLET]}
+          radius={0.01}
+          smoothness={2}
+          position={[0, 0.06, 0]}
+        >
+          <meshStandardMaterial color="#8d6e63" roughness={1} />
+        </RoundedBox>
         {isSelected && (
-          <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.5, 0.6, 32]} />
-            <meshBasicMaterial color="#6366f1" opacity={0.8} transparent />
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.7, 0.75, 64]} />
+            <meshBasicMaterial
+              color="#6366f1"
+              transparent
+              opacity={0.8}
+              toneMapped={false}
+            />
           </mesh>
         )}
       </group>
@@ -164,92 +355,114 @@ function RealisticPallet({ data, onClick, isSelected }) {
   );
 }
 
+// 7. AREA MARKERS
 function AreaMarkers() {
-  const maxRows = Math.max(ROWS_LADO_1, ROWS_LADO_2);
-  const largoTotal = maxRows * (LARGO_PALLET + GAP);
+  const largoExacto = VISUAL_ROWS * LARGO_PALLET + (VISUAL_ROWS - 1) * GAP;
+  const zCenter = largoExacto / 2 - LARGO_PALLET / 2;
   const anchoBloque = ANCHO_PALLET * DEPTH_PER_SIDE + GAP;
-  const offsetPasillo = ANCHO_PASILLO / 2;
-  const centerL1 = -(offsetPasillo + anchoBloque / 2);
-  const centerL2 = offsetPasillo + anchoBloque / 2;
-  const zCenter = largoTotal / 2 - LARGO_PALLET / 2;
+  const centerL1 = -(ANCHO_PASILLO / 2 + anchoBloque / 2);
+  const centerL2 = ANCHO_PASILLO / 2 + anchoBloque / 2;
+  const xLeftLine = -1.1;
+  const xRightLine = 1.1;
+  const xNumLeft = -0.6;
+  const xNumRight = 0.6;
+  const lineMaterial = new THREE.LineBasicMaterial({
+    color: "#475569",
+    opacity: 0.3,
+    transparent: true,
+  });
 
   return (
-    <group position={[0, 0.01, zCenter]}>
-      <group position={[centerL1, 0, 0]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[anchoBloque, largoTotal]} />
-          <meshBasicMaterial color="#3b82f6" opacity={0.05} transparent />
+    <group position={[0, 0, 0]}>
+      <Grid
+        position={[0, 0, 0]}
+        cellSize={1.2}
+        cellThickness={0.6}
+        cellColor="#334155"
+        sectionSize={4.8}
+        sectionThickness={1}
+        sectionColor="#475569"
+        fadeDistance={60}
+        infiniteGrid={true}
+      />
+      <group position={[0, 0.01, zCenter]}>
+        <mesh position={[xLeftLine, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.12, largoExacto + 2]} />
+          <meshBasicMaterial color="#eab308" />
         </mesh>
+        <mesh position={[xRightLine, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[0.12, largoExacto + 2]} />
+          <meshBasicMaterial color="#eab308" />
+        </mesh>
+      </group>
+      <group position={[centerL1, 0.01, zCenter]}>
         <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
           <edgesGeometry
-            args={[new THREE.PlaneGeometry(anchoBloque, largoTotal)]}
+            args={[new THREE.PlaneGeometry(anchoBloque, largoExacto)]}
           />
-          <lineBasicMaterial color="#3b82f6" opacity={0.2} transparent />
+          <primitive object={lineMaterial} />
         </lineSegments>
         <Text
-          position={[0, 0.02, -largoTotal / 2 - 0.5]}
-          fontSize={0.5}
-          color="#3b82f6"
+          position={[0, 0.02, -largoExacto / 2 - 0.5]}
+          fontSize={0.4}
+          color="#60a5fa"
           rotation={[-Math.PI / 2, 0, 0]}
         >
           LADO 1
         </Text>
       </group>
-      <group
-        position={[
-          centerL2,
-          0,
-          (ROWS_LADO_2 * (LARGO_PALLET + GAP)) / 2 - largoTotal / 2,
-        ]}
-      >
-        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry
-            args={[anchoBloque, ROWS_LADO_2 * (LARGO_PALLET + GAP)]}
-          />
-          <meshBasicMaterial color="#10b981" opacity={0.05} transparent />
-        </mesh>
+      <group position={[centerL2, 0.01, zCenter]}>
         <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
           <edgesGeometry
-            args={[
-              new THREE.PlaneGeometry(
-                anchoBloque,
-                ROWS_LADO_2 * (LARGO_PALLET + GAP),
-              ),
-            ]}
+            args={[new THREE.PlaneGeometry(anchoBloque, largoExacto)]}
           />
-          <lineBasicMaterial color="#10b981" opacity={0.2} transparent />
+          <primitive object={lineMaterial} />
         </lineSegments>
         <Text
-          position={[0, 0.02, -(ROWS_LADO_2 * (LARGO_PALLET + GAP)) / 2 - 0.5]}
-          fontSize={0.5}
-          color="#10b981"
+          position={[0, 0.02, -largoExacto / 2 - 0.5]}
+          fontSize={0.4}
+          color="#4ade80"
           rotation={[-Math.PI / 2, 0, 0]}
         >
           LADO 2
         </Text>
       </group>
+      {Array.from({ length: VISUAL_ROWS }).map((_, i) => {
+        const z = i * (LARGO_PALLET + GAP) - zCenter;
+        return (
+          <group key={i} position={[0, 0.01, z + zCenter]}>
+            <Text
+              position={[xNumLeft, 0, 0]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              fontSize={0.25}
+              color="#94a3b8"
+            >
+              {i}
+            </Text>
+            <Text
+              position={[xNumRight, 0, 0]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              fontSize={0.25}
+              color="#94a3b8"
+            >
+              {i}
+            </Text>
+          </group>
+        );
+      })}
       <Text
-        position={[0, 0.01, zCenter]}
-        rotation={[-Math.PI / 2, 0, Math.PI / 2]}
-        fontSize={0.6}
-        color="#475569"
-        fillOpacity={0.3}
-      >
-        PASILLO CENTRAL
-      </Text>
-      <Text
-        position={[0, 0.01, -largoTotal / 2 - 1.5]}
+        position={[0, 0.01, -largoExacto + 5.0]}
         rotation={[-Math.PI / 2, 0, 0]}
         fontSize={0.6}
-        color="#fff"
+        color="#e2e8f0"
       >
         ↓ ENTRADA ↓
       </Text>
       <Text
-        position={[0, 0.01, largoTotal / 2 + 1.5]}
+        position={[0, 0.01, largoExacto + 3.0]}
         rotation={[-Math.PI / 2, 0, Math.PI]}
         fontSize={0.6}
-        color="#94a3b8"
+        color="#e2e8f0"
       >
         ↑ PATIO ↑
       </Text>
@@ -257,39 +470,170 @@ function AreaMarkers() {
   );
 }
 
-// --- MODALES Y PANELES ---
+// --- VISTA LISTA RESUMIDA ---
+function StockListView({ pallets, materiales }) {
+  const [expandedRow, setExpandedRow] = useState(null);
+  const resumen = useMemo(() => {
+    const map = {};
+    pallets.forEach((p) => {
+      if (!map[p.materia_prima_id])
+        map[p.materia_prima_id] = {
+          id: p.materia_prima_id,
+          totalQty: 0,
+          count: 0,
+          pallets: [],
+        };
+      map[p.materia_prima_id].totalQty += Number(p.cantidad);
+      map[p.materia_prima_id].count += 1;
+      map[p.materia_prima_id].pallets.push(p);
+    });
+    return Object.values(map)
+      .map((item) => {
+        const mat = materiales.find((m) => m.id === item.id);
+        return {
+          ...item,
+          nombre: mat?.nombre || "Desconocido",
+          codigo: mat?.codigo || "S/C",
+          color: mat?.color_hex || "#ccc",
+        };
+      })
+      .sort((a, b) => b.totalQty - a.totalQty);
+  }, [pallets, materiales]);
 
-// 1. MODAL GENERADOR DE QR
+  const toggleRow = (id) => setExpandedRow(expandedRow === id ? null : id);
+
+  return (
+    <div className="flex-1 bg-[#0b0f19] overflow-y-auto custom-scrollbar p-4 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+          <FaList className="text-indigo-500" /> Resumen de Stock en Iglú
+        </h2>
+        <div className="bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden shadow-2xl">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-950 text-gray-500 text-xs uppercase font-bold tracking-wider">
+              <tr>
+                <th className="p-4 border-b border-slate-800">Material</th>
+                <th className="p-4 border-b border-slate-800 text-center">
+                  Pallets
+                </th>
+                <th className="p-4 border-b border-slate-800 text-right">
+                  Total Kg
+                </th>
+                <th className="p-4 border-b border-slate-800 w-10"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {resumen.map((item) => (
+                <React.Fragment key={item.id}>
+                  <tr
+                    onClick={() => toggleRow(item.id)}
+                    className="hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                  >
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-3 h-3 rounded-full shadow-sm ring-1 ring-white/10"
+                          style={{ backgroundColor: item.color }}
+                        ></div>
+                        <div>
+                          <p className="font-bold text-white text-sm group-hover:text-indigo-300 transition-colors">
+                            {item.nombre}
+                          </p>
+                          <p className="text-[10px] text-gray-500 font-mono">
+                            {item.codigo}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-4 text-center">
+                      <span className="bg-slate-800 text-gray-300 px-2 py-1 rounded text-xs font-mono border border-slate-700">
+                        {item.count}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <span className="text-emerald-400 font-bold font-mono text-base">
+                        {item.totalQty.toLocaleString()}{" "}
+                        <span className="text-[10px] text-emerald-700">kg</span>
+                      </span>
+                    </td>
+                    <td className="p-4 text-center text-gray-600">
+                      {expandedRow === item.id ? (
+                        <FaChevronDown />
+                      ) : (
+                        <FaChevronRight />
+                      )}
+                    </td>
+                  </tr>
+                  {expandedRow === item.id && (
+                    <tr className="bg-slate-950/30">
+                      <td colSpan="4" className="p-0">
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="border-b border-slate-800 overflow-hidden"
+                        >
+                          <div className="p-4 pl-12 bg-slate-900/50 shadow-inner">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                              {item.pallets.map((p) => (
+                                <div
+                                  key={p.id}
+                                  className="flex justify-between items-center p-2 rounded border border-slate-700 bg-slate-800 text-xs"
+                                >
+                                  <div className="flex flex-col">
+                                    <span className="text-gray-400 text-[10px]">
+                                      ID #{p.id}
+                                    </span>
+                                    <span className="text-indigo-300 font-bold">
+                                      L{p.lado} • F{p.fila} •{" "}
+                                      {p.columna === 0 ? "Frente" : "Fondo"}
+                                    </span>
+                                  </div>
+                                  <span className="text-white font-mono font-bold">
+                                    {p.cantidad} kg
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </motion.div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+          {resumen.length === 0 && (
+            <div className="p-12 text-center text-gray-500">
+              <FaBox className="text-4xl mx-auto mb-3 opacity-20" />
+              <p>No hay pallets cargados.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MODALES (Auxiliares) ---
 function QRModal({ pallet, onClose }) {
   const [qrUrl, setQrUrl] = useState("");
-
   useEffect(() => {
     if (pallet) {
-      // Generamos un JSON simple que el escáner pueda leer
       const data = JSON.stringify({ type: "PALLET", id: pallet.id });
       QRCode.toDataURL(data, { width: 400, margin: 2 }, (err, url) => {
         if (!err) setQrUrl(url);
       });
     }
   }, [pallet]);
-
   const handlePrint = () => {
     const win = window.open("", "", "width=500,height=600");
-    win.document.write(`
-      <html>
-        <head><title>Etiqueta Pallet #${pallet.id}</title></head>
-        <body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; text-align: center;">
-          <h1 style="margin: 0; font-size: 24px;">${pallet.nombre}</h1>
-          <h2 style="margin: 5px 0; font-size: 40px;">${pallet.cantidad} Kg</h2>
-          <img src="${qrUrl}" style="width: 300px; height: 300px;" />
-          <p style="font-size: 12px; color: #555;">ID: ${pallet.id} | Fecha: ${new Date().toLocaleDateString()}</p>
-          <script>window.print(); window.close();</script>
-        </body>
-      </html>
-    `);
+    win.document.write(
+      `<html><head><title>Etiqueta #${pallet.id}</title></head><body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; text-align: center;"><h1 style="margin: 0; font-size: 24px;">${pallet.nombre}</h1><h2 style="margin: 5px 0; font-size: 40px;">${pallet.cantidad} Kg</h2><img src="${qrUrl}" style="width: 300px; height: 300px;" /><p style="font-size: 12px; color: #555;">ID: ${pallet.id}</p><script>window.print(); window.close();</script></body></html>`,
+    );
     win.document.close();
   };
-
   return (
     <div
       className="fixed inset-0 z-[100] bg-black/90 backdrop-blur flex items-center justify-center p-4"
@@ -304,8 +648,7 @@ function QRModal({ pallet, onClose }) {
         <h3 className="text-gray-900 font-bold text-xl mb-1">
           {pallet.nombre}
         </h3>
-        <p className="text-gray-500 text-sm mb-4">Etiqueta de Identificación</p>
-
+        <p className="text-gray-500 text-sm mb-4">Etiqueta Identificación</p>
         {qrUrl ? (
           <img
             src={qrUrl}
@@ -317,17 +660,16 @@ function QRModal({ pallet, onClose }) {
             Generando...
           </div>
         )}
-
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={handlePrint}
-            className="bg-black text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition-colors"
+            className="bg-black text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2"
           >
             <FaPrint /> Imprimir
           </button>
           <button
             onClick={onClose}
-            className="bg-gray-200 text-gray-800 py-3 rounded-lg font-bold hover:bg-gray-300 transition-colors"
+            className="bg-gray-200 text-gray-800 py-3 rounded-lg font-bold"
           >
             Cerrar
           </button>
@@ -337,22 +679,19 @@ function QRModal({ pallet, onClose }) {
   );
 }
 
-// 2. MODAL ESCÁNER
 function ScannerModal({ onClose, onScanSuccess }) {
   const handleScan = (result) => {
     if (result && result.length > 0) {
       try {
         const raw = result[0].rawValue;
         const data = JSON.parse(raw);
-        if (data.type === "PALLET" && data.id) {
-          onScanSuccess(data.id);
-        }
-      } catch (e) {
-        console.error("QR Inválido", e);
-      }
+        if (data.type === "PALLET" && data.id) onScanSuccess(data.id);
+      } catch (e) {}
     }
   };
-
+  const handleError = (error) => {
+    console.warn("Scanner Error:", error);
+  };
   return (
     <div className="fixed inset-0 z-[100] bg-black flex flex-col">
       <div className="p-4 flex justify-between items-center bg-slate-900 z-10">
@@ -369,26 +708,18 @@ function ScannerModal({ onClose, onScanSuccess }) {
       <div className="flex-1 relative">
         <Scanner
           onScan={handleScan}
+          onError={handleError}
           components={{ audio: false }}
           styles={{ container: { height: "100%" } }}
         />
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="w-64 h-64 border-2 border-white/50 rounded-xl relative">
-            <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-green-500 -mt-1 -ml-1"></div>
-            <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-green-500 -mt-1 -mr-1"></div>
-            <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-green-500 -mb-1 -ml-1"></div>
-            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-green-500 -mb-1 -mr-1"></div>
-          </div>
-        </div>
-        <div className="absolute bottom-10 left-0 w-full text-center text-white/80 text-sm">
-          Apunta al código QR del pallet
+          <div className="w-64 h-64 border-2 border-white/50 rounded-xl relative"></div>
         </div>
       </div>
     </div>
   );
 }
 
-// 3. MODAL DE ACCIÓN RÁPIDA (Post-Escaneo)
 function PalletControlModal({
   palletId,
   allPallets,
@@ -397,33 +728,12 @@ function PalletControlModal({
   onDelete,
 }) {
   const pallet = allPallets.find((p) => p.id === Number(palletId));
-
   const [qty, setQty] = useState(pallet ? pallet.cantidad : "");
   const [fila, setFila] = useState(pallet ? pallet.fila : 0);
   const [lado, setLado] = useState(pallet ? pallet.lado : 1);
   const [prof, setProf] = useState(pallet ? pallet.columna : 0);
-
-  if (!pallet)
-    return (
-      <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center">
-        <div className="bg-slate-800 p-6 rounded-xl text-center">
-          <FaExclamationTriangle className="text-4xl text-yellow-500 mx-auto mb-3" />
-          <p className="text-white font-bold">Pallet no encontrado</p>
-          <p className="text-sm text-gray-400 mb-4">
-            El ID #{palletId} no existe o fue eliminado.
-          </p>
-          <button
-            onClick={onClose}
-            className="bg-slate-700 text-white px-4 py-2 rounded"
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-    );
-
+  if (!pallet) return null;
   const handleSave = () => {
-    // Validar colisiones igual que antes
     const ocupado = allPallets.find(
       (p) =>
         p.id !== pallet.id &&
@@ -432,7 +742,8 @@ function PalletControlModal({
         p.columna === Number(prof),
     );
     if (ocupado) return alert(`Lugar ocupado por ${ocupado.nombre}`);
-
+    if (Number(lado) === 2 && Number(fila) >= 6)
+      return alert("¡Espacio ocupado por Cuarto de Pigmentos!");
     onUpdate(pallet.id, {
       cantidad: Number(qty),
       fila: Number(fila),
@@ -441,14 +752,12 @@ function PalletControlModal({
     });
     onClose();
   };
-
   const handleDelete = () => {
-    if (confirm("¿Seguro que este pallet se acabó?")) {
+    if (confirm("¿Baja definitiva?")) {
       onDelete(pallet.id);
       onClose();
     }
   };
-
   return (
     <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-sm flex items-end md:items-center justify-center p-4">
       <motion.div
@@ -457,91 +766,35 @@ function PalletControlModal({
         className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
       >
         <div className="bg-indigo-600 p-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="bg-white/20 p-2 rounded-lg">
-              <FaBox className="text-white" />
-            </div>
-            <div>
-              <h3 className="font-bold text-white leading-none">
-                {pallet.nombre}
-              </h3>
-              <span className="text-[10px] text-indigo-200 uppercase tracking-wider">
-                Control de Pallet #{pallet.id}
-              </span>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white">
-            <FaTimes />
+          <h3 className="font-bold text-white">{pallet.nombre}</h3>
+          <button onClick={onClose}>
+            <FaTimes className="text-white" />
           </button>
         </div>
-
-        <div className="p-5 space-y-5">
-          {/* Cantidad */}
+        <div className="p-5 space-y-4">
           <div>
-            <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">
-              Cantidad Actual (Kg)
+            <label className="text-xs font-bold text-gray-400">
+              Cantidad (Kg)
             </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl p-3 text-white font-mono text-lg focus:border-indigo-500 outline-none"
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-              />
-              <button
-                className="bg-slate-800 text-white px-4 rounded-xl border border-slate-700"
-                onClick={() => setQty(Number(qty) - 25)}
-              >
-                -25
-              </button>
-            </div>
+            <input
+              type="number"
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+            />
           </div>
-
-          {/* Ubicación */}
-          <div>
-            <label className="text-xs font-bold text-gray-400 uppercase mb-1 block flex items-center gap-2">
-              <FaExchangeAlt /> Mover Ubicación
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <select
-                className="bg-slate-950 text-white text-xs p-2 rounded-lg border border-slate-700 outline-none"
-                value={lado}
-                onChange={(e) => setLado(Number(e.target.value))}
-              >
-                <option value="1">Lado 1</option>
-                <option value="2">Lado 2</option>
-              </select>
-              <input
-                type="number"
-                className="bg-slate-950 text-white text-xs p-2 rounded-lg border border-slate-700 text-center"
-                value={fila}
-                onChange={(e) => setFila(Number(e.target.value))}
-                placeholder="Fila"
-              />
-              <select
-                className="bg-slate-950 text-white text-xs p-2 rounded-lg border border-slate-700 outline-none"
-                value={prof}
-                onChange={(e) => setProf(Number(e.target.value))}
-              >
-                <option value="0">Frente</option>
-                <option value="1">Fondo</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Acciones */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3">
             <button
               onClick={handleDelete}
-              className="flex-1 bg-red-900/30 text-red-400 border border-red-900/50 py-3 rounded-xl font-bold text-sm hover:bg-red-900/50 flex justify-center items-center gap-2"
+              className="flex-1 bg-red-900/30 text-red-400 border border-red-900/50 py-3 rounded-lg font-bold"
             >
-              <FaTrash /> BAJA
+              BAJA
             </button>
             <button
               onClick={handleSave}
-              className="flex-[2] bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm hover:bg-indigo-500 shadow-lg shadow-indigo-900/20 flex justify-center items-center gap-2"
+              className="flex-[2] bg-indigo-600 text-white py-3 rounded-lg font-bold"
             >
-              <FaSave /> GUARDAR CAMBIOS
+              GUARDAR
             </button>
           </div>
         </div>
@@ -550,7 +803,6 @@ function PalletControlModal({
   );
 }
 
-// --- GESTOR DE PALLETS (PANEL) ---
 function PalletManager({
   mp,
   pallets,
@@ -563,57 +815,45 @@ function PalletManager({
   const stockTotal = Number(mp.stock_actual);
   const stockUbicado = pallets.reduce((acc, p) => acc + Number(p.cantidad), 0);
   const stockSuelto = stockTotal - stockUbicado;
-
   const [newQty, setNewQty] = useState("");
   const [newFila, setNewFila] = useState("0");
   const [newLado, setNewLado] = useState("1");
   const [newProf, setNewProf] = useState("0");
   const [errorMsg, setErrorMsg] = useState("");
-
   const handleAdd = () => {
     setErrorMsg("");
     if (!newQty || Number(newQty) <= 0)
       return setErrorMsg("Ingresa una cantidad válida.");
-
     const f = Number(newFila);
     const l = Number(newLado);
     const p = Number(newProf);
-
     if (l === 1 && f >= ROWS_LADO_1)
-      return setErrorMsg(`Lado 1: solo filas 0 a ${ROWS_LADO_1 - 1}.`);
+      return setErrorMsg(`Lado 1: filas 0-${ROWS_LADO_1 - 1}.`);
     if (l === 2 && f >= ROWS_LADO_2)
-      return setErrorMsg(`Lado 2: solo filas 0 a ${ROWS_LADO_2 - 1}.`);
-    if (l === 1 && f >= 6)
-      return setErrorMsg("¡Espacio ocupado por Cuarto de Pigmentos!");
-
+      return setErrorMsg(`Lado 2: filas 0-${ROWS_LADO_2 - 1}.`);
+    if (l === 2 && f >= 6)
+      return setErrorMsg("¡Espacio ocupado por Pigmentos!");
     const ocupado = allPallets.find(
       (pal) =>
         Number(pal.lado) === l &&
         Number(pal.fila) === f &&
         Number(pal.columna) === p,
     );
-    if (ocupado) return setErrorMsg(`Lugar ocupado por: ${ocupado.nombre}`);
-
+    if (ocupado) return setErrorMsg(`Ocupado por: ${ocupado.nombre}`);
     onAdd(mp.id, Number(newQty), f, l, p);
     setNewQty("");
   };
-
   return (
-    <div className="mt-4 border-t border-slate-700 pt-4 animate-in slide-in-from-right">
+    <div className="mt-4 border-t border-slate-700 pt-4">
       <div className="bg-slate-800 p-4 rounded-xl mb-4 border border-slate-700">
-        <div className="flex justify-between items-start mb-2">
-          <h4 className="font-bold text-white text-base truncate pr-2">
-            {mp.nombre}
-          </h4>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-gray-500 uppercase">Color</span>
-            <input
-              type="color"
-              className="w-5 h-5 bg-transparent border-0 cursor-pointer rounded overflow-hidden p-0"
-              value={mp.color_hex || "#3b82f6"}
-              onChange={(e) => onUpdateColor(mp, e.target.value)}
-            />
-          </div>
+        <div className="flex justify-between mb-2">
+          <h4 className="font-bold text-white text-sm">{mp.nombre}</h4>
+          <input
+            type="color"
+            className="w-5 h-5 bg-transparent border-0 cursor-pointer"
+            value={mp.color_hex || "#3b82f6"}
+            onChange={(e) => onUpdateColor(mp, e.target.value)}
+          />
         </div>
         <div className="flex gap-2 text-xs font-mono">
           <span className="bg-blue-900/40 text-blue-200 px-2 py-1 rounded">
@@ -624,97 +864,61 @@ function PalletManager({
           </span>
         </div>
       </div>
-
-      <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-4 rounded-xl border border-indigo-500/20 shadow-lg mb-6">
-        <p className="text-xs text-indigo-400 font-bold mb-3 uppercase flex items-center gap-2">
-          <FaPlus /> Nuevo Ingreso
-        </p>
-        <div className="space-y-3">
-          <div>
-            <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
-              CANTIDAD (KG)
-            </label>
-            <input
-              type="number"
-              className="w-full bg-slate-950 text-white text-sm p-2 rounded-lg border border-slate-700 focus:border-indigo-500 outline-none"
-              value={newQty}
-              onChange={(e) => setNewQty(e.target.value)}
-              placeholder="Ej: 500"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
-                LADO
-              </label>
-              <select
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs outline-none"
-                value={newLado}
-                onChange={(e) => {
-                  setNewLado(Number(e.target.value));
-                  setNewFila(0);
-                }}
-              >
-                <option value="1">Lado 1 (8 filas)</option>
-                <option value="2">Lado 2 (6 filas)</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
-                FILA
-              </label>
-              <select
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs outline-none"
-                value={newFila}
-                onChange={(e) => setNewFila(e.target.value)}
-              >
-                {Array.from({
-                  length: Number(newLado) === 1 ? ROWS_LADO_1 : ROWS_LADO_2,
-                }).map((_, i) => (
-                  <option key={i} value={i}>
-                    Fila {i}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-[10px] text-gray-400 uppercase font-bold block mb-1">
-              POSICIÓN
-            </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setNewProf("0")}
-                className={`flex-1 py-2 rounded text-xs border ${newProf === "0" ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-950 text-gray-400 border-slate-700"}`}
-              >
-                Frente (Pasillo)
-              </button>
-              <button
-                onClick={() => setNewProf("1")}
-                className={`flex-1 py-2 rounded text-xs border ${newProf === "1" ? "bg-indigo-600 text-white border-indigo-500" : "bg-slate-950 text-gray-400 border-slate-700"}`}
-              >
-                Fondo (Pared)
-              </button>
-            </div>
-          </div>
-          {errorMsg && (
-            <div className="bg-red-900/20 border border-red-500/30 text-red-300 p-2 rounded text-xs flex items-center gap-2">
-              <FaExclamationTriangle /> {errorMsg}
-            </div>
-          )}
-          <button
-            onClick={handleAdd}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg text-sm transition-transform active:scale-95 shadow-lg"
+      <div className="bg-slate-900 p-4 rounded-xl border border-indigo-500/20 mb-6 space-y-3">
+        <input
+          type="number"
+          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-sm"
+          value={newQty}
+          onChange={(e) => setNewQty(e.target.value)}
+          placeholder="Kg"
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
+            value={newLado}
+            onChange={(e) => {
+              setNewLado(Number(e.target.value));
+              setNewFila(0);
+            }}
           >
-            UBICAR
+            <option value="1">Lado 1</option>
+            <option value="2">Lado 2</option>
+          </select>
+          <select
+            className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
+            value={newFila}
+            onChange={(e) => setNewFila(e.target.value)}
+          >
+            {Array.from({ length: 8 }).map((_, i) => (
+              <option key={i} value={i}>
+                Fila {i}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setNewProf("0")}
+            className={`flex-1 py-2 rounded text-xs border ${newProf === "0" ? "bg-indigo-600 text-white" : "bg-slate-950 text-gray-400"}`}
+          >
+            Frente
+          </button>
+          <button
+            onClick={() => setNewProf("1")}
+            className={`flex-1 py-2 rounded text-xs border ${newProf === "1" ? "bg-indigo-600 text-white" : "bg-slate-950 text-gray-400"}`}
+          >
+            Fondo
           </button>
         </div>
+        {errorMsg && <div className="text-xs text-red-400">{errorMsg}</div>}
+        <button
+          onClick={handleAdd}
+          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg text-sm"
+        >
+          UBICAR
+        </button>
       </div>
-
-      <h5 className="text-xs font-bold text-gray-500 uppercase mb-3 pl-1">
-        Pallets Ubicados ({pallets.length})
-      </h5>
-      <div className="space-y-2 mb-6 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
+      <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
         {pallets.map((p) => (
           <div
             key={p.id}
@@ -731,14 +935,13 @@ function PalletManager({
             <div className="flex gap-1">
               <button
                 onClick={() => onOpenQR(p)}
-                className="text-white bg-slate-700 hover:bg-slate-600 p-2 rounded transition-colors"
-                title="Generar QR"
+                className="text-white bg-slate-700 p-2 rounded"
               >
                 <FaQrcode />
               </button>
               <button
                 onClick={() => onDelete(p.id)}
-                className="text-white bg-red-900/50 hover:bg-red-800 p-2 rounded transition-colors"
+                className="text-red-400 bg-slate-700 p-2 rounded"
               >
                 <FaTrash />
               </button>
@@ -758,11 +961,10 @@ export default function DepositoPage() {
   const [selectedMpId, setSelectedMpId] = useState(null);
   const [search, setSearch] = useState("");
   const [selectedPalletId, setSelectedPalletId] = useState(null);
-
-  // Estados para Modales Nuevos
   const [qrPallet, setQrPallet] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scannedPalletId, setScannedPalletId] = useState(null);
+  const [viewMode, setViewMode] = useState("3D");
 
   const cargarDatos = async () => {
     try {
@@ -858,8 +1060,6 @@ export default function DepositoPage() {
     setShowConfig(true);
   };
 
-  const maxFila =
-    pallets.length > 0 ? Math.max(...pallets.map((p) => p.fila)) : 10;
   const filteredMaterials = materiales.filter((m) =>
     m.nombre.toLowerCase().includes(search.toLowerCase()),
   );
@@ -870,90 +1070,100 @@ export default function DepositoPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] md:h-[calc(100vh-80px)] animate-in fade-in relative bg-slate-950 overflow-hidden">
-      {/* HEADER FLOTANTE */}
-      <div className="absolute top-4 left-4 z-10 pointer-events-none flex gap-2">
-        <div className="bg-slate-900/90 backdrop-blur-xl p-3 md:p-4 rounded-xl border border-slate-700/50 shadow-2xl pointer-events-auto min-w-[200px]">
+      <div className="absolute top-4 left-4 right-4 z-20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pointer-events-none">
+        <div className="bg-slate-900/90 backdrop-blur-xl p-3 md:px-5 md:py-3 rounded-xl border border-slate-700/50 shadow-2xl pointer-events-auto flex flex-col">
           <h1 className="text-lg font-extrabold text-white flex items-center gap-2">
-            <FaWarehouse className="text-indigo-500 text-xl" /> IGLÚ 3.0
+            <FaWarehouse className="text-indigo-500 text-xl" /> IGLÚ DIGITAL
           </h1>
-          <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-wide">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wide">
             {pallets.length} Pallets Ubicados
           </p>
         </div>
 
-        {/* BOTÓN ESCANEAR QR */}
-        <button
-          onClick={() => setIsScanning(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white w-14 h-14 md:w-16 md:h-auto rounded-xl shadow-lg border border-emerald-400/30 pointer-events-auto flex items-center justify-center transition-transform active:scale-95"
-          title="Escanear Pallet"
-        >
-          <FaCamera className="text-2xl" />
-        </button>
+        <div className="flex items-center gap-2 pointer-events-auto ml-auto bg-slate-900/80 p-2 rounded-2xl border border-slate-700/50 shadow-xl backdrop-blur-md">
+          <div className="flex bg-slate-800 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("3D")}
+              className={`w-10 h-9 rounded-md flex items-center justify-center transition-all ${viewMode === "3D" ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"}`}
+              title="Vista 3D"
+            >
+              <FaCube />
+            </button>
+            <button
+              onClick={() => setViewMode("LIST")}
+              className={`w-10 h-9 rounded-md flex items-center justify-center transition-all ${viewMode === "LIST" ? "bg-indigo-600 text-white shadow" : "text-gray-400 hover:text-white"}`}
+              title="Vista Lista"
+            >
+              <FaList />
+            </button>
+          </div>
+          <div className="w-px h-6 bg-slate-700 mx-1"></div>
+          <button
+            onClick={() => setIsScanning(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white w-10 h-10 rounded-lg flex items-center justify-center transition-transform active:scale-95 shadow-lg"
+            title="Escanear"
+          >
+            <FaCamera size={20} />
+          </button>
+          {viewMode === "3D" && (
+            <button
+              onClick={() => setShowConfig(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-white px-4 h-10 rounded-lg font-bold text-sm flex items-center gap-2 transition-all border border-slate-600 ml-1"
+            >
+              <FaCog /> <span className="hidden md:inline">Administrar</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="absolute top-4 right-4 z-10">
-        <button
-          onClick={() => setShowConfig(true)}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white p-3 md:px-5 md:py-2.5 rounded-full md:rounded-xl font-bold shadow-lg flex items-center gap-2 pointer-events-auto transition-transform active:scale-95"
-        >
-          <FaCog /> <span className="hidden md:inline">Gestionar</span>
-        </button>
-      </div>
+      {viewMode === "3D" ? (
+        <div className="flex-1 w-full h-full cursor-move bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0e17] to-[#05070a]">
+          <Canvas camera={{ position: [0, 18, 25], fov: 50 }} dpr={[1, 2]}>
+            <color attach="background" args={["#05070a"]} />
+            <fogExp2 attach="fog" args={["#05070a", 0.015]} />
+            <Environment preset="night" />
+            <ambientLight intensity={0.6} color="#b0c4de" />
+            <hemisphereLight
+              skyColor="#1e293b"
+              groundColor="#000000"
+              intensity={0.7}
+            />
+            <directionalLight
+              position={[15, 20, 10]}
+              intensity={2.5}
+              color="#ffdcb4"
+            />
+            <OrbitControls
+              minPolarAngle={0}
+              maxPolarAngle={Math.PI / 2.1}
+              target={[0, 0, 4]}
+              dampingFactor={0.05}
+            />
 
-      {/* 3D SCENE */}
-      <div className="flex-1 w-full h-full cursor-move bg-gradient-to-b from-[#0f172a] to-[#020617]">
-        <Canvas
-          camera={{ position: [0, 18, 15], fov: 50 }}
-          shadows
-          dpr={[1, 2]}
-        >
-          <Environment preset="city" />
-          <ambientLight intensity={0.4} />
-          <directionalLight
-            position={[10, 30, 10]}
-            intensity={1.2}
-            castShadow
-          />
-          <OrbitControls
-            minPolarAngle={0}
-            maxPolarAngle={Math.PI / 2.1}
-            target={[0, 0, 4]}
-            dampingFactor={0.05}
-          />
-          <AreaMarkers maxFila={maxFila} />
-          <PigmentRoomMarking />
-          <group>
-            {pallets.map((p) => (
-              <RealisticPallet
-                key={p.id}
-                data={p}
-                isSelected={selectedPalletId === p.id}
-                onClick={handle3DClick}
-              />
-            ))}
-          </group>
-          <ContactShadows
-            position={[0, -0.01, 0]}
-            opacity={0.6}
-            scale={60}
-            blur={2}
-            far={2}
-            color="#000"
-          />
-          <Grid
-            position={[0, -0.01, 0]}
-            args={[60, 60]}
-            cellColor="#1e293b"
-            sectionColor="#334155"
-            fadeDistance={35}
-            infiniteGrid
-          />
-        </Canvas>
-      </div>
+            <IndustrialEnvironment />
+            <IglooStructure />
+            <MezzanineStructure />
+            <AreaMarkers />
+            <PigmentRoomMarking />
 
-      {/* PANEL LATERAL */}
+            <group>
+              {pallets.map((p) => (
+                <RealisticPallet
+                  key={p.id}
+                  data={p}
+                  isSelected={selectedPalletId === p.id}
+                  onClick={handle3DClick}
+                />
+              ))}
+            </group>
+          </Canvas>
+        </div>
+      ) : (
+        <StockListView pallets={pallets} materiales={materiales} />
+      )}
+
       <AnimatePresence>
-        {showConfig && (
+        {showConfig && viewMode === "3D" && (
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
@@ -966,7 +1176,10 @@ export default function DepositoPage() {
                 <FaBox className="text-indigo-500" /> Inventario
               </h3>
               <button
-                onClick={() => setShowConfig(false)}
+                onClick={() => {
+                  setShowConfig(false);
+                  setSelectedPalletId(null);
+                }}
                 className="text-gray-400 hover:text-white p-2"
               >
                 <FaTimes />
@@ -1039,34 +1252,32 @@ export default function DepositoPage() {
             )}
           </motion.div>
         )}
-
-        {/* MODAL QR GENERADOR */}
-        {qrPallet && (
-          <QRModal pallet={qrPallet} onClose={() => setQrPallet(null)} />
-        )}
-
-        {/* MODAL ESCANER */}
-        {isScanning && (
-          <ScannerModal
-            onClose={() => setIsScanning(false)}
-            onScanSuccess={(id) => {
-              setIsScanning(false);
-              setScannedPalletId(id);
-            }}
-          />
-        )}
-
-        {/* MODAL CONTROL POST-ESCANEO */}
-        {scannedPalletId && (
-          <PalletControlModal
-            palletId={scannedPalletId}
-            allPallets={pallets}
-            onClose={() => setScannedPalletId(null)}
-            onUpdate={handleUpdatePallet}
-            onDelete={handleDeletePallet}
-          />
-        )}
       </AnimatePresence>
+
+      {qrPallet && (
+        <QRModal pallet={qrPallet} onClose={() => setQrPallet(null)} />
+      )}
+      {isScanning && (
+        <ScannerModal
+          onClose={() => setIsScanning(false)}
+          onScanSuccess={(id) => {
+            setIsScanning(false);
+            setScannedPalletId(id);
+          }}
+        />
+      )}
+      {scannedPalletId && (
+        <PalletControlModal
+          palletId={scannedPalletId}
+          allPallets={pallets}
+          onClose={() => {
+            setScannedPalletId(null);
+            setSelectedPalletId(null);
+          }}
+          onUpdate={handleUpdatePallet}
+          onDelete={handleDeletePallet}
+        />
+      )}
     </div>
   );
 }
