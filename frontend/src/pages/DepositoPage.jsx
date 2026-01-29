@@ -24,7 +24,6 @@ import {
   FaChevronDown,
   FaChevronRight,
   FaTrafficLight,
-  FaExclamationCircle,
 } from "react-icons/fa";
 import { API_BASE_URL, authFetch } from "../utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -53,33 +52,45 @@ const getUnidad = (id) =>
 // --- POSICIONAMIENTO ---
 const getPosition = (fila, lado, profundidad) => {
   const z = fila * (LARGO_PALLET + GAP);
-  const startX = ANCHO_PASILLO / 2 + ANCHO_PALLET / 2;
-  const pasoX = ANCHO_PALLET + GAP;
-  const x =
-    lado === 1 ? -(startX + profundidad * pasoX) : startX + profundidad * pasoX;
-  return [x, 0, z];
+
+  // LADOS LATERALES
+  if (lado === 1 || lado === 2) {
+    const startX = ANCHO_PASILLO / 2 + ANCHO_PALLET / 2;
+    const pasoX = ANCHO_PALLET + GAP;
+    const x =
+      lado === 1
+        ? -(startX + profundidad * pasoX)
+        : startX + profundidad * pasoX;
+    return [x, 0, z];
+  }
+
+  // PASILLO CENTRAL
+  if (lado === 3) return [-0.75, 0, z]; // Pasillo Izq
+  if (lado === 4) return [0.75, 0, z]; // Pasillo Der
+
+  return [0, 0, 0];
 };
 
 // --- COMPONENTES 3D ---
 
-// 1. ENTORNO
 function IndustrialEnvironment() {
-  return <group>{/* Fondo limpio */}</group>;
+  return <group></group>;
 }
 
-// 2. IGLÚ
+// IGLÚ
 function IglooStructure() {
   const largoTotal = VISUAL_ROWS * (LARGO_PALLET + GAP) + 3;
   const zCenter = (VISUAL_ROWS * (LARGO_PALLET + GAP)) / 2 - LARGO_PALLET / 2;
   const radio = 5.2;
   const zStep = largoTotal / 8;
-  const zFirstArch = 1 * zStep - largoTotal / 2;
-  const posLuz = [0, 4.5, zFirstArch];
-  const tubeRadius = 0.08;
+  const posLuz = [0, 4.5, 0];
+  const tubeRadius = 0.05;
+
   const curve = useMemo(() => {
     const points = [];
-    for (let i = 0; i <= 32; i++) {
-      const t = (i / 32) * Math.PI;
+    const segments = 16;
+    for (let i = 0; i <= segments; i++) {
+      const t = (i / segments) * Math.PI;
       points.push(
         new THREE.Vector3(-Math.cos(t) * radio, Math.sin(t) * radio, 0),
       );
@@ -89,46 +100,34 @@ function IglooStructure() {
 
   return (
     <group position={[0, 0, zCenter]}>
-      <spotLight
-        position={posLuz}
-        angle={0.8}
-        penumbra={0.4}
-        intensity={5}
-        color="#e0e7ff"
-        target-position={[0, 0, largoTotal]}
-      />
-      <mesh position={posLuz}>
-        <sphereGeometry args={[0.15, 16, 16]} />
-        <meshBasicMaterial color="#fff" toneMapped={false} />
-      </mesh>
       <pointLight
         position={posLuz}
-        intensity={1.5}
-        distance={10}
+        intensity={0.8}
+        distance={20}
         color="#fff"
       />
-      {Array.from({ length: 9 }).map((_, i) => {
+      {Array.from({ length: 8 }).map((_, i) => {
         if (i === 0) return null;
         const zRel = i * zStep - largoTotal / 2;
         return (
           <group key={i} position={[0, tubeRadius, zRel]}>
             <mesh>
-              <tubeGeometry args={[curve, 64, tubeRadius, 8, false]} />
+              <tubeGeometry args={[curve, 12, tubeRadius, 4, false]} />
               <meshStandardMaterial
                 color="#cbd5e1"
                 metalness={0.5}
                 roughness={0.2}
                 transparent
-                opacity={0.35}
+                opacity={0.3}
                 side={THREE.DoubleSide}
               />
             </mesh>
             <mesh position={[radio, 0.1, 0]}>
-              <boxGeometry args={[0.3, 0.2, 0.3]} />
+              <boxGeometry args={[0.2, 0.2, 0.2]} />
               <meshStandardMaterial color="#334155" />
             </mesh>
             <mesh position={[-radio, 0.1, 0]}>
-              <boxGeometry args={[0.3, 0.2, 0.3]} />
+              <boxGeometry args={[0.2, 0.2, 0.2]} />
               <meshStandardMaterial color="#334155" />
             </mesh>
           </group>
@@ -138,7 +137,7 @@ function IglooStructure() {
   );
 }
 
-// 3. ENTREPISO
+// ENTREPISO
 function MezzanineStructure() {
   const pasoZ = LARGO_PALLET + GAP;
   const zStart = 3 * pasoZ + LARGO_PALLET / 2 + GAP / 2;
@@ -148,26 +147,35 @@ function MezzanineStructure() {
   const alturaTechoBajo = 2.1;
   const anchoTechoLado = ANCHO_PALLET * DEPTH_PER_SIDE + 0.4;
   const xOffsetLado = ANCHO_PASILLO / 2 + anchoTechoLado / 2 - 0.2;
-  const columnaWidth = 0.12;
+  const columnaWidth = 0.1;
   const columnGaps = [3, 4, 5, 6, 7];
-  const transparentMat = {
-    transparent: true,
-    opacity: 0.3,
-    roughness: 0.5,
-    metalness: 0.5,
-    side: THREE.DoubleSide,
-  };
-  const roofMat = { ...transparentMat, color: "#94a3b8" };
-  const columnMat = { ...transparentMat, color: "#64748b", opacity: 0.4 };
+
+  const material = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#94a3b8",
+        transparent: true,
+        opacity: 0.2,
+        side: THREE.DoubleSide,
+      }),
+    [],
+  );
+
   return (
     <group>
-      <mesh position={[-xOffsetLado, alturaTechoBajo, zCenter]}>
-        <boxGeometry args={[anchoTechoLado, 0.05, zLength]} />
-        <meshStandardMaterial {...roofMat} />
+      <mesh
+        position={[-xOffsetLado, alturaTechoBajo, zCenter]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={material}
+      >
+        <planeGeometry args={[anchoTechoLado, zLength]} />
       </mesh>
-      <mesh position={[xOffsetLado, alturaTechoBajo, zCenter]}>
-        <boxGeometry args={[anchoTechoLado, 0.05, zLength]} />
-        <meshStandardMaterial {...roofMat} />
+      <mesh
+        position={[xOffsetLado, alturaTechoBajo, zCenter]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        material={material}
+      >
+        <planeGeometry args={[anchoTechoLado, zLength]} />
       </mesh>
       {columnGaps.map((gapIndex) => {
         const zCol = gapIndex * pasoZ + LARGO_PALLET / 2 + GAP / 2;
@@ -178,29 +186,25 @@ function MezzanineStructure() {
             key={`col-gap-${gapIndex}`}
             position={[0, alturaTechoBajo / 2, zCol]}
           >
-            <mesh position={[-xInnerAbs, 0, 0]}>
+            <mesh position={[-xInnerAbs, 0, 0]} material={material}>
               <boxGeometry
                 args={[columnaWidth, alturaTechoBajo, columnaWidth]}
               />
-              <meshStandardMaterial {...columnMat} />
             </mesh>
-            <mesh position={[-xOuterAbs, 0, 0]}>
+            <mesh position={[-xOuterAbs, 0, 0]} material={material}>
               <boxGeometry
                 args={[columnaWidth, alturaTechoBajo, columnaWidth]}
               />
-              <meshStandardMaterial {...columnMat} />
             </mesh>
-            <mesh position={[xInnerAbs, 0, 0]}>
+            <mesh position={[xInnerAbs, 0, 0]} material={material}>
               <boxGeometry
                 args={[columnaWidth, alturaTechoBajo, columnaWidth]}
               />
-              <meshStandardMaterial {...columnMat} />
             </mesh>
-            <mesh position={[xOuterAbs, 0, 0]}>
+            <mesh position={[xOuterAbs, 0, 0]} material={material}>
               <boxGeometry
                 args={[columnaWidth, alturaTechoBajo, columnaWidth]}
               />
-              <meshStandardMaterial {...columnMat} />
             </mesh>
           </group>
         );
@@ -209,7 +213,7 @@ function MezzanineStructure() {
   );
 }
 
-// 4. PIGMENTOS
+// PIGMENTOS
 function PigmentRoomMarking() {
   const filaInicio = 6;
   const lado = 2;
@@ -217,27 +221,21 @@ function PigmentRoomMarking() {
   const pos = getPosition(filaInicio + 0.5, lado, profPromedio);
   const largo = (LARGO_PALLET + GAP) * 2;
   const ancho = (ANCHO_PALLET + GAP) * 2;
-  const stripeMaterial = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          color1: { value: new THREE.Color("#1e293b") },
-          color2: { value: new THREE.Color("#ca8a04") },
-        },
-        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-        fragmentShader: `varying vec2 vUv; uniform vec3 color1; uniform vec3 color2; void main() { float p = vUv.x * 6.0 + vUv.y * 6.0; float stripe = step(0.5, mod(p, 1.0)); gl_FragColor = vec4(mix(color1, color2, stripe), 0.7); }`,
-        transparent: true,
-      }),
-    [],
-  );
+
   return (
     <group position={[pos[0], 0.005, pos[2]]}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} material={stripeMaterial}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[ancho, largo]} />
+        <meshBasicMaterial
+          color="#ca8a04"
+          transparent
+          opacity={0.3}
+          side={THREE.DoubleSide}
+        />
       </mesh>
       <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
         <edgesGeometry args={[new THREE.PlaneGeometry(ancho, largo)]} />
-        <lineBasicMaterial color="#d97706" linewidth={3} />
+        <lineBasicMaterial color="#d97706" linewidth={2} />
       </lineSegments>
       <Text
         position={[0, 0.01, 0]}
@@ -253,107 +251,61 @@ function PigmentRoomMarking() {
   );
 }
 
-// 5. COMPONENTES DE PRODUCTOS (MODELOS PROCEDURALES)
+// --- MODELOS DE PRODUCTOS ---
 
-// Cono Vial (Vencedor)
-function ProductCone({ hasBase = true }) {
+// Cono Vial
+function ProductCone() {
   return (
     <group>
-      {/* Solo el cono de abajo lleva base */}
-      {hasBase && (
-        <mesh position={[0, 0.02, 0]}>
-          <boxGeometry args={[0.25, 0.04, 0.25]} />
-          <meshStandardMaterial color="#111" roughness={0.8} />
-        </mesh>
-      )}
-      {/* Cuerpo Naranja */}
-      <mesh position={[0, 0.35, 0]}>
-        <cylinderGeometry args={[0.03, 0.1, 0.7, 16]} />
+      <mesh position={[0, 0.01, 0]}>
+        <cylinderGeometry args={[0.21, 0.21, 0.02, 16]} />
         <meshStandardMaterial color="#f97316" roughness={0.3} />
       </mesh>
-      {/* Cintas Reflectivas */}
-      <mesh position={[0, 0.45, 0]}>
-        <cylinderGeometry args={[0.04, 0.05, 0.08, 16]} />
-        <meshStandardMaterial
-          color="#fff"
-          emissive="#fff"
-          emissiveIntensity={0.5}
-        />
-      </mesh>
-      <mesh position={[0, 0.25, 0]}>
-        <cylinderGeometry args={[0.06, 0.07, 0.08, 16]} />
-        <meshStandardMaterial
-          color="#fff"
-          emissive="#fff"
-          emissiveIntensity={0.5}
-        />
+      <mesh position={[0, 0.35, 0]}>
+        <cylinderGeometry args={[0.04, 0.14, 0.75, 16]} />
+        <meshStandardMaterial color="#f97316" roughness={0.3} />
       </mesh>
     </group>
   );
 }
 
-// Canalizador Vial (Tipo Barrera - Redondeado y Grande)
+// Canalizador Vial (Rediseñado: Sin patas, gordito, círculos)
 function ProductChannelizer() {
   return (
     <group>
-      {/* Cuerpo Principal: RoundedBox para que parezca rotomoldeado */}
+      {/* Cuerpo Principal: Más ancho (0.25) y sin patas, apoyado en el suelo (y=0.325) */}
       <RoundedBox
         args={[0.95, 0.65, 0.25]}
-        radius={0.05}
-        smoothness={4}
-        position={[0, 0.35, 0]}
+        radius={0.04}
+        smoothness={1}
+        position={[0, 0.325, 0]}
       >
-        <meshStandardMaterial color="#dc2626" roughness={0.4} />
+        <meshStandardMaterial color="#dc2626" />
       </RoundedBox>
 
-      {/* Base/Patas Redondeadas */}
-      <RoundedBox
-        args={[0.2, 0.12, 0.4]}
-        radius={0.02}
-        smoothness={2}
-        position={[-0.25, 0.06, 0]}
-      >
-        <meshStandardMaterial color="#b91c1c" />
-      </RoundedBox>
-      <RoundedBox
-        args={[0.2, 0.12, 0.4]}
-        radius={0.02}
-        smoothness={2}
-        position={[0.25, 0.06, 0]}
-      >
-        <meshStandardMaterial color="#b91c1c" />
-      </RoundedBox>
-
-      {/* Cinta Reflectiva Superior (Plana) */}
-      <mesh position={[0, 0.55, 0.13]}>
-        <planeGeometry args={[0.7, 0.12]} />
-        <meshStandardMaterial
-          color="#fff"
-          emissive="#fff"
-          emissiveIntensity={0.5}
-        />
+      {/* Cinta Reflectiva */}
+      <mesh position={[0, 0.5, 0.13]}>
+        <planeGeometry args={[0.8, 0.12]} />
+        <meshBasicMaterial color="#fff" side={THREE.DoubleSide} />
       </mesh>
 
-      {/* Detalles laterales (Agujeros pasantes simulados) */}
-      <mesh position={[-0.2, 0.35, 0.13]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.09, 0.09, 0.05, 16]} />
-        <meshStandardMaterial color="#500" />
-      </mesh>
-      <mesh position={[0.2, 0.35, 0.13]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.09, 0.09, 0.05, 16]} />
-        <meshStandardMaterial color="#500" />
+      {/* Círculos Centrales (Detalle) */}
+      {/* Círculo Izquierdo */}
+      <mesh position={[-0.25, 0.28, 0.131]} rotation={[0, 0, 0]}>
+        <circleGeometry args={[0.07, 16]} />
+        <meshStandardMaterial color="#991b1b" side={THREE.DoubleSide} />
       </mesh>
 
-      {/* Tapón de llenado lateral */}
-      <mesh position={[-0.5, 0.3, 0]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.07, 0.07, 0.1, 16]} />
-        <meshStandardMaterial color="#b91c1c" />
+      {/* Círculo Derecho */}
+      <mesh position={[0.25, 0.28, 0.131]} rotation={[0, 0, 0]}>
+        <circleGeometry args={[0.07, 16]} />
+        <meshStandardMaterial color="#991b1b" side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
 }
 
-// 6. PALLET REALISTA (Configuración actualizada: Conos Altos y Canalizadores Grandes)
+// 6. PALLET REALISTA
 function RealisticPallet({ data, onClick, isSelected }) {
   const [hovered, setHover] = useState(false);
   const position = useMemo(
@@ -365,53 +317,106 @@ function RealisticPallet({ data, onClick, isSelected }) {
   useFrame((state, delta) => {
     if (groupRef.current) {
       const targetY = isSelected ? 0.3 : 0;
-      groupRef.current.position.x +=
-        (position[0] - groupRef.current.position.x) * 0.15;
-      groupRef.current.position.z +=
-        (position[2] - groupRef.current.position.z) * 0.15;
       groupRef.current.position.y +=
-        (targetY - groupRef.current.position.y) * 0.15;
+        (targetY - groupRef.current.position.y) * 0.2;
     }
   });
 
-  const isCono = data.materia_prima_id === ID_CONOS;
-  const isCanalizador = data.materia_prima_id === ID_CANALIZADOR;
-  const isMercaderia = isCono || isCanalizador;
+  const palletVisuals = useMemo(() => {
+    const isCono = data.materia_prima_id === ID_CONOS;
+    const isCanalizador = data.materia_prima_id === ID_CANALIZADOR;
 
-  // LOGICA DE CANTIDAD VISUAL
-  let numItems = 0;
-  if (isCono) {
-    // 5x4 pilas x 14 de alto (para llegar al techo) = 280 unidades max visuales
-    numItems = Math.min(data.cantidad, 280);
-  } else if (isCanalizador) {
-    // Canalizadores grandes: Max 8 unidades (2 filas de 4 o algo asi)
-    numItems = Math.min(data.cantidad, 8);
-  } else {
-    const alturaTotal = Math.max(0.35, data.cantidad / 900);
-    numItems = Math.max(1, Math.floor(alturaTotal / 0.12));
-  }
+    if (isCono) {
+      const numItems = Math.min(data.cantidad, 280);
+      return (
+        <group>
+          {Array.from({ length: numItems }).map((_, i) => {
+            const stackHeight = 14;
+            const pileIndex = Math.floor(i / stackHeight);
+            const heightIndex = i % stackHeight;
+            const row = Math.floor(pileIndex / 5);
+            const col = pileIndex % 5;
+            const x = (col - 2) * 0.22;
+            const y = heightIndex * 0.1;
+            const z = (row - 1.5) * 0.22;
+            return (
+              <group key={i} position={[x, y, z]} scale={0.75}>
+                <ProductCone />
+              </group>
+            );
+          })}
+        </group>
+      );
+    } else if (isCanalizador) {
+      // Estiba 6x3
+      const numItems = Math.min(data.cantidad, 18);
+      return (
+        <group>
+          {Array.from({ length: numItems }).map((_, i) => {
+            const piso = Math.floor(i / 6);
+            const filaIndex = i % 6;
 
-  const colorMaterial = data.color_hex || "#ccc";
-  const commonProps = {
-    roughness: 0.9,
-    metalness: 0.1,
-    emissiveIntensity: isSelected ? 1.5 : 0,
-    emissive: isSelected ? "#4338ca" : "#000",
-  };
+            // Separación horizontal
+            const z = (filaIndex - 2.5) * 0.18;
+
+            // Apilamiento ajustado para que se apoyen (altura 0.65 -> paso 0.60 para encastre visual)
+            const y = piso * 0.6;
+
+            return (
+              <group key={i} position={[0, y, z]} scale={0.85}>
+                <ProductChannelizer />
+              </group>
+            );
+          })}
+        </group>
+      );
+    } else {
+      // BOLSAS / PISOS
+      const numPisos = Math.max(1, Math.ceil(data.cantidad / 100));
+      const mat = new THREE.MeshStandardMaterial({
+        color: data.color_hex || "#ccc",
+        roughness: 0.9,
+        metalness: 0.1,
+      });
+
+      return (
+        <group>
+          {Array.from({ length: numPisos }).map((_, i) => (
+            <RoundedBox
+              key={i}
+              args={[ANCHO_PALLET * 0.95, 0.11, LARGO_PALLET * 0.95]}
+              radius={0.04}
+              smoothness={1}
+              position={[0, 0.12 * i + 0.06, 0]}
+            >
+              <primitive object={mat} />
+            </RoundedBox>
+          ))}
+          {/* Pallet madera */}
+          <RoundedBox
+            args={[ANCHO_PALLET, 0.1, LARGO_PALLET]}
+            radius={0.02}
+            smoothness={1}
+            position={[0, -0.06, 0]}
+          >
+            <meshStandardMaterial color="#8d6e63" />
+          </RoundedBox>
+        </group>
+      );
+    }
+  }, [data, isSelected]);
 
   return (
     <group ref={groupRef} position={position}>
       {hovered && (
-        <Html position={[0, 2.2, 0]} center zIndexRange={[100, 0]}>
+        <Html position={[0, 2, 0]} center zIndexRange={[100, 0]}>
           <div className="bg-slate-900 text-white text-[10px] px-2 py-1 rounded border border-slate-500 whitespace-nowrap pointer-events-none select-none z-50 shadow-xl">
             <span className="font-bold text-blue-400 block mb-0.5">
               {data.nombre}
             </span>
-            <div className="flex justify-between gap-3 text-gray-400 font-mono">
-              <span>
-                {data.cantidad} {getUnidad(data.materia_prima_id)}
-              </span>
-            </div>
+            <span className="font-mono text-gray-300">
+              {data.cantidad} {getUnidad(data.materia_prima_id)}
+            </span>
           </div>
         </Html>
       )}
@@ -423,92 +428,17 @@ function RealisticPallet({ data, onClick, isSelected }) {
         onPointerOver={(e) => {
           e.stopPropagation();
           setHover(true);
-          document.body.style.cursor = "pointer";
         }}
         onPointerOut={(e) => {
           e.stopPropagation();
           setHover(false);
-          document.body.style.cursor = "auto";
         }}
       >
-        {isCono ? (
-          // RENDERIZADO CONOS (5x4 pilas, 14 de alto - LLEGAN AL TECHO)
-          <group position={[0, 0, 0]}>
-            {Array.from({ length: numItems }).map((_, i) => {
-              const COLS = 5;
-              const stackHeight = 14; // AUMENTADO PARA LLEGAR CASI AL TECHO (2m)
-
-              const pileIndex = Math.floor(i / stackHeight);
-              const heightIndex = i % stackHeight;
-
-              const row = Math.floor(pileIndex / COLS);
-              const col = pileIndex % COLS;
-
-              const yOffset = heightIndex * 0.1; // Separación vertical de encastre
-
-              const xPos = (col - 2) * 0.22;
-              const zPos = (row - 1.5) * 0.22;
-
-              return (
-                <group key={i} position={[xPos, yOffset, zPos]} scale={0.75}>
-                  <ProductCone hasBase={heightIndex === 0} />
-                </group>
-              );
-            })}
-          </group>
-        ) : isCanalizador ? (
-          // RENDERIZADO CANALIZADORES (Grandes y redondeados)
-          <group position={[0, 0, 0]}>
-            {Array.from({ length: numItems }).map((_, i) => {
-              // Distribución simple lineal o zig-zag
-              const zOffset = i * 0.25 - 0.4;
-              const xOffset = i % 2 === 0 ? -0.15 : 0.15;
-              return (
-                <group key={i} position={[xOffset, 0, zOffset]} scale={0.95}>
-                  <ProductChannelizer />
-                </group>
-              );
-            })}
-          </group>
-        ) : (
-          // RENDERIZADO BOLSAS (CON PALLET DE MADERA)
-          <>
-            {Array.from({ length: numItems }).map((_, i) => (
-              <RoundedBox
-                key={i}
-                args={[ANCHO_PALLET * 0.98, 0.12, LARGO_PALLET * 0.98]}
-                radius={0.03}
-                smoothness={4}
-                position={[0, 0.12 + i * 0.12 + 0.06, 0]}
-              >
-                <meshStandardMaterial
-                  color={isSelected ? "#6366f1" : colorMaterial}
-                  {...commonProps}
-                />
-              </RoundedBox>
-            ))}
-            {/* Base del Pallet de Madera (Solo para materia prima) */}
-            <RoundedBox
-              args={[ANCHO_PALLET, 0.12, LARGO_PALLET]}
-              radius={0.01}
-              smoothness={2}
-              position={[0, 0.06, 0]}
-            >
-              <meshStandardMaterial color="#8d6e63" roughness={1} />
-            </RoundedBox>
-          </>
-        )}
-
-        {/* Selector Visual */}
+        {palletVisuals}
         {isSelected && (
           <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[0.7, 0.75, 64]} />
-            <meshBasicMaterial
-              color="#6366f1"
-              transparent
-              opacity={0.8}
-              toneMapped={false}
-            />
+            <ringGeometry args={[0.7, 0.75, 32]} />
+            <meshBasicMaterial color="#6366f1" />
           </mesh>
         )}
       </group>
@@ -519,464 +449,101 @@ function RealisticPallet({ data, onClick, isSelected }) {
 // 7. AREA MARKERS
 function AreaMarkers() {
   const largoExacto = VISUAL_ROWS * LARGO_PALLET + (VISUAL_ROWS - 1) * GAP;
-  const halfLength = largoExacto / 2;
-  const margin = 0.8;
   const zCenter = largoExacto / 2 - LARGO_PALLET / 2;
-  const anchoBloque = ANCHO_PALLET * DEPTH_PER_SIDE + GAP;
-  const centerL1 = -(ANCHO_PASILLO / 2 + anchoBloque / 2);
-  const centerL2 = ANCHO_PASILLO / 2 + anchoBloque / 2;
   const xLeftLine = -1.1;
   const xRightLine = 1.1;
-  const xNumLeft = -0.6;
-  const xNumRight = 0.6;
-  const lineMaterial = new THREE.LineBasicMaterial({
-    color: "#475569",
-    opacity: 0.3,
-    transparent: true,
-  });
 
   return (
     <group position={[0, 0, 0]}>
       <Grid
-        position={[0, 0, 0]}
         cellSize={1.2}
         cellThickness={0.6}
         cellColor="#334155"
         sectionSize={4.8}
         sectionThickness={1}
         sectionColor="#475569"
-        fadeDistance={60}
+        fadeDistance={50}
         infiniteGrid={true}
       />
+
       <group position={[0, 0.01, zCenter]}>
         <mesh position={[xLeftLine, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[0.12, largoExacto + 2]} />
+          <planeGeometry args={[0.1, largoExacto + 2]} />
           <meshBasicMaterial color="#eab308" />
         </mesh>
         <mesh position={[xRightLine, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[0.12, largoExacto + 2]} />
+          <planeGeometry args={[0.1, largoExacto + 2]} />
           <meshBasicMaterial color="#eab308" />
         </mesh>
       </group>
-      <group position={[centerL1, 0.01, zCenter]}>
-        <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
-          <edgesGeometry
-            args={[new THREE.PlaneGeometry(anchoBloque, largoExacto)]}
+
+      <group position={[0, 0.015, zCenter]}>
+        <line>
+          <bufferGeometry
+            attach="geometry"
+            points={[
+              new THREE.Vector3(0, 0, -largoExacto / 2 - 1),
+              new THREE.Vector3(0, 0, largoExacto / 2 + 1),
+            ]}
           />
-          <primitive object={lineMaterial} />
-        </lineSegments>
+          <lineBasicMaterial attach="material" color="#334155" />
+        </line>
         <Text
-          position={[0, 0.02, -largoExacto / 2 - 0.5]}
-          fontSize={0.4}
-          color="#60a5fa"
+          position={[-0.4, 0, -largoExacto / 2 - 1.5]}
+          fontSize={0.25}
+          color="#94a3b8"
           rotation={[-Math.PI / 2, 0, 0]}
+          anchorX="right"
         >
-          LADO 1
+          L3 (Izq)
+        </Text>
+        <Text
+          position={[0.4, 0, -largoExacto / 2 - 1.5]}
+          fontSize={0.25}
+          color="#94a3b8"
+          rotation={[-Math.PI / 2, 0, 0]}
+          anchorX="left"
+        >
+          L4 (Der)
         </Text>
       </group>
-      <group position={[centerL2, 0.01, zCenter]}>
-        <lineSegments rotation={[-Math.PI / 2, 0, 0]}>
-          <edgesGeometry
-            args={[new THREE.PlaneGeometry(anchoBloque, largoExacto)]}
-          />
-          <primitive object={lineMaterial} />
-        </lineSegments>
-        <Text
-          position={[0, 0.02, -largoExacto / 2 - 0.5]}
-          fontSize={0.4}
-          color="#4ade80"
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          LADO 2
-        </Text>
-      </group>
+
       {Array.from({ length: VISUAL_ROWS }).map((_, i) => {
         const z = i * (LARGO_PALLET + GAP) - zCenter;
         return (
           <group key={i} position={[0, 0.01, z + zCenter]}>
             <Text
-              position={[xNumLeft, 0, 0]}
+              position={[-0.6, 0, 0]}
               rotation={[-Math.PI / 2, 0, 0]}
-              fontSize={0.25}
-              color="#94a3b8"
+              fontSize={0.2}
+              color="#64748b"
             >
               {i}
             </Text>
             <Text
-              position={[xNumRight, 0, 0]}
+              position={[0.6, 0, 0]}
               rotation={[-Math.PI / 2, 0, 0]}
-              fontSize={0.25}
-              color="#94a3b8"
+              fontSize={0.2}
+              color="#64748b"
             >
               {i}
             </Text>
+            <mesh position={[-0.75, -0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.05, 16]} />
+              <meshBasicMaterial color="#1e293b" />
+            </mesh>
+            <mesh position={[0.75, -0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.05, 16]} />
+              <meshBasicMaterial color="#1e293b" />
+            </mesh>
           </group>
         );
       })}
-      <Text
-        position={[0, 0.01, -(halfLength + margin)]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={0.6}
-        color="#e2e8f0"
-      >
-        ↓ ENTRADA ↓
-      </Text>
-      <Text
-        position={[0, 0.01, halfLength + margin]}
-        rotation={[-Math.PI / 2, 0, Math.PI]}
-        fontSize={0.6}
-        color="#e2e8f0"
-      >
-        ↑ PATIO ↑
-      </Text>
     </group>
   );
 }
 
-// --- VISTA LISTA RESUMIDA ---
-function StockListView({ pallets, materiales }) {
-  const [expandedRow, setExpandedRow] = useState(null);
-  const resumen = useMemo(() => {
-    const map = {};
-    pallets.forEach((p) => {
-      if (!map[p.materia_prima_id])
-        map[p.materia_prima_id] = {
-          id: p.materia_prima_id,
-          totalQty: 0,
-          count: 0,
-          pallets: [],
-        };
-      map[p.materia_prima_id].totalQty += Number(p.cantidad);
-      map[p.materia_prima_id].count += 1;
-      map[p.materia_prima_id].pallets.push(p);
-    });
-    return Object.values(map)
-      .map((item) => {
-        const mat = materiales.find((m) => m.id === item.id);
-        return {
-          ...item,
-          nombre: mat?.nombre || "Desconocido",
-          codigo: mat?.codigo || "S/C",
-          color: mat?.color_hex || "#ccc",
-        };
-      })
-      .sort((a, b) => b.totalQty - a.totalQty);
-  }, [pallets, materiales]);
-
-  const toggleRow = (id) => setExpandedRow(expandedRow === id ? null : id);
-
-  return (
-    <div className="flex-1 bg-[#0b0f19] overflow-y-auto custom-scrollbar p-4 md:p-8">
-      <div className="max-w-5xl mx-auto">
-        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-          <FaList className="text-indigo-500" /> Resumen de Stock en Iglú
-        </h2>
-        <div className="bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden shadow-2xl">
-          <table className="w-full text-left border-collapse">
-            <thead className="bg-slate-950 text-gray-500 text-xs uppercase font-bold tracking-wider">
-              <tr>
-                <th className="p-4 border-b border-slate-800">Material</th>
-                <th className="p-4 border-b border-slate-800 text-center">
-                  Pallets
-                </th>
-                <th className="p-4 border-b border-slate-800 text-right">
-                  Total
-                </th>
-                <th className="p-4 border-b border-slate-800 w-10"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {resumen.map((item) => {
-                const unidad = getUnidad(item.id);
-                const isProduct = unidad === "Un";
-                return (
-                  <React.Fragment key={item.id}>
-                    <tr
-                      onClick={() => toggleRow(item.id)}
-                      className="hover:bg-slate-800/50 transition-colors cursor-pointer group"
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          {isProduct ? (
-                            <FaTrafficLight className="text-orange-500 text-lg" />
-                          ) : (
-                            <div
-                              className="w-3 h-3 rounded-full shadow-sm ring-1 ring-white/10"
-                              style={{ backgroundColor: item.color }}
-                            ></div>
-                          )}
-                          <div>
-                            <p className="font-bold text-white text-sm group-hover:text-indigo-300 transition-colors">
-                              {item.nombre}
-                            </p>
-                            <p className="text-[10px] text-gray-500 font-mono">
-                              {item.codigo}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className="bg-slate-800 text-gray-300 px-2 py-1 rounded text-xs font-mono border border-slate-700">
-                          {item.count}
-                        </span>
-                      </td>
-                      <td className="p-4 text-right">
-                        <span className="text-emerald-400 font-bold font-mono text-base">
-                          {item.totalQty.toLocaleString()}{" "}
-                          <span className="text-[10px] text-emerald-700">
-                            {unidad}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="p-4 text-center text-gray-600">
-                        {expandedRow === item.id ? (
-                          <FaChevronDown />
-                        ) : (
-                          <FaChevronRight />
-                        )}
-                      </td>
-                    </tr>
-                    {expandedRow === item.id && (
-                      <tr className="bg-slate-950/30">
-                        <td colSpan="4" className="p-0">
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="border-b border-slate-800 overflow-hidden"
-                          >
-                            <div className="p-4 pl-12 bg-slate-900/50 shadow-inner">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
-                                {item.pallets.map((p) => (
-                                  <div
-                                    key={p.id}
-                                    className="flex justify-between items-center p-2 rounded border border-slate-700 bg-slate-800 text-xs"
-                                  >
-                                    <div className="flex flex-col">
-                                      <span className="text-gray-400 text-[10px]">
-                                        ID #{p.id}
-                                      </span>
-                                      <span className="text-indigo-300 font-bold">
-                                        L{p.lado} • F{p.fila} •{" "}
-                                        {p.columna === 0 ? "Frente" : "Fondo"}
-                                      </span>
-                                    </div>
-                                    <span className="text-white font-mono font-bold">
-                                      {p.cantidad} {unidad}
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </motion.div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          {resumen.length === 0 && (
-            <div className="p-12 text-center text-gray-500">
-              <FaBox className="text-4xl mx-auto mb-3 opacity-20" />
-              <p>No hay pallets cargados.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- MODALES (Auxiliares) ---
-function QRModal({ pallet, onClose }) {
-  const [qrUrl, setQrUrl] = useState("");
-  useEffect(() => {
-    if (pallet) {
-      const data = JSON.stringify({ type: "PALLET", id: pallet.id });
-      QRCode.toDataURL(data, { width: 400, margin: 2 }, (err, url) => {
-        if (!err) setQrUrl(url);
-      });
-    }
-  }, [pallet]);
-  const handlePrint = () => {
-    const win = window.open("", "", "width=500,height=600");
-    win.document.write(
-      `<html><head><title>Etiqueta #${pallet.id}</title></head><body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; text-align: center;"><h1 style="margin: 0; font-size: 24px;">${pallet.nombre}</h1><h2 style="margin: 5px 0; font-size: 40px;">${pallet.cantidad} ${getUnidad(pallet.materia_prima_id)}</h2><img src="${qrUrl}" style="width: 300px; height: 300px;" /><p style="font-size: 12px; color: #555;">ID: ${pallet.id}</p><script>window.print(); window.close();</script></body></html>`,
-    );
-    win.document.close();
-  };
-  return (
-    <div
-      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.9 }}
-        animate={{ scale: 1 }}
-        className="bg-white rounded-xl p-6 max-w-sm w-full text-center"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-gray-900 font-bold text-xl mb-1">
-          {pallet.nombre}
-        </h3>
-        <p className="text-gray-500 text-sm mb-4">Etiqueta Identificación</p>
-        {qrUrl ? (
-          <img
-            src={qrUrl}
-            alt="QR"
-            className="mx-auto w-48 h-48 border-4 border-black rounded-lg mb-4"
-          />
-        ) : (
-          <div className="h-48 flex items-center justify-center">
-            Generando...
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={handlePrint}
-            className="bg-black text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2"
-          >
-            <FaPrint /> Imprimir
-          </button>
-          <button
-            onClick={onClose}
-            className="bg-gray-200 text-gray-800 py-3 rounded-lg font-bold"
-          >
-            Cerrar
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function ScannerModal({ onClose, onScanSuccess }) {
-  const handleScan = (result) => {
-    if (result && result.length > 0) {
-      try {
-        const raw = result[0].rawValue;
-        const data = JSON.parse(raw);
-        if (data.type === "PALLET" && data.id) onScanSuccess(data.id);
-      } catch (e) {}
-    }
-  };
-  const handleError = (error) => {
-    console.warn("Scanner Error:", error);
-  };
-  return (
-    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-      <div className="p-4 flex justify-between items-center bg-slate-900 z-10">
-        <h3 className="text-white font-bold flex items-center gap-2">
-          <FaCamera /> Escaneando...
-        </h3>
-        <button
-          onClick={onClose}
-          className="text-white bg-slate-800 p-2 rounded-full"
-        >
-          <FaTimes />
-        </button>
-      </div>
-      <div className="flex-1 relative">
-        <Scanner
-          onScan={handleScan}
-          onError={handleError}
-          components={{ audio: false }}
-          styles={{ container: { height: "100%" } }}
-        />
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <div className="w-64 h-64 border-2 border-white/50 rounded-xl relative"></div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PalletControlModal({
-  palletId,
-  allPallets,
-  onClose,
-  onUpdate,
-  onDelete,
-}) {
-  const pallet = allPallets.find((p) => p.id === Number(palletId));
-  const [qty, setQty] = useState(pallet ? pallet.cantidad : "");
-  const [fila, setFila] = useState(pallet ? pallet.fila : 0);
-  const [lado, setLado] = useState(pallet ? pallet.lado : 1);
-  const [prof, setProf] = useState(pallet ? pallet.columna : 0);
-  if (!pallet) return null;
-  const unidad = getUnidad(pallet.materia_prima_id);
-  const handleSave = () => {
-    const ocupado = allPallets.find(
-      (p) =>
-        p.id !== pallet.id &&
-        p.fila === Number(fila) &&
-        p.lado === Number(lado) &&
-        p.columna === Number(prof),
-    );
-    if (ocupado) return alert(`Lugar ocupado por ${ocupado.nombre}`);
-    if (Number(lado) === 2 && Number(fila) >= 6)
-      return alert("¡Espacio ocupado por Cuarto de Pigmentos!");
-    onUpdate(pallet.id, {
-      cantidad: Number(qty),
-      fila: Number(fila),
-      lado: Number(lado),
-      columna: Number(prof),
-    });
-    onClose();
-  };
-  const handleDelete = () => {
-    if (confirm("¿Baja definitiva?")) {
-      onDelete(pallet.id);
-      onClose();
-    }
-  };
-  return (
-    <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-sm flex items-end md:items-center justify-center p-4">
-      <motion.div
-        initial={{ y: 100 }}
-        animate={{ y: 0 }}
-        className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
-      >
-        <div className="bg-indigo-600 p-4 flex justify-between items-center">
-          <h3 className="font-bold text-white">{pallet.nombre}</h3>
-          <button onClick={onClose}>
-            <FaTimes className="text-white" />
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="text-xs font-bold text-gray-400">
-              Cantidad ({unidad})
-            </label>
-            <input
-              type="number"
-              className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleDelete}
-              className="flex-1 bg-red-900/30 text-red-400 border border-red-900/50 py-3 rounded-lg font-bold"
-            >
-              BAJA
-            </button>
-            <button
-              onClick={handleSave}
-              className="flex-[2] bg-indigo-600 text-white py-3 rounded-lg font-bold"
-            >
-              GUARDAR
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
+// --- FUNCIÓN PALLETMANAGER (GLOBAL) ---
 function PalletManager({
   mp,
   pallets,
@@ -993,31 +560,25 @@ function PalletManager({
   const [newFila, setNewFila] = useState("0");
   const [newLado, setNewLado] = useState("1");
   const [newProf, setNewProf] = useState("0");
-  const [errorMsg, setErrorMsg] = useState("");
   const unidad = getUnidad(mp.id);
+  const isPasillo = Number(newLado) === 3 || Number(newLado) === 4;
+
   const handleAdd = () => {
-    setErrorMsg("");
-    if (!newQty || Number(newQty) <= 0)
-      return setErrorMsg("Ingresa una cantidad válida.");
+    if (!newQty || Number(newQty) <= 0) return alert("Cantidad inválida");
     const f = Number(newFila);
     const l = Number(newLado);
     const p = Number(newProf);
-    if (l === 1 && f >= ROWS_LADO_1)
-      return setErrorMsg(`Lado 1: filas 0-${ROWS_LADO_1 - 1}.`);
-    if (l === 2 && f >= ROWS_LADO_2)
-      return setErrorMsg(`Lado 2: filas 0-${ROWS_LADO_2 - 1}.`);
-    if (l === 2 && f >= 6)
-      return setErrorMsg("¡Espacio ocupado por Pigmentos!");
     const ocupado = allPallets.find(
-      (pal) =>
-        Number(pal.lado) === l &&
-        Number(pal.fila) === f &&
-        Number(pal.columna) === p,
+      (pa) =>
+        Number(pa.lado) === l &&
+        Number(pa.fila) === f &&
+        Number(pa.columna) === p,
     );
-    if (ocupado) return setErrorMsg(`Ocupado por: ${ocupado.nombre}`);
+    if (ocupado) return alert("Ubicación ocupada");
     onAdd(mp.id, Number(newQty), f, l, p);
     setNewQty("");
   };
+
   return (
     <div className="mt-4 border-t border-slate-700 pt-4">
       <div className="bg-slate-800 p-4 rounded-xl mb-4 border border-slate-700">
@@ -1039,28 +600,32 @@ function PalletManager({
           </span>
         </div>
       </div>
-      <div className="bg-slate-900 p-4 rounded-xl border border-indigo-500/20 mb-6 space-y-3">
+
+      <div className="bg-slate-900 p-4 rounded-xl space-y-3 mb-4">
         <input
           type="number"
-          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-sm"
+          className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm"
+          placeholder="Cantidad"
           value={newQty}
           onChange={(e) => setNewQty(e.target.value)}
-          placeholder={`Cantidad (${unidad})`}
         />
         <div className="grid grid-cols-2 gap-2">
           <select
-            className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
+            className="bg-slate-950 border border-slate-700 rounded p-2 text-white text-xs"
             value={newLado}
             onChange={(e) => {
-              setNewLado(Number(e.target.value));
-              setNewFila(0);
+              const val = Number(e.target.value);
+              setNewLado(val);
+              if (val === 3 || val === 4) setNewProf("0");
             }}
           >
             <option value="1">Lado 1</option>
             <option value="2">Lado 2</option>
+            <option value="3">Pasillo Izq</option>
+            <option value="4">Pasillo Der</option>
           </select>
           <select
-            className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
+            className="bg-slate-950 border border-slate-700 rounded p-2 text-white text-xs"
             value={newFila}
             onChange={(e) => setNewFila(e.target.value)}
           >
@@ -1079,20 +644,27 @@ function PalletManager({
             Frente
           </button>
           <button
-            onClick={() => setNewProf("1")}
-            className={`flex-1 py-2 rounded text-xs border ${newProf === "1" ? "bg-indigo-600 text-white" : "bg-slate-950 text-gray-400"}`}
+            onClick={() => !isPasillo && setNewProf("1")}
+            disabled={isPasillo}
+            className={`flex-1 py-2 rounded text-xs border ${
+              isPasillo
+                ? "bg-slate-900 text-gray-600 cursor-not-allowed"
+                : newProf === "1"
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-950 text-gray-400"
+            }`}
           >
             Fondo
           </button>
         </div>
-        {errorMsg && <div className="text-xs text-red-400">{errorMsg}</div>}
         <button
           onClick={handleAdd}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg text-sm"
+          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded text-sm"
         >
           UBICAR
         </button>
       </div>
+
       <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
         {pallets.map((p) => (
           <div
@@ -1267,6 +839,7 @@ export default function DepositoPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] md:h-[calc(100vh-80px)] animate-in fade-in relative bg-slate-950 overflow-hidden">
+      {/* HEADER FLOTANTE */}
       <div className="absolute top-4 left-4 right-4 z-20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pointer-events-none">
         <div className="bg-slate-900/90 backdrop-blur-xl p-3 md:px-5 md:py-3 rounded-xl border border-slate-700/50 shadow-2xl pointer-events-auto flex flex-col">
           <h1 className="text-lg font-extrabold text-white flex items-center gap-2">
@@ -1315,7 +888,7 @@ export default function DepositoPage() {
 
       {viewMode === "3D" ? (
         <div className="flex-1 w-full h-full cursor-move bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0a0e17] to-[#05070a] min-w-0 min-h-0 relative">
-          <Canvas camera={{ position: [0, 18, 25], fov: 50 }} dpr={[1, 2]}>
+          <Canvas camera={{ position: [0, 18, 25], fov: 50 }} dpr={[1, 1.5]}>
             <color attach="background" args={["#05070a"]} />
             <fogExp2 attach="fog" args={["#05070a", 0.015]} />
             <Environment preset="night" />
@@ -1359,13 +932,14 @@ export default function DepositoPage() {
         <StockListView pallets={pallets} materiales={materiales} />
       )}
 
+      {/* DRAWER LATERAL */}
       <AnimatePresence>
         {showConfig && viewMode === "3D" && (
           <motion.div
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "spring", damping: 28 }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className="absolute top-0 right-0 h-full w-full md:w-[400px] bg-slate-900 border-l border-slate-700 z-50 flex flex-col shadow-2xl"
           >
             <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
@@ -1389,7 +963,7 @@ export default function DepositoPage() {
                     <FaSearch className="absolute left-3 top-3.5 text-gray-500 group-focus-within:text-blue-400 transition-colors" />
                     <input
                       className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:border-indigo-500 outline-none"
-                      placeholder="Buscar..."
+                      placeholder="Buscar material..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       autoFocus
@@ -1432,9 +1006,9 @@ export default function DepositoPage() {
                     setSelectedMpId(null);
                     setSelectedPalletId(null);
                   }}
-                  className="text-xs font-bold text-indigo-400 mb-4 flex items-center gap-2"
+                  className="text-xs font-bold text-indigo-400 mb-4 flex items-center gap-2 hover:text-indigo-300"
                 >
-                  <FaArrowLeft /> VOLVER
+                  <FaArrowLeft /> VOLVER AL LISTADO
                 </button>
                 <PalletManager
                   mp={selectedMp}
