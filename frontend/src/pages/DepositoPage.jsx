@@ -253,7 +253,7 @@ function PigmentRoomMarking() {
 
 // --- MODELOS DE PRODUCTOS ---
 
-// Cono Vial
+// Cono Vial (Optimizado)
 function ProductCone() {
   return (
     <group>
@@ -348,7 +348,6 @@ function RealisticPallet({ data, onClick, isSelected }) {
         </group>
       );
     } else if (isCanalizador) {
-      // Estiba 6x3
       const numItems = Math.min(data.cantidad, 18);
       return (
         <group>
@@ -359,7 +358,7 @@ function RealisticPallet({ data, onClick, isSelected }) {
             // Separación horizontal
             const z = (filaIndex - 2.5) * 0.18;
 
-            // Apilamiento ajustado para que se apoyen (altura 0.65 -> paso 0.60 para encastre visual)
+            // Apilamiento ajustado para que se apoyen (encastre visual)
             const y = piso * 0.6;
 
             return (
@@ -543,7 +542,376 @@ function AreaMarkers() {
   );
 }
 
-// --- FUNCIÓN PALLETMANAGER (GLOBAL) ---
+// --- VISTA LISTA ---
+function StockListView({ pallets, materiales }) {
+  const [expandedRow, setExpandedRow] = useState(null);
+  const resumen = useMemo(() => {
+    const map = {};
+    pallets.forEach((p) => {
+      if (!map[p.materia_prima_id])
+        map[p.materia_prima_id] = {
+          id: p.materia_prima_id,
+          totalQty: 0,
+          count: 0,
+          pallets: [],
+        };
+      map[p.materia_prima_id].totalQty += Number(p.cantidad);
+      map[p.materia_prima_id].count += 1;
+      map[p.materia_prima_id].pallets.push(p);
+    });
+    return Object.values(map)
+      .map((item) => {
+        const mat = materiales.find((m) => m.id === item.id);
+        return {
+          ...item,
+          nombre: mat?.nombre || "Desconocido",
+          codigo: mat?.codigo || "S/C",
+          color: mat?.color_hex || "#ccc",
+        };
+      })
+      .sort((a, b) => b.totalQty - a.totalQty);
+  }, [pallets, materiales]);
+
+  const toggleRow = (id) => setExpandedRow(expandedRow === id ? null : id);
+
+  return (
+    <div className="flex-1 bg-[#0b0f19] overflow-y-auto custom-scrollbar p-4 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
+          <FaList className="text-indigo-500" /> Resumen de Stock en Iglú
+        </h2>
+        <div className="bg-slate-900 border border-slate-700/50 rounded-xl overflow-hidden shadow-2xl">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-950 text-gray-500 text-xs uppercase font-bold tracking-wider">
+              <tr>
+                <th className="p-4 border-b border-slate-800">Material</th>
+                <th className="p-4 border-b border-slate-800 text-center">
+                  Pallets
+                </th>
+                <th className="p-4 border-b border-slate-800 text-right">
+                  Total
+                </th>
+                <th className="p-4 border-b border-slate-800 w-10"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {resumen.map((item) => {
+                const unidad = getUnidad(item.id);
+                const isProduct = unidad === "Un";
+                return (
+                  <React.Fragment key={item.id}>
+                    <tr
+                      onClick={() => toggleRow(item.id)}
+                      className="hover:bg-slate-800/50 transition-colors cursor-pointer group"
+                    >
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          {isProduct ? (
+                            <FaTrafficLight className="text-orange-500 text-lg" />
+                          ) : (
+                            <div
+                              className="w-3 h-3 rounded-full shadow-sm ring-1 ring-white/10"
+                              style={{ backgroundColor: item.color }}
+                            ></div>
+                          )}
+                          <div>
+                            <p className="font-bold text-white text-sm group-hover:text-indigo-300 transition-colors">
+                              {item.nombre}
+                            </p>
+                            <p className="text-[10px] text-gray-500 font-mono">
+                              {item.codigo}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className="bg-slate-800 text-gray-300 px-2 py-1 rounded text-xs font-mono border border-slate-700">
+                          {item.count}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <span className="text-emerald-400 font-bold font-mono text-base">
+                          {item.totalQty.toLocaleString()}{" "}
+                          <span className="text-[10px] text-emerald-700">
+                            {unidad}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="p-4 text-center text-gray-600">
+                        {expandedRow === item.id ? (
+                          <FaChevronDown />
+                        ) : (
+                          <FaChevronRight />
+                        )}
+                      </td>
+                    </tr>
+                    {expandedRow === item.id && (
+                      <tr className="bg-slate-950/30">
+                        <td colSpan="4" className="p-0">
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="border-b border-slate-800 overflow-hidden"
+                          >
+                            <div className="p-4 pl-12 bg-slate-900/50 shadow-inner">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {item.pallets.map((p) => (
+                                  <div
+                                    key={p.id}
+                                    className="flex justify-between items-center p-2 rounded border border-slate-700 bg-slate-800 text-xs"
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="text-gray-400 text-[10px]">
+                                        ID #{p.id}
+                                      </span>
+                                      <span className="text-indigo-300 font-bold">
+                                        L{p.lado} • F{p.fila} •{" "}
+                                        {p.columna === 0 ? "Frente" : "Fondo"}
+                                      </span>
+                                    </div>
+                                    <span className="text-white font-mono font-bold">
+                                      {p.cantidad} {unidad}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </motion.div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- MODALES (DEFINIDOS AQUÍ ANTES DE USARLOS) ---
+
+function QRModal({ pallet, onClose }) {
+  const [qrUrl, setQrUrl] = useState("");
+  useEffect(() => {
+    if (pallet) {
+      const data = JSON.stringify({ type: "PALLET", id: pallet.id });
+      QRCode.toDataURL(data, { width: 400, margin: 2 }, (err, url) => {
+        if (!err) setQrUrl(url);
+      });
+    }
+  }, [pallet]);
+  const handlePrint = () => {
+    const win = window.open("", "", "width=500,height=600");
+    win.document.write(
+      `<html><head><title>Etiqueta #${pallet.id}</title></head><body style="display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; text-align: center;"><h1 style="margin: 0; font-size: 24px;">${pallet.nombre}</h1><h2 style="margin: 5px 0; font-size: 40px;">${pallet.cantidad} ${getUnidad(pallet.materia_prima_id)}</h2><img src="${qrUrl}" style="width: 300px; height: 300px;" /><p style="font-size: 12px; color: #555;">ID: ${pallet.id}</p><script>window.print(); window.close();</script></body></html>`,
+    );
+    win.document.close();
+  };
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl p-6 max-w-sm w-full text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-gray-900 font-bold text-xl mb-1">
+          {pallet.nombre}
+        </h3>
+        <p className="text-gray-500 text-sm mb-4">Etiqueta Identificación</p>
+        {qrUrl ? (
+          <img
+            src={qrUrl}
+            alt="QR"
+            className="mx-auto w-48 h-48 border-4 border-black rounded-lg mb-4"
+          />
+        ) : (
+          <div className="h-48 flex items-center justify-center">
+            Generando...
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handlePrint}
+            className="bg-black text-white py-3 rounded-lg font-bold flex items-center justify-center gap-2"
+          >
+            <FaPrint /> Imprimir
+          </button>
+          <button
+            onClick={onClose}
+            className="bg-gray-200 text-gray-800 py-3 rounded-lg font-bold"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScannerModal({ onClose, onScanSuccess }) {
+  const handleScan = (result) => {
+    if (result && result.length > 0) {
+      try {
+        const raw = result[0].rawValue;
+        const data = JSON.parse(raw);
+        if (data.type === "PALLET" && data.id) onScanSuccess(data.id);
+      } catch (e) {}
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+      <div className="p-4 flex justify-between items-center bg-slate-900 z-10">
+        <h3 className="text-white font-bold flex items-center gap-2">
+          <FaCamera /> Escaneando...
+        </h3>
+        <button
+          onClick={onClose}
+          className="text-white bg-slate-800 p-2 rounded-full"
+        >
+          <FaTimes />
+        </button>
+      </div>
+      <div className="flex-1 relative">
+        <Scanner
+          onScan={handleScan}
+          components={{ audio: false }}
+          styles={{ container: { height: "100%" } }}
+        />
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          <div className="w-64 h-64 border-2 border-white/50 rounded-xl relative"></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PalletControlModal({
+  palletId,
+  allPallets,
+  onClose,
+  onUpdate,
+  onDelete,
+}) {
+  const pallet = allPallets.find((p) => p.id === Number(palletId));
+  const [qty, setQty] = useState(pallet ? pallet.cantidad : "");
+  const [fila, setFila] = useState(pallet ? pallet.fila : 0);
+  const [lado, setLado] = useState(pallet ? pallet.lado : 1);
+  const [prof, setProf] = useState(pallet ? pallet.columna : 0);
+  if (!pallet) return null;
+  const unidad = getUnidad(pallet.materia_prima_id);
+  const isPasillo = Number(lado) === 3 || Number(lado) === 4;
+
+  const handleSave = () => {
+    const ocupado = allPallets.find(
+      (p) =>
+        p.id !== pallet.id &&
+        p.fila === Number(fila) &&
+        p.lado === Number(lado) &&
+        p.columna === Number(prof),
+    );
+    if (ocupado) return alert(`Lugar ocupado por ${ocupado.nombre}`);
+    onUpdate(pallet.id, {
+      cantidad: Number(qty),
+      fila: Number(fila),
+      lado: Number(lado),
+      columna: Number(prof),
+    });
+    onClose();
+  };
+  const handleDelete = () => {
+    if (confirm("¿Baja definitiva?")) {
+      onDelete(pallet.id);
+      onClose();
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[110] bg-black/90 backdrop-blur-sm flex items-end md:items-center justify-center p-4">
+      <motion.div
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        className="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+      >
+        <div className="bg-indigo-600 p-4 flex justify-between items-center">
+          <h3 className="font-bold text-white">{pallet.nombre}</h3>
+          <button onClick={onClose}>
+            <FaTimes className="text-white" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <input
+            type="number"
+            className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder={`Cantidad (${unidad})`}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
+              value={lado}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setLado(v);
+                if (v === 3 || v === 4) setProf(0);
+              }}
+            >
+              <option value="1">Lado 1</option>
+              <option value="2">Lado 2</option>
+              <option value="3">Pasillo Izq</option>
+              <option value="4">Pasillo Der</option>
+            </select>
+            <select
+              className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
+              value={fila}
+              onChange={(e) => setFila(Number(e.target.value))}
+            >
+              {Array.from({ length: 8 }).map((_, i) => (
+                <option key={i} value={i}>
+                  Fila {i}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => !isPasillo && setProf(prof === 0 ? 1 : 0)}
+            disabled={isPasillo}
+            className={`w-full py-2 rounded text-xs border ${
+              isPasillo
+                ? "bg-slate-900 text-slate-700 border-slate-800 cursor-not-allowed"
+                : prof === 1
+                  ? "bg-indigo-600 text-white"
+                  : "bg-slate-950 text-gray-400"
+            }`}
+          >
+            {prof === 0 ? "Frente" : "Fondo"} {isPasillo && "(N/A)"}
+          </button>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleDelete}
+              className="flex-1 bg-red-900/30 text-red-400 border border-red-900/50 py-3 rounded-lg font-bold"
+            >
+              BAJA
+            </button>
+            <button
+              onClick={handleSave}
+              className="flex-[2] bg-indigo-600 text-white py-3 rounded-lg font-bold"
+            >
+              GUARDAR
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function PalletManager({
   mp,
   pallets,
@@ -560,25 +928,27 @@ function PalletManager({
   const [newFila, setNewFila] = useState("0");
   const [newLado, setNewLado] = useState("1");
   const [newProf, setNewProf] = useState("0");
+  const [errorMsg, setErrorMsg] = useState("");
   const unidad = getUnidad(mp.id);
   const isPasillo = Number(newLado) === 3 || Number(newLado) === 4;
 
   const handleAdd = () => {
-    if (!newQty || Number(newQty) <= 0) return alert("Cantidad inválida");
+    setErrorMsg("");
+    if (!newQty || Number(newQty) <= 0)
+      return setErrorMsg("Ingresa una cantidad válida.");
     const f = Number(newFila);
     const l = Number(newLado);
     const p = Number(newProf);
     const ocupado = allPallets.find(
-      (pa) =>
-        Number(pa.lado) === l &&
-        Number(pa.fila) === f &&
-        Number(pa.columna) === p,
+      (pal) =>
+        Number(pal.lado) === l &&
+        Number(pal.fila) === f &&
+        Number(pal.columna) === p,
     );
-    if (ocupado) return alert("Ubicación ocupada");
+    if (ocupado) return setErrorMsg(`Ocupado por: ${ocupado.nombre}`);
     onAdd(mp.id, Number(newQty), f, l, p);
     setNewQty("");
   };
-
   return (
     <div className="mt-4 border-t border-slate-700 pt-4">
       <div className="bg-slate-800 p-4 rounded-xl mb-4 border border-slate-700">
@@ -600,23 +970,22 @@ function PalletManager({
           </span>
         </div>
       </div>
-
-      <div className="bg-slate-900 p-4 rounded-xl space-y-3 mb-4">
+      <div className="bg-slate-900 p-4 rounded-xl border border-indigo-500/20 mb-6 space-y-3">
         <input
           type="number"
-          className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white text-sm"
-          placeholder="Cantidad"
+          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-sm"
           value={newQty}
           onChange={(e) => setNewQty(e.target.value)}
+          placeholder={`Cantidad (${unidad})`}
         />
         <div className="grid grid-cols-2 gap-2">
           <select
-            className="bg-slate-950 border border-slate-700 rounded p-2 text-white text-xs"
+            className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
             value={newLado}
             onChange={(e) => {
-              const val = Number(e.target.value);
-              setNewLado(val);
-              if (val === 3 || val === 4) setNewProf("0");
+              const v = Number(e.target.value);
+              setNewLado(v);
+              if (v === 3 || v === 4) setNewProf("0");
             }}
           >
             <option value="1">Lado 1</option>
@@ -625,7 +994,7 @@ function PalletManager({
             <option value="4">Pasillo Der</option>
           </select>
           <select
-            className="bg-slate-950 border border-slate-700 rounded p-2 text-white text-xs"
+            className="bg-slate-950 border border-slate-700 rounded-lg p-2 text-white text-xs"
             value={newFila}
             onChange={(e) => setNewFila(e.target.value)}
           >
@@ -648,23 +1017,23 @@ function PalletManager({
             disabled={isPasillo}
             className={`flex-1 py-2 rounded text-xs border ${
               isPasillo
-                ? "bg-slate-900 text-gray-600 cursor-not-allowed"
+                ? "bg-slate-900 text-slate-700 border-slate-800 cursor-not-allowed"
                 : newProf === "1"
                   ? "bg-indigo-600 text-white"
                   : "bg-slate-950 text-gray-400"
             }`}
           >
-            Fondo
+            Fondo {isPasillo && "(N/A)"}
           </button>
         </div>
+        {errorMsg && <div className="text-xs text-red-400">{errorMsg}</div>}
         <button
           onClick={handleAdd}
-          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded text-sm"
+          className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg text-sm"
         >
           UBICAR
         </button>
       </div>
-
       <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
         {pallets.map((p) => (
           <div
@@ -700,7 +1069,7 @@ function PalletManager({
   );
 }
 
-// --- PÁGINA PRINCIPAL ---
+// --- PÁGINA PRINCIPAL (DEFINIDA AL FINAL) ---
 export default function DepositoPage() {
   const [materiales, setMateriales] = useState([]);
   const [pallets, setPallets] = useState([]);
@@ -839,7 +1208,6 @@ export default function DepositoPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] md:h-[calc(100vh-80px)] animate-in fade-in relative bg-slate-950 overflow-hidden">
-      {/* HEADER FLOTANTE */}
       <div className="absolute top-4 left-4 right-4 z-20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pointer-events-none">
         <div className="bg-slate-900/90 backdrop-blur-xl p-3 md:px-5 md:py-3 rounded-xl border border-slate-700/50 shadow-2xl pointer-events-auto flex flex-col">
           <h1 className="text-lg font-extrabold text-white flex items-center gap-2">
@@ -932,7 +1300,6 @@ export default function DepositoPage() {
         <StockListView pallets={pallets} materiales={materiales} />
       )}
 
-      {/* DRAWER LATERAL */}
       <AnimatePresence>
         {showConfig && viewMode === "3D" && (
           <motion.div
