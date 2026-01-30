@@ -101,7 +101,7 @@ router.get("/stats/:producto", async (req, res) => {
 // 4. Registrar Cambio
 router.post("/", async (req, res) => {
   const {
-    producto,
+    producto, // Puede ser un string O un array de strings ["Prod A", "Prod B"]
     tipo_cambio,
     descripcion,
     responsable,
@@ -114,45 +114,58 @@ router.post("/", async (req, res) => {
     tipo_aplicacion,
   } = req.body;
 
-  // Si viene fecha manual, la usamos. Si no, NEW DATE.
-  // Nota: Al ordenar por ID en el GET, solucionamos el problema de las horas.
   const fecha = fecha_manual || new Date();
+  const client = await db.connect(); // Usamos cliente para transacción
 
   try {
-    const result = await db.query(
-      `INSERT INTO historial_cambios_producto 
-       (producto, tipo_cambio, descripcion, responsable, notificado_a, fecha, adjuntos_url, lleva_reflectiva, tipo_reflectiva, tipo_protector, tipo_aplicacion)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
-      [
-        producto,
-        tipo_cambio,
-        descripcion,
-        responsable,
-        emails_notificacion,
-        fecha,
-        adjuntos_url || "",
-        lleva_reflectiva || false,
-        tipo_reflectiva || null,
-        tipo_protector || null,
-        tipo_aplicacion || null,
-      ],
-    );
+    await client.query("BEGIN");
 
-    if (emails_notificacion && emails_notificacion.length > 5) {
-      enviarNotificacionCambio({
-        producto,
-        tipo: tipo_cambio,
-        descripcion,
-        responsable,
-        fecha,
-        destinatarios: emails_notificacion,
-      });
+    // Normalizamos: si viene un string, lo convertimos en array
+    const listaProductos = Array.isArray(producto) ? producto : [producto];
+    const resultados = [];
+
+    for (const prodNombre of listaProductos) {
+      const result = await client.query(
+        `INSERT INTO historial_cambios_producto 
+         (producto, tipo_cambio, descripcion, responsable, notificado_a, fecha, adjuntos_url, lleva_reflectiva, tipo_reflectiva, tipo_protector, tipo_aplicacion)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        [
+          prodNombre,
+          tipo_cambio,
+          descripcion,
+          responsable,
+          emails_notificacion,
+          fecha,
+          adjuntos_url || "",
+          lleva_reflectiva || false,
+          tipo_reflectiva || null,
+          tipo_protector || null,
+          tipo_aplicacion || null,
+        ],
+      );
+      resultados.push(result.rows[0]);
+
+      // Enviar notificación individual (opcional: podrías agruparlas si prefieres)
+      if (emails_notificacion && emails_notificacion.length > 5) {
+        await enviarNotificacionCambio({
+          producto: prodNombre,
+          tipo: tipo_cambio,
+          descripcion,
+          responsable,
+          fecha,
+          destinatarios: emails_notificacion,
+        });
+      }
     }
 
-    res.json({ success: true, data: result.rows[0] });
+    await client.query("COMMIT");
+    res.json({ success: true, data: resultados, count: resultados.length });
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error(err);
-    res.status(500).send("Error al registrar cambio");
+    res.status(500).send("Error al registrar cambio(s)");
+  } finally {
+    client.release();
   }
 });
 

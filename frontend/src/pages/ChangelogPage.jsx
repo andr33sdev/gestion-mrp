@@ -20,11 +20,12 @@ import {
   FaChevronRight,
   FaFilePdf,
   FaTimes,
-  FaTrash, // <--- Icono Eliminar
+  FaTrash,
+  FaCheckSquare,
+  FaSquare,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE_URL, authFetch } from "../utils";
-import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -34,7 +35,6 @@ const LogRow = ({ log, configTipo, onDelete }) => {
   const style = configTipo[log.tipo_cambio] || configTipo.MODIFICACION;
   const dateObj = new Date(log.fecha);
 
-  // Ajuste visual de fecha para compensar zona horaria
   const fechaVisual = new Date(
     dateObj.getTime() + dateObj.getTimezoneOffset() * 60000,
   );
@@ -44,7 +44,6 @@ const LogRow = ({ log, configTipo, onDelete }) => {
 
   return (
     <div className="group flex gap-4 bg-slate-800/40 hover:bg-slate-800 border-b border-slate-700/50 p-4 transition-colors last:border-0 rounded-lg mb-2 relative">
-      {/* 1. FECHA (COLUMNA IZQ) */}
       <div className="w-16 flex-shrink-0 flex flex-col items-center justify-start pt-1 text-gray-400 border-r border-slate-700/50 pr-4">
         <span className="text-2xl font-bold leading-none text-white">
           {fechaVisual.getDate()}
@@ -57,17 +56,14 @@ const LogRow = ({ log, configTipo, onDelete }) => {
         </span>
       </div>
 
-      {/* 2. CONTENIDO PRINCIPAL */}
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2 mb-2 pr-8">
-          {/* TIPO */}
           <span
             className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${style.bg} ${style.color} ${style.border} border-opacity-30 bg-opacity-10`}
           >
             {style.icon} {style.label}
           </span>
 
-          {/* PRODUCTO */}
           <h3
             className="text-base font-bold text-white truncate"
             title={log.producto}
@@ -75,7 +71,6 @@ const LogRow = ({ log, configTipo, onDelete }) => {
             {log.producto}
           </h3>
 
-          {/* TAGS REFLECTIVOS */}
           {log.lleva_reflectiva && (
             <div className="flex items-center gap-1 ml-auto">
               <span
@@ -94,7 +89,6 @@ const LogRow = ({ log, configTipo, onDelete }) => {
           )}
         </div>
 
-        {/* DESCRIPCIÓN */}
         <div className="text-sm text-gray-300 leading-relaxed pr-2">
           <p
             className={`${!expanded ? "line-clamp-2" : ""} whitespace-pre-wrap`}
@@ -119,7 +113,6 @@ const LogRow = ({ log, configTipo, onDelete }) => {
           )}
         </div>
 
-        {/* FOOTER DE FILA */}
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/30">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5 text-[11px] text-gray-400 font-medium">
@@ -151,7 +144,6 @@ const LogRow = ({ log, configTipo, onDelete }) => {
         </div>
       </div>
 
-      {/* BOTÓN ELIMINAR (SOLO VISIBLE AL HACER HOVER EN LA FILA) */}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -172,7 +164,6 @@ export default function ChangelogPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
-  // Estados Filtro/Pag
   const [page, setPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
   const [searchTerm, setSearchTerm] = useState("");
@@ -180,9 +171,11 @@ export default function ChangelogPage() {
   const [selectedMonth, setSelectedMonth] = useState("ALL");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
 
-  // Formulario
+  // ESTADOS PARA SELECCIÓN MÚLTIPLE
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [productSearch, setProductSearch] = useState("");
+
   const [form, setForm] = useState({
-    producto: "",
     tipo_cambio: "MODIFICACION",
     descripcion: "",
     responsable: "Ingeniería",
@@ -255,21 +248,13 @@ export default function ChangelogPage() {
     } catch (e) {}
   };
 
-  // --- FUNCIÓN ELIMINAR ---
   const handleDelete = async (id) => {
-    if (
-      !window.confirm(
-        "¿Estás seguro de eliminar este registro? Esta acción no se puede deshacer.",
-      )
-    )
-      return;
-
+    if (!window.confirm("¿Estás seguro de eliminar este registro?")) return;
     try {
       const res = await authFetch(`${API_BASE_URL}/changelog/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
-        // Actualizamos estado local para feedback instantáneo
         setLogs((prev) => prev.filter((l) => l.id !== id));
       } else {
         alert("Error al eliminar el registro.");
@@ -280,7 +265,6 @@ export default function ChangelogPage() {
     }
   };
 
-  // --- FILTROS ---
   const availableMonths = useMemo(() => {
     const months = new Set();
     logs.forEach((log) => {
@@ -296,7 +280,6 @@ export default function ChangelogPage() {
     return logs.filter((l) => {
       const d = new Date(l.fecha);
       const dLocal = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
-
       const matchesSearch =
         l.producto.toLowerCase().includes(searchTerm.toLowerCase()) ||
         l.descripcion.toLowerCase().includes(searchTerm.toLowerCase());
@@ -329,13 +312,37 @@ export default function ChangelogPage() {
     setPage(1);
   }, [searchTerm, filterType, selectedMonth, dateRange]);
 
-  // --- GUARDAR ---
+  // --- SELECCIÓN MÚLTIPLE ---
+  const toggleProductSelection = (nombre) => {
+    if (selectedProducts.includes(nombre)) {
+      setSelectedProducts((prev) => prev.filter((p) => p !== nombre));
+    } else {
+      setSelectedProducts((prev) => [...prev, nombre]);
+    }
+  };
+
+  // --- FILTRADO SEGURO PARA EL MODAL (AQUÍ ESTÁ LA CORRECCIÓN) ---
+  const modalFilteredProducts = useMemo(() => {
+    if (!productSearch) return allProducts.slice(0, 50);
+    const searchLower = productSearch.toLowerCase();
+    return allProducts
+      .filter((p) => {
+        // Blindaje contra null/undefined
+        const nombre = (p.nombre || "").toLowerCase();
+        const codigo = (p.codigo || "").toLowerCase();
+        return nombre.includes(searchLower) || codigo.includes(searchLower);
+      })
+      .slice(0, 50);
+  }, [allProducts, productSearch]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.producto || !form.descripcion || !form.responsable)
-      return alert("Completa los datos.");
+    if (selectedProducts.length === 0)
+      return alert("Debes seleccionar al menos un producto.");
+    if (!form.descripcion || !form.responsable)
+      return alert("Completa la descripción y responsable.");
 
-    const dataToSend = { ...form };
+    const dataToSend = { ...form, producto: selectedProducts };
     if (!form.lleva_reflectiva) {
       dataToSend.tipo_reflectiva = null;
       dataToSend.tipo_protector = null;
@@ -349,17 +356,21 @@ export default function ChangelogPage() {
         body: JSON.stringify(dataToSend),
       });
       if (res.ok) {
-        alert("Guardado OK.");
+        const resp = await res.json();
+        alert(
+          `Cambio registrado exitosamente para ${selectedProducts.length} productos.`,
+        );
         setShowModal(false);
         fetchLogs();
         setForm({
           ...form,
           descripcion: "",
-          producto: "",
           adjuntos_url: "",
           lleva_reflectiva: false,
           tipo_protector: "Protector Chino",
         });
+        setSelectedProducts([]);
+        setProductSearch("");
       }
     } catch (e) {
       alert("Error al guardar");
@@ -377,7 +388,6 @@ export default function ChangelogPage() {
     return date.toLocaleString("es-AR", { month: "long", year: "numeric" });
   };
 
-  // --- EXPORTAR PDF ---
   const generarReportePDF = () => {
     if (filteredLogs.length === 0)
       return alert("No hay datos para exportar con los filtros actuales.");
@@ -394,12 +404,9 @@ export default function ChangelogPage() {
     const gruposOrdenados = Object.entries(grupos).sort((a, b) => {
       const logA = a[1][0];
       const logB = b[1][0];
-      const dateA = new Date(logA.fecha);
-      const dateB = new Date(logB.fecha);
-      return dateB - dateA;
+      return new Date(logB.fecha) - new Date(logA.fecha);
     });
 
-    // Encabezado
     doc.setFillColor(15, 23, 42);
     doc.rect(0, 0, pageWidth, 40, "F");
     doc.setTextColor(255, 255, 255);
@@ -432,15 +439,12 @@ export default function ChangelogPage() {
         doc.addPage();
         yPos = 20;
       }
-
       doc.setFillColor(241, 245, 249);
       doc.rect(14, yPos - 6, pageWidth - 28, 10, "F");
-
       doc.setTextColor(15, 23, 42);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(12);
       doc.text(producto, 16, yPos);
-
       yPos += 5;
 
       const tableBody = logsGrupo.map((log) => {
@@ -496,7 +500,6 @@ export default function ChangelogPage() {
         { align: "center" },
       );
     }
-
     doc.save(
       `Reporte_Ingenieria_${new Date().toISOString().split("T")[0]}.pdf`,
     );
@@ -632,7 +635,7 @@ export default function ChangelogPage() {
                 key={log.id}
                 log={log}
                 configTipo={configTipo}
-                onDelete={handleDelete} // <--- Pasando la función eliminar
+                onDelete={handleDelete}
               />
             ))}
           </div>
@@ -673,7 +676,7 @@ export default function ChangelogPage() {
             >
               <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
                 <h3 className="text-white text-sm font-bold flex items-center gap-2 uppercase tracking-wide">
-                  <FaTag className="text-blue-500" /> Nuevo Registro
+                  <FaTag className="text-blue-500" /> Registrar Cambio Masivo
                 </h3>
                 <button
                   onClick={() => setShowModal(false)}
@@ -685,19 +688,92 @@ export default function ChangelogPage() {
 
               <div className="flex-1 overflow-y-auto custom-scrollbar p-5">
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
-                      Producto
+                  {/* --- SECCIÓN DE SELECCIÓN MÚLTIPLE --- */}
+                  <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
+                      Seleccionar Productos ({selectedProducts.length})
                     </label>
-                    <AutoCompleteInput
-                      items={allProducts}
-                      onSelect={(item) =>
-                        setForm({ ...form, producto: item.nombre })
-                      }
-                      initialValue={form.producto}
-                      placeholder="Seleccionar..."
-                    />
+
+                    {/* Buscador interno */}
+                    <div className="relative mb-2">
+                      <FaSearch className="absolute left-3 top-2.5 text-gray-500 text-xs" />
+                      <input
+                        type="text"
+                        className="w-full bg-slate-900 border border-slate-600 rounded px-8 py-2 text-xs text-white focus:border-blue-500 outline-none"
+                        placeholder="Escribe para filtrar (ej: 1025)..."
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Lista de Checkboxes */}
+                    <div className="max-h-40 overflow-y-auto custom-scrollbar border border-slate-700 rounded bg-slate-900 p-1">
+                      {modalFilteredProducts.length === 0 ? (
+                        <p className="text-gray-500 text-xs p-2 text-center">
+                          No hay coincidencias.
+                        </p>
+                      ) : (
+                        modalFilteredProducts.map((p) => {
+                          const isSelected = selectedProducts.includes(
+                            p.nombre,
+                          );
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => toggleProductSelection(p.nombre)}
+                              className={`flex items-center gap-2 p-2 cursor-pointer hover:bg-slate-800 rounded transition-colors ${isSelected ? "bg-blue-900/20" : ""}`}
+                            >
+                              <div
+                                className={`text-sm ${isSelected ? "text-blue-400" : "text-gray-600"}`}
+                              >
+                                {isSelected ? <FaCheckSquare /> : <FaSquare />}
+                              </div>
+                              <div className="flex-1">
+                                <p
+                                  className={`text-xs ${isSelected ? "text-white font-bold" : "text-gray-300"}`}
+                                >
+                                  {p.nombre}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-mono">
+                                  {p.codigo}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Tags de seleccionados */}
+                    {selectedProducts.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {selectedProducts.map((prod) => (
+                          <span
+                            key={prod}
+                            className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1"
+                          >
+                            {prod}
+                            <button
+                              type="button"
+                              onClick={() => toggleProductSelection(prod)}
+                              className="hover:text-red-200"
+                            >
+                              &times;
+                            </button>
+                          </span>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProducts([])}
+                          className="text-[10px] text-red-400 hover:text-red-300 underline ml-2"
+                        >
+                          Limpiar
+                        </button>
+                      </div>
+                    )}
                   </div>
+                  {/* --- FIN SECCIÓN SELECCIÓN --- */}
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">
@@ -786,7 +862,6 @@ export default function ChangelogPage() {
                           </option>
                         </select>
                         <div className="grid grid-cols-2 gap-2">
-                          {/* Lógica de Sin Protector */}
                           <select
                             className="w-full bg-slate-900 border border-slate-600 rounded p-1.5 text-white text-xs"
                             value={form.tipo_protector}
@@ -885,7 +960,7 @@ export default function ChangelogPage() {
                   onClick={handleSubmit}
                   className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg flex justify-center items-center gap-2 text-sm"
                 >
-                  <FaPaperPlane /> Guardar
+                  <FaPaperPlane /> Guardar Cambios ({selectedProducts.length})
                 </button>
               </div>
             </motion.div>
