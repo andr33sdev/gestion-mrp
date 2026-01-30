@@ -388,7 +388,7 @@ export default function LogisticaPage() {
                   onClick={(e) => handleStatusChange(e, req.id, "PREPARADO")}
                   className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-2"
                 >
-                  <FaBoxOpen /> YA ESTÁ LISTO
+                  <FaBoxOpen /> LISTO PARA DESPACHAR
                 </button>
               )}
 
