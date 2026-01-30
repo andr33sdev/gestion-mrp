@@ -405,6 +405,34 @@ async function inicializarTablas() {
       console.log("ℹ Las columnas de reflectivos ya existían.");
     }
 
+    // --- 22. SUGERENCIAS DE COMPRA (TICKETS INTERNOS) ---
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS sugerencias_compra (
+        id SERIAL PRIMARY KEY,
+        materia_prima_id INTEGER REFERENCES materias_primas(id),
+        cantidad NUMERIC NOT NULL,
+        solicitante VARCHAR(100),
+        sector VARCHAR(100),
+        prioridad VARCHAR(20) DEFAULT 'NORMAL', -- 'NORMAL', 'URGENTE'
+        estado VARCHAR(20) DEFAULT 'PENDIENTE', -- 'PENDIENTE', 'APROBADO', 'RECHAZADO', 'COMPRADO'
+        comentario TEXT,
+        fecha_creacion TIMESTAMP DEFAULT NOW(),
+        fecha_resolucion TIMESTAMP
+      );
+    `);
+
+    // --- 23. HISTORIAL SUGERENCIAS (AUDITORÍA) ---
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS historial_sugerencias (
+        id SERIAL PRIMARY KEY,
+        sugerencia_id INTEGER REFERENCES sugerencias_compra(id) ON DELETE CASCADE,
+        accion VARCHAR(50), -- CREADO, APROBADO, RECHAZADO, SOLICITADO
+        usuario VARCHAR(100),
+        fecha TIMESTAMP DEFAULT NOW(),
+        detalle TEXT
+      );
+    `);
+
     console.log("✔ Tablas verificadas y actualizadas correctamente.");
   } catch (err) {
     console.error("❌ Error inicializando tablas:", err.message);

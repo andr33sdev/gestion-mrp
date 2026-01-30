@@ -37,6 +37,7 @@ const mantenimientoRoutes = require("./routes/mantenimiento");
 const feriadosRoutes = require("./routes/feriados");
 const rrhhRoutes = require("./routes/rrhh");
 const changelogRoutes = require("./routes/changelog");
+const sugerenciasRoutes = require("./routes/sugerencias");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -57,6 +58,7 @@ app.use("/api/mantenimiento", mantenimientoRoutes);
 app.use("/api/feriados", feriadosRoutes);
 app.use("/api/rrhh", rrhhRoutes);
 app.use("/api/changelog", changelogRoutes);
+app.use("/api/sugerencias", sugerenciasRoutes);
 
 async function iniciarServidor() {
   try {

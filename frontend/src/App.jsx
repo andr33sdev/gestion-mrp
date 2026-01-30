@@ -29,6 +29,7 @@ import {
   FaChevronLeft,
   FaUserClock,
   FaHistory,
+  FaClipboardCheck,
 } from "react-icons/fa";
 
 // Importación de Páginas
@@ -42,7 +43,6 @@ import RegistrarProduccionPage from "./pages/RegistrarProduccionPage.jsx";
 import OperariosPage from "./pages/OperariosPage.jsx";
 import LogisticaPage from "./pages/LogisticaPage.jsx";
 import SolicitudesPage from "./pages/SolicitudesPage";
-import RecepcionPage from "./pages/RecepcionPage.jsx";
 import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
 import CentroComando from "./pages/CentroComando";
 import MantenimientoPage from "./pages/MantenimientoPage";
@@ -50,6 +50,7 @@ import RRHHPage from "./pages/RRHHPage";
 import ChangelogPage from "./pages/ChangelogPage";
 import DetalleProducto from "./pages/DetalleProducto";
 import DepositoPage from "./pages/DepositoPage.jsx";
+import SugerenciasPage from "./pages/SugerenciasPage.jsx";
 
 // Componentes Globales
 import ChatGerencia from "./components/ChatGerencia";
@@ -142,16 +143,16 @@ const NAV_LINKS = [
     roles: ["GERENCIA"],
   },
   {
-    path: "/recepcion",
-    label: "Recepción",
-    icon: <FaWarehouse />,
-    roles: ["GERENCIA"],
-  },
-  {
     path: "/deposito-3d",
     label: "Iglú (3D)",
     icon: <FaWarehouse />,
     roles: ["GERENCIA", "DEPOSITO", "PANEL"],
+  },
+  {
+    path: "/sugerencias",
+    label: "Buzón Compras",
+    icon: <FaClipboardCheck />, // Importa este icono de 'react-icons/fa'
+    roles: ["GERENCIA", "DEPOSITO", "MANTENIMIENTO", "OPERARIO", "PANEL"], // Todos pueden sugerir
   },
 ];
 
@@ -491,16 +492,6 @@ export default function App() {
           }
         />
         <Route
-          path="/recepcion"
-          element={
-            <ProtectedRoute allowedRoles={["GERENCIA"]}>
-              <Layout>
-                <RecepcionPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/mantenimiento"
           element={
             <ProtectedRoute
@@ -631,6 +622,24 @@ export default function App() {
             <ProtectedRoute allowedRoles={["GERENCIA", "DEPOSITO", "PANEL"]}>
               <Layout>
                 <DepositoPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sugerencias"
+          element={
+            <ProtectedRoute
+              allowedRoles={[
+                "GERENCIA",
+                "DEPOSITO",
+                "MANTENIMIENTO",
+                "OPERARIO",
+                "PANEL",
+              ]}
+            >
+              <Layout>
+                <SugerenciasPage />
               </Layout>
             </ProtectedRoute>
           }
