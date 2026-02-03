@@ -31,6 +31,8 @@ import {
   FaFilePdf,
   FaCogs,
   FaPrint,
+  FaFire,
+  FaClock,
 } from "react-icons/fa";
 import { API_BASE_URL, PEDIDOS_API_URL, authFetch } from "../utils.js";
 import { motion, AnimatePresence } from "framer-motion";
@@ -444,7 +446,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
     doc.save(`Ficha_${producto.nombre.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // --- RENDER FORMULARIO DE EDICIÓN ---
+  // --- RENDER FORMULARIO DE EDICIÓN (PANEL DE CONTROL INDUSTRIAL) ---
   const renderEditForm = () => {
     const isRot = editForm.tipo_proceso === "ROTOMOLDEO";
     const pm = editForm.parametros_maquina || {};
@@ -456,314 +458,393 @@ function FichaTecnicaModal({ semiId, onClose }) {
       }));
     };
 
+    // Componente de Input Reutilizable para consistencia
+    const MetricInput = ({ value, onChange, placeholder, className = "" }) => (
+      <input
+        type="text"
+        className={`w-full bg-slate-950 border border-slate-700 text-white rounded px-2 py-1.5 text-center text-sm font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder-gray-700 ${className}`}
+        value={value || ""}
+        onChange={onChange}
+        placeholder={placeholder || "-"}
+      />
+    );
+
     return (
-      <div className="bg-slate-700 p-4 rounded-lg mt-4 animate-in fade-in">
-        <div className="flex justify-between items-center mb-4">
-          <h4 className="text-white font-bold flex items-center gap-2">
-            <FaCogs /> Configuración de Máquina
-          </h4>
-          <select
-            value={editForm.tipo_proceso}
-            onChange={(e) =>
-              setEditForm({ ...editForm, tipo_proceso: e.target.value })
-            }
-            className="bg-slate-900 text-white p-1 rounded border border-slate-600 text-sm"
-          >
-            <option value="ROTOMOLDEO">ROTOMOLDEO</option>
-            <option value="INYECCION">INYECCIÓN</option>
-          </select>
+      <div className="bg-slate-800/80 p-5 rounded-xl mt-4 border border-slate-700 shadow-2xl animate-in fade-in">
+        {/* HEADER DEL PANEL */}
+        <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600/20 rounded-lg text-blue-400">
+              <FaCogs size={20} />
+            </div>
+            <div>
+              <h4 className="text-white font-bold text-base">
+                Parámetros de Proceso
+              </h4>
+              <p className="text-xs text-gray-400">
+                Configuración técnica de la maquinaria
+              </p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <select
+              value={editForm.tipo_proceso}
+              onChange={(e) =>
+                setEditForm({ ...editForm, tipo_proceso: e.target.value })
+              }
+              className="appearance-none bg-slate-900 text-white py-2 pl-4 pr-10 rounded-lg border border-slate-600 text-xs font-bold uppercase tracking-wider focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-slate-500 transition-colors"
+            >
+              <option value="ROTOMOLDEO">Rotomoldeo</option>
+              <option value="INYECCION">Inyección</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
+              <FaChevronLeft className="-rotate-90 text-xs" />
+            </div>
+          </div>
         </div>
 
         {isRot ? (
-          <div className="grid grid-cols-5 gap-2 text-xs">
-            <div className="font-bold text-gray-400">Parámetro</div>
-            <div className="text-center text-gray-400">Etapa 1</div>
-            <div className="text-center text-gray-400">Etapa 2</div>
-            <div className="text-center text-gray-400">Etapa 3</div>
-            <div className="text-center text-gray-400">Etapa 4</div>
+          /* ==================== FORMULARIO ROTOMOLDEO ==================== */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* COLUMNA PRINCIPAL (TABLA) */}
+            <div className="lg:col-span-8 bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
+              <div className="bg-slate-900 p-2 border-b border-slate-700">
+                <h5 className="text-xs font-bold text-gray-400 uppercase text-center tracking-widest">
+                  Ciclo de Cocción
+                </h5>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-[10px] uppercase">
+                    <th className="p-2 font-bold text-left pl-4">Variable</th>
+                    <th className="p-2 text-center w-20 bg-slate-800/30">
+                      Etapa 1
+                    </th>
+                    <th className="p-2 text-center w-20">Etapa 2</th>
+                    <th className="p-2 text-center w-20 bg-slate-800/30">
+                      Etapa 3
+                    </th>
+                    <th className="p-2 text-center w-20">Etapa 4</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  <tr>
+                    <td className="p-2 pl-4 text-blue-300 font-bold text-xs">
+                      Tiempo (min)
+                    </td>
+                    {[1, 2, 3, 4].map((i) => (
+                      <td
+                        key={i}
+                        className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
+                      >
+                        <MetricInput
+                          value={pm[`t${i}`]}
+                          onChange={(e) =>
+                            handleChange(`t${i}`, e.target.value)
+                          }
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-4 text-gray-400 text-xs">
+                      Vel. M1 (%)
+                    </td>
+                    {[1, 2, 3, 4].map((i) => (
+                      <td
+                        key={i}
+                        className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
+                      >
+                        <MetricInput
+                          value={pm[`v1m${i}`]}
+                          onChange={(e) =>
+                            handleChange(`v1m${i}`, e.target.value)
+                          }
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-4 text-gray-400 text-xs">
+                      Vel. M2 (%)
+                    </td>
+                    {[1, 2, 3, 4].map((i) => (
+                      <td
+                        key={i}
+                        className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
+                      >
+                        <MetricInput
+                          value={pm[`v2m${i}`]}
+                          onChange={(e) =>
+                            handleChange(`v2m${i}`, e.target.value)
+                          }
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="p-2 pl-4 text-gray-400 text-xs">
+                      Inversión (%)
+                    </td>
+                    {[1, 2, 3, 4].map((i) => (
+                      <td
+                        key={i}
+                        className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
+                      >
+                        <MetricInput
+                          value={pm[`inv${i}`]}
+                          onChange={(e) =>
+                            handleChange(`inv${i}`, e.target.value)
+                          }
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-            <div className="text-gray-300 py-1">Tiempo (minutos)</div>
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.t1 || ""}
-              onChange={(e) => handleChange("t1", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.t2 || ""}
-              onChange={(e) => handleChange("t2", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.t3 || ""}
-              onChange={(e) => handleChange("t3", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.t4 || ""}
-              onChange={(e) => handleChange("t4", e.target.value)}
-            />
+            {/* COLUMNA LATERAL (GLOBALES) */}
+            <div className="lg:col-span-4 space-y-4">
+              <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-2 block flex items-center gap-2">
+                  <FaFire /> Temperatura Horno
+                </label>
+                <div className="flex items-center gap-2">
+                  <MetricInput
+                    value={pm.temp_horno}
+                    onChange={(e) => handleChange("temp_horno", e.target.value)}
+                    className="text-xl font-bold text-orange-200"
+                    placeholder="0"
+                  />
+                  <span className="text-gray-500 font-bold">°C</span>
+                </div>
+              </div>
 
-            <div className="text-gray-300 py-1">Vel M1 (%)</div>
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v1m1 || ""}
-              onChange={(e) => handleChange("v1m1", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v2m1 || ""}
-              onChange={(e) => handleChange("v2m1", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v3m1 || ""}
-              onChange={(e) => handleChange("v3m1", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v4m1 || ""}
-              onChange={(e) => handleChange("v4m1", e.target.value)}
-            />
+              <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-2 block flex items-center gap-2">
+                  <FaClock /> Enfriamiento
+                </label>
+                <div className="flex items-center gap-2 mb-3">
+                  <MetricInput
+                    value={pm.frio_min}
+                    onChange={(e) => handleChange("frio_min", e.target.value)}
+                    placeholder="0"
+                  />
+                  <span className="text-gray-500 text-xs w-10">Min.</span>
+                </div>
 
-            <div className="text-gray-300 py-1">Vel M2 (%)</div>
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v1m2 || ""}
-              onChange={(e) => handleChange("v1m2", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v2m2 || ""}
-              onChange={(e) => handleChange("v2m2", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v3m2 || ""}
-              onChange={(e) => handleChange("v3m2", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.v4m2 || ""}
-              onChange={(e) => handleChange("v4m2", e.target.value)}
-            />
-
-            <div className="text-gray-300 py-1">Inversión (%)</div>
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.inv1 || ""}
-              onChange={(e) => handleChange("inv1", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.inv2 || ""}
-              onChange={(e) => handleChange("inv2", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.inv3 || ""}
-              onChange={(e) => handleChange("inv3", e.target.value)}
-            />
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1 text-center"
-              placeholder="-"
-              value={pm.inv4 || ""}
-              onChange={(e) => handleChange("inv4", e.target.value)}
-            />
-
-            <div className="col-span-5 border-t border-slate-600 my-2"></div>
-            <div className="text-gray-300">Temp Horno (°C)</div>
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1"
-              placeholder="Ej: 300"
-              value={pm.temp_horno || ""}
-              onChange={(e) => handleChange("temp_horno", e.target.value)}
-            />
-            <div className="text-gray-300">Frío (minutos)</div>
-            <input
-              type="text"
-              className="bg-slate-900 text-white rounded p-1"
-              placeholder="Ej: 18"
-              value={pm.frio_min || ""}
-              onChange={(e) => handleChange("frio_min", e.target.value)}
-            />
-            <div className="text-gray-300">Aire (Inicio/Fin)</div>
-            <div className="flex gap-1">
-              <input
-                type="text"
-                className="bg-slate-900 text-white rounded p-1 w-1/2"
-                placeholder="Ini"
-                value={pm.inicio_aire || ""}
-                onChange={(e) => handleChange("inicio_aire", e.target.value)}
-              />
-              <input
-                type="text"
-                className="bg-slate-900 text-white rounded p-1 w-1/2"
-                placeholder="Fin"
-                value={pm.fin_aire || ""}
-                onChange={(e) => handleChange("fin_aire", e.target.value)}
-              />
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                  <div>
+                    <span className="text-[9px] text-gray-500 uppercase block mb-1">
+                      Inicio Aire
+                    </span>
+                    <MetricInput
+                      value={pm.inicio_aire}
+                      onChange={(e) =>
+                        handleChange("inicio_aire", e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-gray-500 uppercase block mb-1">
+                      Fin Aire
+                    </span>
+                    <MetricInput
+                      value={pm.fin_aire}
+                      onChange={(e) => handleChange("fin_aire", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="space-y-3 text-xs">
-            <div className="grid grid-cols-7 gap-1 text-center items-center">
-              <div className="font-bold text-gray-400">#</div>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="text-gray-400">
-                  #{i}
+          /* ==================== FORMULARIO INYECCIÓN (ESTILO HMI) ==================== */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* 1. MATRIZ DE ETAPAS (Izquierda) */}
+            <div className="lg:col-span-7 bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
+              <div className="bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
+                <h5 className="text-xs font-bold text-gray-300 uppercase tracking-widest">
+                  Perfil de Inyección
+                </h5>
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                  <div className="w-2 h-2 rounded-full bg-gray-600"></div>
                 </div>
-              ))}
+              </div>
 
-              <div className="text-gray-300 text-left">Posición</div>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <input
-                  key={i}
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1 text-center"
-                  value={pm[`pos${i}`] || ""}
-                  onChange={(e) => handleChange(`pos${i}`, e.target.value)}
-                />
-              ))}
-
-              <div className="text-gray-300 text-left">Presión</div>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <input
-                  key={i}
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1 text-center"
-                  value={pm[`pres${i}`] || ""}
-                  onChange={(e) => handleChange(`pres${i}`, e.target.value)}
-                />
-              ))}
-
-              <div className="text-gray-300 text-left">Velocidad</div>
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <input
-                  key={i}
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1 text-center"
-                  value={pm[`vel${i}`] || ""}
-                  onChange={(e) => handleChange(`vel${i}`, e.target.value)}
-                />
-              ))}
+              <div className="p-1">
+                <table className="w-full">
+                  <thead>
+                    <tr className="text-[10px] text-gray-500 uppercase">
+                      <th className="py-2 w-8">#</th>
+                      <th className="py-2 text-blue-300">
+                        Posición{" "}
+                        <span className="normal-case opacity-50">(mm)</span>
+                      </th>
+                      <th className="py-2 text-green-300">
+                        Presión{" "}
+                        <span className="normal-case opacity-50">(bar)</span>
+                      </th>
+                      <th className="py-2 text-purple-300">
+                        Velocidad{" "}
+                        <span className="normal-case opacity-50">(%)</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="space-y-1">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <tr key={i} className="group">
+                        <td className="p-1 text-center font-bold text-gray-600 text-xs font-mono group-hover:text-white transition-colors">
+                          {i}
+                        </td>
+                        <td className="p-1">
+                          <MetricInput
+                            value={pm[`pos${i}`]}
+                            onChange={(e) =>
+                              handleChange(`pos${i}`, e.target.value)
+                            }
+                            className="border-slate-800 bg-slate-900 group-hover:border-blue-500/50"
+                          />
+                        </td>
+                        <td className="p-1">
+                          <MetricInput
+                            value={pm[`pres${i}`]}
+                            onChange={(e) =>
+                              handleChange(`pres${i}`, e.target.value)
+                            }
+                            className="border-slate-800 bg-slate-900 group-hover:border-green-500/50"
+                          />
+                        </td>
+                        <td className="p-1">
+                          <MetricInput
+                            value={pm[`vel${i}`]}
+                            onChange={(e) =>
+                              handleChange(`vel${i}`, e.target.value)
+                            }
+                            className="border-slate-800 bg-slate-900 group-hover:border-purple-500/50"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 border-t border-slate-600 pt-3">
-              <div>
-                <label className="text-gray-400 block mb-1">
-                  Temperaturas (separar con /)
+            {/* 2. PANEL LATERAL (Derecha) */}
+            <div className="lg:col-span-5 flex flex-col gap-4">
+              {/* Caja: TEMPERATURAS */}
+              <div className="bg-slate-900 rounded-lg p-4 border border-slate-700 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-2 opacity-10 text-orange-500">
+                  <FaFire size={40} />
+                </div>
+                <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-2 block">
+                  Temperaturas de Zona
                 </label>
-                <input
-                  type="text"
-                  className="w-full bg-slate-900 text-white rounded p-2"
-                  placeholder="182 / 171 / 177..."
+                <textarea
+                  rows={2}
+                  className="w-full bg-slate-950 border border-slate-800 text-orange-100 rounded p-3 text-sm font-mono focus:border-orange-500 focus:outline-none placeholder-gray-800 resize-none"
+                  placeholder="Ej: 180 / 175 / 170 / 165 / 160"
                   value={pm.temperaturas_zonas || ""}
                   onChange={(e) =>
                     handleChange("temperaturas_zonas", e.target.value)
                   }
                 />
+                <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-blue-400 uppercase">
+                    Chiller Matriz
+                  </span>
+                  <div className="w-24">
+                    <MetricInput
+                      value={pm.chiller_matriz}
+                      onChange={(e) =>
+                        handleChange("chiller_matriz", e.target.value)
+                      }
+                      placeholder="°C"
+                      className="text-right text-blue-200"
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="text-gray-400 block mb-1">
-                  Chiller Matriz
-                </label>
-                <input
-                  type="text"
-                  className="w-full bg-slate-900 text-white rounded p-2"
-                  placeholder="Sin datos..."
-                  value={pm.chiller_matriz || ""}
-                  onChange={(e) =>
-                    handleChange("chiller_matriz", e.target.value)
-                  }
-                />
-              </div>
-            </div>
 
-            <div className="bg-slate-800 p-2 rounded border border-slate-600">
-              <label className="text-purple-400 font-bold block mb-2">
-                Carga con Succión (Posición #5)
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                <input
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1"
-                  placeholder="Pos"
-                  value={pm.carga_pos || ""}
-                  onChange={(e) => handleChange("carga_pos", e.target.value)}
-                />
-                <input
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1"
-                  placeholder="Pres"
-                  value={pm.carga_pres || ""}
-                  onChange={(e) => handleChange("carga_pres", e.target.value)}
-                />
-                <input
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1"
-                  placeholder="Vel"
-                  value={pm.carga_vel || ""}
-                  onChange={(e) => handleChange("carga_vel", e.target.value)}
-                />
-                <input
-                  type="text"
-                  className="bg-slate-900 text-white rounded p-1"
-                  placeholder="P. Atrás"
-                  value={pm.carga_pres_atras || ""}
-                  onChange={(e) =>
-                    handleChange("carga_pres_atras", e.target.value)
-                  }
-                />
+              {/* Caja: CARGA Y SUCCIÓN */}
+              <div className="bg-slate-800 rounded-lg border border-slate-600 overflow-hidden shadow-inner">
+                <div className="bg-slate-700 px-3 py-1.5 flex justify-between items-center">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                    Carga / Succión (Pos #5)
+                  </span>
+                  <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>
+                </div>
+                <div className="p-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[9px] text-gray-400 uppercase block mb-1">
+                      Posición
+                    </span>
+                    <MetricInput
+                      value={pm.carga_pos}
+                      onChange={(e) =>
+                        handleChange("carga_pos", e.target.value)
+                      }
+                      className="border-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-gray-400 uppercase block mb-1">
+                      Presión
+                    </span>
+                    <MetricInput
+                      value={pm.carga_pres}
+                      onChange={(e) =>
+                        handleChange("carga_pres", e.target.value)
+                      }
+                      className="border-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-gray-400 uppercase block mb-1">
+                      Velocidad
+                    </span>
+                    <MetricInput
+                      value={pm.carga_vel}
+                      onChange={(e) =>
+                        handleChange("carga_vel", e.target.value)
+                      }
+                      className="border-slate-600"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-gray-400 uppercase block mb-1">
+                      P. Atrás
+                    </span>
+                    <MetricInput
+                      value={pm.carga_pres_atras}
+                      onChange={(e) =>
+                        handleChange("carga_pres_atras", e.target.value)
+                      }
+                      className="border-slate-600"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-700/50">
           <button
             onClick={() => setIsEditingParams(false)}
-            className="px-3 py-1 text-gray-400 hover:text-white"
+            className="px-4 py-2 text-gray-400 hover:text-white transition-colors text-xs font-bold uppercase tracking-wider"
           >
             Cancelar
           </button>
           <button
             onClick={handleSaveParams}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow-lg shadow-blue-900/20 flex items-center gap-2 transition-transform active:scale-95 text-xs font-bold uppercase tracking-wider"
           >
-            Guardar Cambios
+            <FaSave /> Guardar Parámetros
           </button>
         </div>
       </div>
