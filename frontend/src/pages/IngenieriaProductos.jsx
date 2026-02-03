@@ -39,6 +39,17 @@ import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
+// --- COMPONENTE INPUT FUERA DE LA FUNCIÓN PRINCIPAL ---
+const MetricInput = ({ value, onChange, placeholder, className = "" }) => (
+  <input
+    type="text"
+    className={`w-full bg-slate-950 border border-slate-700 text-white rounded px-2 py-1.5 text-center text-sm font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder-gray-700 ${className}`}
+    value={value || ""}
+    onChange={onChange}
+    placeholder={placeholder || "-"}
+  />
+);
+
 // --- SUB-COMPONENTE: MODAL FICHA TÉCNICA AVANZADO ---
 function FichaTecnicaModal({ semiId, onClose }) {
   const [data, setData] = useState(null);
@@ -91,7 +102,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
     }
   };
 
-  // --- GENERAR PDF "SINGLE PAGE" BALANCEADO ---
+  // --- GENERAR PDF "SINGLE PAGE" PROLIJO Y AIREADO ---
   const imprimirFichaTecnica = () => {
     if (!data) return;
     const { producto, receta, specs = {}, ultima_version_receta } = data;
@@ -102,27 +113,31 @@ function FichaTecnicaModal({ semiId, onClose }) {
     const grisClaro = [241, 245, 249];
     const rojoAlerta = [185, 28, 28];
 
-    // --- 1. ENCABEZADO (22mm) ---
+    // --- 1. ENCABEZADO (24mm - Más alto) ---
     doc.setFillColor(...azulOscuro);
-    doc.rect(0, 0, 210, 22, "F");
+    doc.rect(0, 0, 210, 24, "F");
 
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
-    doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 10);
+    doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 11);
 
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 16);
+    doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 18);
 
     const fechaImpresion = new Date().toLocaleDateString("es-AR");
     doc.setFontSize(8);
-    doc.text(`Impreso: ${fechaImpresion}`, 195, 10, { align: "right" });
-    doc.text("Documento Controlado", 195, 16, { align: "right" });
+    doc.text(`Impreso: ${fechaImpresion}`, 195, 8, { align: "right" });
 
-    let yPos = 30;
+    // --- LEYENDA AUTORIZACIÓN ---
+    doc.text("Documento Controlado", 195, 13, { align: "right" });
+    doc.setFont("helvetica", "italic");
+    doc.text("Autorizado por: Jefe de Producción", 195, 18, { align: "right" });
 
-    // --- 2. INFO PRODUCTO Y VERSIÓN (Fila Superior) ---
+    let yPos = 34;
+
+    // --- 2. INFO PRODUCTO Y VERSIÓN ---
     doc.setTextColor(0, 0, 0);
 
     // Columna Izq: Datos Producto
@@ -131,27 +146,27 @@ function FichaTecnicaModal({ semiId, onClose }) {
     doc.text(`${producto.nombre}`, 14, yPos);
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 5);
+    doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 6);
 
-    // Columna Der: Versión Receta (Caja Gris)
+    // Columna Der: Versión Receta (Caja Gris con más padding)
     doc.setDrawColor(200);
     doc.setFillColor(...grisClaro);
     doc.roundedRect(120, yPos - 6, 75, 14, 1, 1, "FD");
 
     doc.setFontSize(8);
     doc.setTextColor(100);
-    doc.text("RECETA VIGENTE:", 123, yPos - 1);
+    doc.text("RECETA VIGENTE:", 124, yPos);
     doc.setTextColor(0);
     doc.setFont("helvetica", "bold");
     doc.text(
       ultima_version_receta?.nombre_version || "Estándar / Inicial",
-      123,
-      yPos + 4,
+      124,
+      yPos + 5,
     );
 
-    yPos += 12;
+    yPos += 16;
 
-    // --- 3. SPECS VISUALES (Barra completa) ---
+    // --- 3. SPECS VISUALES (Tabla con más padding) ---
     const specsData = [
       [
         `REFLECTIVA: ${specs.tipo_reflectiva || "N/A"}`,
@@ -163,9 +178,10 @@ function FichaTecnicaModal({ semiId, onClose }) {
       startY: yPos,
       body: specsData,
       theme: "plain",
+      // cellPadding: 3 para dar aire
       styles: {
         fontSize: 8,
-        cellPadding: 2,
+        cellPadding: 3,
         fontStyle: "bold",
         textColor: [50, 50, 50],
         halign: "center",
@@ -178,7 +194,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
       margin: { left: 14, right: 14 },
     });
 
-    yPos = doc.lastAutoTable.finalY + 8;
+    yPos = doc.lastAutoTable.finalY + 12; // Mucho aire antes del bloque central
 
     // ============================================================
     //    BLOQUE CENTRAL: 2 COLUMNAS (MÁQUINA vs RECETA)
@@ -193,16 +209,16 @@ function FichaTecnicaModal({ semiId, onClose }) {
 
     // --- COLUMNA IZQUIERDA: PARÁMETROS MÁQUINA ---
     doc.setFillColor(...azulOscuro);
-    doc.rect(colLeftX, yPos, colWidthLeft, 6, "F");
+    doc.rect(colLeftX, yPos, colWidthLeft, 7, "F"); // Header más alto (7mm)
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
     doc.text(
       `PARÁMETROS ${tipo_proceso === "INYECCION" ? "INYECCIÓN" : "ROTOMOLDEO"}`,
-      colLeftX + 2,
-      yPos + 4,
+      colLeftX + 3,
+      yPos + 4.5,
     );
 
-    let yMachine = yPos + 7;
+    let yMachine = yPos + 8; // Empezamos la tabla más abajo del header
 
     if (tipo_proceso === "INYECCION") {
       const inyData = [
@@ -213,42 +229,40 @@ function FichaTecnicaModal({ semiId, onClose }) {
         ["#5", pm.pos5 || "-", pm.pres5 || "-", pm.vel5 || "-"],
         ["#6", pm.pos6 || "-", pm.pres6 || "-", pm.vel6 || "-"],
       ];
-
       autoTable(doc, {
         startY: yMachine,
         head: [["#", "Pos", "Pres", "Vel"]],
         body: inyData,
         theme: "grid",
-        headStyles: { fillColor: [80, 80, 80], fontSize: 8, cellPadding: 1 },
-        styles: { fontSize: 8, halign: "center", cellPadding: 1 },
+        headStyles: { fillColor: [80, 80, 80], fontSize: 8, cellPadding: 2 },
+        styles: { fontSize: 8, halign: "center", cellPadding: 2 },
         margin: { left: colLeftX },
         tableWidth: colWidthLeft,
       });
+      yMachine = doc.lastAutoTable.finalY + 6;
 
-      yMachine = doc.lastAutoTable.finalY + 4;
-
-      // Datos extra Inyeccion
       doc.setFontSize(8);
       doc.setTextColor(0);
       doc.setFont("helvetica", "bold");
       doc.text("TEMPERATURAS:", colLeftX, yMachine);
       doc.setFont("helvetica", "normal");
       doc.text(pm.temperaturas_zonas || "-", colLeftX + 30, yMachine);
-      yMachine += 4;
+      yMachine += 5; // Más espacio entre líneas
 
       doc.setFont("helvetica", "bold");
       doc.text("CHILLER:", colLeftX, yMachine);
       doc.setFont("helvetica", "normal");
       doc.text(pm.chiller_matriz || "-", colLeftX + 30, yMachine);
-      yMachine += 5;
+      yMachine += 6;
 
-      // Carga Succión
+      // --- ARREGLO CUADRADO GRIS: TABLA LIMPIA ---
+      // Simplemente una tabla estándar con header normal, sin rectángulos manuales
       autoTable(doc, {
         startY: yMachine,
         head: [["CARGA / SUCCIÓN #5", "Pos", "Pres", "Vel", "P. Atrás"]],
         body: [
           [
-            "",
+            "", // Columna 1 vacía intencional pero sin ocultarla con width 0.1
             pm.carga_pos || "-",
             pm.carga_pres || "-",
             pm.carga_vel || "-",
@@ -258,78 +272,95 @@ function FichaTecnicaModal({ semiId, onClose }) {
         theme: "grid",
         headStyles: {
           fontStyle: "bold",
-          fillColor: [220, 220, 220],
-          textColor: 0,
+          fillColor: [50, 50, 50],
+          textColor: 255,
           fontSize: 7,
           halign: "center",
         },
-        styles: {
-          fontSize: 7,
-          halign: "center",
-          cellPadding: 1,
-        },
-        columnStyles: { 0: { cellWidth: 0.1 } },
+        styles: { fontSize: 8, halign: "center", cellPadding: 2 },
+        columnStyles: { 0: { cellWidth: 5, fillColor: [240, 240, 240] } }, // Pequeña columna gris visual
         margin: { left: colLeftX },
         tableWidth: colWidthLeft,
       });
       yMachine = doc.lastAutoTable.finalY;
     } else {
-      // --- ROTOMOLDEO ---
+      // --- ROTOMOLDEO (FIX VARIABLES) ---
+      // AQUI ESTABA EL ERROR: Usar las claves correctas para etapas 3 y 4
       const rotoData = [
-        ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v1m2 || "-", pm.inv1 || "-"],
-        ["2", pm.t2 || "-", pm.v2m1 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
-        ["3", pm.t3 || "-", pm.v3m1 || "-", pm.v3m2 || "-", pm.inv3 || "-"],
-        ["4", pm.t4 || "-", pm.v4m1 || "-", pm.v4m2 || "-", pm.inv4 || "-"],
+        ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v2m1 || "-", pm.inv1 || "-"],
+        ["2", pm.t2 || "-", pm.v1m2 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
+        // CORREGIDO: pm.v1m3 y pm.v2m3
+        ["3", pm.t3 || "-", pm.v1m3 || "-", pm.v2m3 || "-", pm.inv3 || "-"],
+        // CORREGIDO: pm.v1m4 y pm.v2m4
+        ["4", pm.t4 || "-", pm.v1m4 || "-", pm.v2m4 || "-", pm.inv4 || "-"],
       ];
+
+      const tiempoCocinado =
+        (Number(pm.t1) || 0) +
+        (Number(pm.t2) || 0) +
+        (Number(pm.t3) || 0) +
+        (Number(pm.t4) || 0);
+      const tiempoEnfriado = Number(pm.frio_min) || 0;
+      const tiempoCiclo = tiempoCocinado + tiempoEnfriado;
 
       autoTable(doc, {
         startY: yMachine,
-        head: [["Etapa", "T (minutos)", "V1 %", "V2 %", "Inv %"]],
+        head: [["Etapa", "T (min)", "V1 %", "V2 %", "Inv %"]],
         body: rotoData,
         theme: "striped",
-        headStyles: { fillColor: [80, 80, 80], fontSize: 8, cellPadding: 1 },
-        styles: { fontSize: 8, halign: "center", cellPadding: 1.5 },
+        headStyles: { fillColor: [80, 80, 80], fontSize: 8, cellPadding: 2 },
+        styles: { fontSize: 8, halign: "center", cellPadding: 2 },
         margin: { left: colLeftX },
         tableWidth: colWidthLeft,
       });
 
-      yMachine = doc.lastAutoTable.finalY + 3;
+      yMachine = doc.lastAutoTable.finalY + 4;
 
       autoTable(doc, {
         startY: yMachine,
-        head: [["ENFRIAMIENTO (minutos)", "TEMP. HORNO"]],
-        body: [[pm.frio_min || "-", (pm.temp_horno || "-") + " °C"]],
+        head: [
+          ["ENFRIAMIENTO", "TEMP. HORNO", "T. COCINADO", "T. CICLO TOTAL"],
+        ],
+        body: [
+          [
+            pm.frio_min ? `${pm.frio_min} min` : "-",
+            (pm.temp_horno || "-") + " °C",
+            `${tiempoCocinado} min`,
+            `${tiempoCiclo} min`,
+          ],
+        ],
         theme: "grid",
-        headStyles: {
-          fillColor: [100, 100, 100],
+        headStyles: { fillColor: [100, 100, 100], fontSize: 7, cellPadding: 2 },
+        styles: {
           fontSize: 8,
-          cellPadding: 1,
+          halign: "center",
+          fontStyle: "bold",
+          cellPadding: 2,
         },
-        styles: { fontSize: 8, halign: "center" },
         margin: { left: colLeftX },
         tableWidth: colWidthLeft,
       });
       yMachine = doc.lastAutoTable.finalY;
     }
 
-    // --- COLUMNA DERECHA: RECETA (INGENIERÍA) ---
+    // DERECHA: RECETA
     doc.setFillColor(...azulOscuro);
-    doc.rect(colRightX, startYBlock, colWidthRight, 6, "F");
+    doc.rect(colRightX, startYBlock, colWidthRight, 7, "F");
     doc.setTextColor(255, 255, 255);
-    doc.text("INGENIERÍA (RECETA)", colRightX + 2, startYBlock + 4);
-
-    let yRecipe = startYBlock + 7;
+    doc.text("INGENIERÍA (RECETA)", colRightX + 3, startYBlock + 4.5);
+    let yRecipe = startYBlock + 8;
 
     const tablaReceta = receta.map((item) => [
       item.nombre,
-      `${Number(item.cantidad).toFixed(2)}`, // <--- CAMBIO AQUÍ: 2 DECIMALES
+      `${Number(item.cantidad).toFixed(2)}`,
     ]);
     autoTable(doc, {
       startY: yRecipe,
       head: [["INSUMO", "CANTIDAD"]],
       body: tablaReceta,
       theme: "striped",
-      styles: { fontSize: 8, cellPadding: 1.5 },
+      // Padding 2 para legibilidad
+      styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
       columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
       margin: { left: colRightX },
@@ -337,74 +368,88 @@ function FichaTecnicaModal({ semiId, onClose }) {
     });
     yRecipe = doc.lastAutoTable.finalY;
 
-    // --- SINCRONIZAR Y ---
-    yPos = Math.max(yMachine, yRecipe) + 8;
+    // SINCRONIZAR Y (El mayor de los dos bloques + margen grande)
+    yPos = Math.max(yMachine, yRecipe) + 12;
 
     // ============================================================
     //    BLOQUE INFERIOR: PROCEDIMIENTO Y PROBLEMAS
     // ============================================================
 
     // --- PROCEDIMIENTO ---
-    if (yPos > 210) {
+    // Si queda poco espacio, forzamos salto
+    if (yPos > 190) {
       doc.addPage();
       yPos = 20;
     }
 
     doc.setFillColor(...azulOscuro);
-    doc.rect(14, yPos, 182, 6, "F");
+    doc.rect(14, yPos, 182, 7, "F");
     doc.setTextColor(255, 255, 255);
-    doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4);
-    yPos += 10;
+    doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4.5);
+    yPos += 12;
 
     doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-    doc.setLineHeightFactor(1.6); // Interlineado para más aire
+
+    // **INTERLINEADO AMPLIO (1.8)**
+    doc.setLineHeightFactor(1.8);
 
     let textoProcedimiento = "";
     if (tipo_proceso === "INYECCION") {
-      textoProcedimiento = `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO. Se selecciona en la librería el modelo a fabricar. Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso, acudir al Encargado. Si no se encuentra, dejar el artículo identificado y separado correctamente para su posterior análisis.`;
+      textoProcedimiento = `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO DE PLANTA. Se selecciona en la librería el modelo a fabricar (constatando parámetros). Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso o finalización, acudir al Encargado de Planta. En caso de no encontrarse en ese momento, dejar el artículo identificado y separado correctamente para su posterior análisis y evaluación.`;
     } else {
-      textoProcedimiento = `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema, acudir al Encargado. Si no está, dejar el artículo identificado y separado para análisis.`;
+      textoProcedimiento = `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema con el proceso o finalización, acudir al Encargado de Planta. En caso de no encontrarse en ese momento, dejar el artículo identificado y separado correctamente para su posterior análisis y evaluación.`;
     }
 
     const splitText = doc.splitTextToSize(textoProcedimiento, 182);
     doc.text(splitText, 14, yPos);
 
-    yPos += splitText.length * 4.5 + 8; // Ajuste espaciado
-    doc.setLineHeightFactor(1.15); // Reset interlineado
+    // Calculamos espacio usado con el interlineado 1.8 (aprox 6mm por linea)
+    yPos += splitText.length * 6 + 10;
+
+    doc.setLineHeightFactor(1.15); // Reset a normal
 
     // --- SOLUCIÓN DE PROBLEMAS ---
-    if (yPos > 240) yPos = 240;
+    // Si nos pasamos de la hoja, forzamos tope o nueva pag
+    if (yPos > 230) {
+      // Si hay muy poco espacio, nueva pagina. Si hay algo, ajustamos.
+      if (yPos > 250) {
+        doc.addPage();
+        yPos = 20;
+      }
+    }
 
     let problemas = [];
     if (tipo_proceso === "INYECCION") {
       problemas = [
-        ["Agujereada", "Regulación de carga, aire y presión"],
+        ["Agujereada", "Regulación carga/aire/presión"],
         ["Manchada", "Avisar y esperar limpieza color. Anotar."],
         ["Doblada", "Darle más enfriado"],
         ["Quemada", "Consultar temperaturas"],
       ];
     } else {
       problemas = [
-        ["Cruda", "Subir tiempo cocinado (máx 2 min)"],
-        ["Quemada", "Bajar tiempo cocinado (máx 2 min)"],
-        ["Doblada", "Revisar silicona / Exceso temp"],
-        ["Incompleta", "Revisar respiradores y cierres"],
+        ["Cruda", "Subir cocinado (max 2 min)"],
+        ["Quemada", "Bajar cocinado (max 2 min)"],
+        ["Doblada", "Revisar silicona / Temp"],
+        ["Incompleta", "Revisar respiradores/cierres"],
       ];
     }
 
-    // Calcular altura caja
-    const problemRowHeight = 9;
-    const problemHeaderHeight = 10;
+    // Calculamos altura caja generosa
+    const problemRowHeight = 12; // Altura de fila grande
+    const problemHeaderHeight = 7;
     const problemBoxHeight =
       problemHeaderHeight +
       Math.ceil(problemas.length / 2) * problemRowHeight +
-      4;
+      5;
 
-    // Caja
+    // Header Caja
     doc.setFillColor(...rojoAlerta);
-    doc.rect(14, yPos, 182, 6, "F");
+    doc.rect(14, yPos, 182, 7, "F");
+
+    // Borde Caja
     doc.setDrawColor(...rojoAlerta);
     doc.setLineWidth(0.5);
     doc.rect(14, yPos, 182, problemBoxHeight);
@@ -412,15 +457,15 @@ function FichaTecnicaModal({ semiId, onClose }) {
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4, {
+    doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4.5, {
       align: "center",
     });
 
-    yPos += 11;
+    yPos += 14; // Margen interno superior generoso
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(8);
 
-    // Grid problemas
+    // Grid de Problemas con mucho aire vertical
     problemas.forEach(([problema, solucion], i) => {
       const xOffset = i % 2 === 0 ? 20 : 110;
       const yOffset = yPos + Math.floor(i / 2) * problemRowHeight;
@@ -428,25 +473,28 @@ function FichaTecnicaModal({ semiId, onClose }) {
       doc.setFont("helvetica", "bold");
       doc.text(`• ${problema}:`, xOffset, yOffset);
       doc.setFont("helvetica", "normal");
-      doc.text(`${solucion}`, xOffset, yOffset + 3.5);
+      doc.text(`${solucion}`, xOffset, yOffset + 4);
     });
 
-    // Disclaimer
-    yPos += Math.ceil(problemas.length / 2) * problemRowHeight + 6;
+    // Disclaimer final (FUERA DE LA CAJA O AL PIE DE ELLA)
+    // Calculamos posición segura debajo de la caja
+    const footerY =
+      yPos + Math.ceil(problemas.length / 2) * problemRowHeight + 10;
+
     doc.setFontSize(7);
     doc.setFont("helvetica", "italic");
     doc.setTextColor(100);
     doc.text(
       "En todos los casos consultar previamente con un superior.",
       105,
-      yPos,
+      footerY,
       { align: "center" },
     );
 
     doc.save(`Ficha_${producto.nombre.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // --- RENDER FORMULARIO DE EDICIÓN (PANEL DE CONTROL INDUSTRIAL) ---
+  // --- RENDER FORMULARIO DE EDICIÓN ---
   const renderEditForm = () => {
     const isRot = editForm.tipo_proceso === "ROTOMOLDEO";
     const pm = editForm.parametros_maquina || {};
@@ -458,20 +506,9 @@ function FichaTecnicaModal({ semiId, onClose }) {
       }));
     };
 
-    // Componente de Input Reutilizable para consistencia
-    const MetricInput = ({ value, onChange, placeholder, className = "" }) => (
-      <input
-        type="text"
-        className={`w-full bg-slate-950 border border-slate-700 text-white rounded px-2 py-1.5 text-center text-sm font-mono focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none transition-all placeholder-gray-700 ${className}`}
-        value={value || ""}
-        onChange={onChange}
-        placeholder={placeholder || "-"}
-      />
-    );
-
     return (
       <div className="bg-slate-800/80 p-5 rounded-xl mt-4 border border-slate-700 shadow-2xl animate-in fade-in">
-        {/* HEADER DEL PANEL */}
+        {/* HEADER */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-600/20 rounded-lg text-blue-400">
@@ -505,9 +542,8 @@ function FichaTecnicaModal({ semiId, onClose }) {
         </div>
 
         {isRot ? (
-          /* ==================== FORMULARIO ROTOMOLDEO ==================== */
+          /* ==================== ROTOMOLDEO ==================== */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* COLUMNA PRINCIPAL (TABLA) */}
             <div className="lg:col-span-8 bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
               <div className="bg-slate-900 p-2 border-b border-slate-700">
                 <h5 className="text-xs font-bold text-gray-400 uppercase text-center tracking-widest">
@@ -605,7 +641,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
               </table>
             </div>
 
-            {/* COLUMNA LATERAL (GLOBALES) */}
             <div className="lg:col-span-4 space-y-4">
               <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
                 <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-2 block flex items-center gap-2">
@@ -634,7 +669,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
                   />
                   <span className="text-gray-500 text-xs w-10">Min.</span>
                 </div>
-
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
                   <div>
                     <span className="text-[9px] text-gray-500 uppercase block mb-1">
@@ -661,9 +695,8 @@ function FichaTecnicaModal({ semiId, onClose }) {
             </div>
           </div>
         ) : (
-          /* ==================== FORMULARIO INYECCIÓN (ESTILO HMI) ==================== */
+          /* ==================== INYECCIÓN ==================== */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* 1. MATRIZ DE ETAPAS (Izquierda) */}
             <div className="lg:col-span-7 bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
               <div className="bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
                 <h5 className="text-xs font-bold text-gray-300 uppercase tracking-widest">
@@ -674,7 +707,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
                   <div className="w-2 h-2 rounded-full bg-gray-600"></div>
                 </div>
               </div>
-
               <div className="p-1">
                 <table className="w-full">
                   <thead>
@@ -734,9 +766,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
               </div>
             </div>
 
-            {/* 2. PANEL LATERAL (Derecha) */}
             <div className="lg:col-span-5 flex flex-col gap-4">
-              {/* Caja: TEMPERATURAS */}
               <div className="bg-slate-900 rounded-lg p-4 border border-slate-700 relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-2 opacity-10 text-orange-500">
                   <FaFire size={40} />
@@ -770,7 +800,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
                 </div>
               </div>
 
-              {/* Caja: CARGA Y SUCCIÓN */}
               <div className="bg-slate-800 rounded-lg border border-slate-600 overflow-hidden shadow-inner">
                 <div className="bg-slate-700 px-3 py-1.5 flex justify-between items-center">
                   <span className="text-[10px] font-bold text-white uppercase tracking-wider">
@@ -884,11 +913,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
                   {producto.nombre}
                 </h2>
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold border ${
-                    producto.tipo_proceso === "INYECCION"
-                      ? "bg-orange-900/50 text-orange-200 border-orange-500"
-                      : "bg-blue-900/50 text-blue-200 border-blue-500"
-                  }`}
+                  className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold border ${producto.tipo_proceso === "INYECCION" ? "bg-orange-900/50 text-orange-200 border-orange-500" : "bg-blue-900/50 text-blue-200 border-blue-500"}`}
                 >
                   {producto.tipo_proceso || "ROTOMOLDEO"}
                 </span>
@@ -931,21 +956,13 @@ function FichaTecnicaModal({ semiId, onClose }) {
               <div className="flex border-b border-slate-700 bg-slate-800/50 mb-4">
                 <button
                   onClick={() => setActiveTab("RECETA")}
-                  className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
-                    activeTab === "RECETA"
-                      ? "text-blue-400 border-b-2 border-blue-400"
-                      : "text-gray-500"
-                  }`}
+                  className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${activeTab === "RECETA" ? "text-blue-400 border-b-2 border-blue-400" : "text-gray-500"}`}
                 >
                   <FaClipboardList /> Receta
                 </button>
                 <button
                   onClick={() => setActiveTab("HISTORIAL")}
-                  className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
-                    activeTab === "HISTORIAL"
-                      ? "text-purple-400 border-b-2 border-purple-400"
-                      : "text-gray-500"
-                  }`}
+                  className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${activeTab === "HISTORIAL" ? "text-purple-400 border-b-2 border-purple-400" : "text-gray-500"}`}
                 >
                   <FaHistory /> Producción
                 </button>
@@ -996,11 +1013,11 @@ function FichaTecnicaModal({ semiId, onClose }) {
   );
 }
 
-// ... (El resto del código del componente principal y auxiliares se mantiene igual)
-
+// ... (El resto del código como Calculadora, Draggable, Droppable y Principal se mantienen IGUAL)
 function CalculadoraMinimosModal({ onClose }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
 
@@ -1072,6 +1089,7 @@ function CalculadoraMinimosModal({ onClose }) {
 
     autoTable(doc, {
       startY: 45,
+      // HEADER CORTO Y SIN SALTOS
       head: [
         [
           "CÓDIGO",
@@ -1084,6 +1102,7 @@ function CalculadoraMinimosModal({ onClose }) {
       ],
       body: tableBody,
       theme: "striped",
+      // MÁRGENES MÍNIMOS PARA ANCHO TOTAL
       margin: { left: 5, right: 5 },
       styles: {
         fontSize: 9,
@@ -1103,6 +1122,7 @@ function CalculadoraMinimosModal({ onClose }) {
       },
       columnStyles: {
         0: { fontStyle: "bold" },
+        // Al quitar los anchos fijos en la mayoría, se adaptarán al 100%
         2: { halign: "center", fontStyle: "bold", textColor: [30, 58, 138] },
         3: { halign: "center", textColor: [100, 116, 139] },
         4: { halign: "center", fontStyle: "bold", textColor: [21, 128, 61] },
@@ -1155,7 +1175,7 @@ function CalculadoraMinimosModal({ onClose }) {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-slate-800 w-full max-w-6xl rounded-2xl border border-slate-600 shadow-2xl flex flex-col max-h-[95vh]"
+        className="bg-slate-800 w-full max-w-6xl rounded-2xl border border-slate-600 shadow-2xl flex flex-col max-h-[95vh]" // Mantiene el diseño ancho en pantalla también
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 border-b border-slate-700 bg-slate-900 flex justify-between items-center rounded-t-2xl">
@@ -1313,6 +1333,7 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
 
       {!isOverlay && (
         <div className="flex gap-1 mr-2">
+          {/* NUEVO: Botón de Historial */}
           {onVerHistorial && (
             <button
               onPointerDown={(e) => {
@@ -1326,6 +1347,7 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
             </button>
           )}
 
+          {/* Botón Ficha Técnica */}
           {onVerFicha && (
             <button
               onPointerDown={(e) => {
@@ -1414,8 +1436,9 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
   );
 }
 
+// --- COMPONENTE PRINCIPAL ---
 export default function IngenieriaProductos() {
-  const navigate = useNavigate();
+  const navigate = useNavigate(); // <--- 2. IMPORTANTE: Inicializamos el hook
   const [productos, setProductos] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -1427,6 +1450,7 @@ export default function IngenieriaProductos() {
   const [filtroDer, setFiltroDer] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeDragId, setActiveDragId] = useState(null);
+
   const [fichaSeleccionada, setFichaSeleccionada] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
 
@@ -1743,6 +1767,7 @@ export default function IngenieriaProductos() {
         </div>
 
         <div className="grid grid-cols-12 gap-6 flex-1 overflow-hidden">
+          {/* COLUMNA IZQUIERDA */}
           <div className="col-span-3 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
             <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
               <h3
@@ -1799,9 +1824,11 @@ export default function IngenieriaProductos() {
                       </span>
 
                       <div className="flex items-center gap-1">
+                        {/* BOTÓN HISTORIAL (Hoja de Vida) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            // Obtenemos el nombre limpio sea Producto o Semielaborado
                             const nombreParaUrl =
                               modo === "PRODUCTO" ? item : item.nombre;
                             navigate(
@@ -1818,6 +1845,7 @@ export default function IngenieriaProductos() {
                           <FaHistory />
                         </button>
 
+                        {/* BOTÓN FICHA TÉCNICA (Solo Semielaborados) */}
                         {modo === "SEMIELABORADO" && (
                           <button
                             onClick={(e) => {
@@ -1842,6 +1870,7 @@ export default function IngenieriaProductos() {
             </div>
           </div>
 
+          {/* COLUMNA CENTRAL */}
           <div className="col-span-5 flex flex-col bg-slate-900/50 rounded-xl border border-slate-700 overflow-hidden shadow-lg relative">
             <div className="p-5 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
               <div>
@@ -1895,6 +1924,7 @@ export default function IngenieriaProductos() {
             </div>
           </div>
 
+          {/* COLUMNA DERECHA */}
           <div className="col-span-4 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
             <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
               <h3

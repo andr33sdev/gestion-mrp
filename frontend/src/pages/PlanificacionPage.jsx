@@ -68,7 +68,7 @@ export default function PlanificacionPage({ onNavigate }) {
   const [showGanttModal, setShowGanttModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
 
-  // ... (Efectos de carga y lógica de MRP se mantienen igual) ...
+  // ... (Efectos de carga) ...
   useEffect(() => {
     const cargarDatosMaestros = async () => {
       try {
@@ -147,7 +147,7 @@ export default function PlanificacionPage({ onNavigate }) {
       .sort((a, b) => a.balance - b.balance);
   }, [currentPlanItems, recetasMap, allMPs]);
 
-  // --- GENERADOR PDF ORDEN DE PRODUCCIÓN (PROFESIONAL) ---
+  // --- GENERADOR PDF ORDEN DE PRODUCCIÓN ---
   const generarPDFOrden = () => {
     const doc = new jsPDF();
     const fecha = new Date().toLocaleDateString("es-AR");
@@ -155,40 +155,29 @@ export default function PlanificacionPage({ onNavigate }) {
       hour: "2-digit",
       minute: "2-digit",
     });
-
-    // Colores corporativos
     const azulOscuro = [30, 41, 59];
     const grisClaro = [241, 245, 249];
     const bordeGris = [203, 213, 225];
 
-    // --- 1. ENCABEZADO ---
     doc.setFillColor(...azulOscuro);
     doc.rect(0, 0, 210, 30, "F");
-
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
     doc.text("ORDEN DE PRODUCCIÓN", 14, 18);
-
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.text("PLANIFICACIÓN Y CONTROL", 14, 24);
-
-    // Datos del Plan (Derecha)
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
     doc.text(`#${currentPlanNombre.toUpperCase()}`, 195, 18, {
       align: "right",
     });
-
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(`Emisión: ${fecha} - ${hora} hs`, 195, 24, { align: "right" });
 
-    // --- 2. RESUMEN EJECUTIVO (Caja) ---
     let yPos = 40;
-
-    // Totales
     const totalItems = currentPlanItems.length;
     const totalUnidades = currentPlanItems.reduce(
       (acc, i) => acc + Number(i.cantidad),
@@ -201,18 +190,12 @@ export default function PlanificacionPage({ onNavigate }) {
     const pctAvance =
       totalUnidades > 0 ? Math.round((totalAvance / totalUnidades) * 100) : 0;
 
-    // Dibujar caja resumen
     doc.setDrawColor(...bordeGris);
     doc.setFillColor(...grisClaro);
     doc.roundedRect(14, yPos, 182, 18, 2, 2, "FD");
-
     doc.setTextColor(50);
     doc.setFontSize(9);
-
-    // Columnas de la caja
     const colW = 182 / 4;
-
-    // Items
     doc.setFont("helvetica", "normal");
     doc.text("TOTAL ÍTEMS", 14 + colW * 0.5, yPos + 6, { align: "center" });
     doc.setFont("helvetica", "bold");
@@ -220,20 +203,14 @@ export default function PlanificacionPage({ onNavigate }) {
     doc.text(String(totalItems), 14 + colW * 0.5, yPos + 12, {
       align: "center",
     });
-
-    // Unidades
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text("OBJETIVO (Unid)", 14 + colW * 1.5, yPos + 6, {
-      align: "center",
-    });
+    doc.text("OBJETIVO (Unid)", 14 + colW * 1.5, yPos + 6, { align: "center" });
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     doc.text(String(totalUnidades), 14 + colW * 1.5, yPos + 12, {
       align: "center",
     });
-
-    // Estado
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text("ESTADO", 14 + colW * 2.5, yPos + 6, { align: "center" });
@@ -242,33 +219,27 @@ export default function PlanificacionPage({ onNavigate }) {
     doc.text(currentPlanEstado, 14 + colW * 2.5, yPos + 12, {
       align: "center",
     });
-
-    // Avance
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text("AVANCE ACTUAL", 14 + colW * 3.5, yPos + 6, { align: "center" });
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     doc.text(`${pctAvance}%`, 14 + colW * 3.5, yPos + 12, { align: "center" });
-
     yPos += 28;
 
-    // --- 3. DETALLE DE PRODUCCIÓN (TABLA PRINCIPAL) ---
     doc.setFontSize(11);
     doc.setTextColor(30);
     doc.setFont("helvetica", "bold");
     doc.text("1. DETALLE DE PRODUCCIÓN", 14, yPos);
     yPos += 2;
-
     const tableData = currentPlanItems.map((i) => [
       i.semielaborado.codigo,
       i.semielaborado.nombre,
       i.cantidad,
-      "", // Espacio para anotar REAL
-      "", // Espacio para LOTE/OBS
-      `${i.producido} (${((i.producido / i.cantidad) * 100).toFixed(0)}%)`, // Info sistema
+      "",
+      "",
+      `${i.producido} (${((i.producido / i.cantidad) * 100).toFixed(0)}%)`,
     ]);
-
     autoTable(doc, {
       startY: yPos + 2,
       head: [
@@ -299,71 +270,50 @@ export default function PlanificacionPage({ onNavigate }) {
         0: { width: 25, fontStyle: "bold" },
         1: { width: 55 },
         2: { width: 15, halign: "center", fontStyle: "bold" },
-        3: { width: 25 }, // Columna vacía para escribir
-        4: { width: 35 }, // Columna vacía para escribir
+        3: { width: 25 },
+        4: { width: 35 },
         5: { width: 25, halign: "right", fontSize: 8, textColor: 100 },
       },
     });
-
     yPos = doc.lastAutoTable.finalY + 15;
 
-    // --- 4. MATERIALES NECESARIOS (MRP - KITTING) ---
-    // Chequeamos si entra en la hoja
     if (yPos + 40 > 280) {
       doc.addPage();
       yPos = 20;
     }
-
     doc.setFontSize(11);
     doc.setTextColor(30);
     doc.setFont("helvetica", "bold");
     doc.text("2. MATERIALES REQUERIDOS (PREPARACIÓN)", 14, yPos);
-
-    // Usamos la variable 'explosion' que ya calcula el MRP
-    const mrpData = explosion.map((m) => [
-      m.nombre,
-      m.necesario, // Cantidad total necesaria para el plan
-      m.stock, // Stock actual sistema
-      "", // Checkbox manual
-    ]);
-
+    const mrpData = explosion.map((m) => [m.nombre, m.necesario, m.stock, ""]);
     autoTable(doc, {
       startY: yPos + 4,
       head: [["INSUMO / MATERIA PRIMA", "CANT. TOTAL", "STOCK DISP.", "CHECK"]],
       body: mrpData,
       theme: "striped",
       styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [71, 85, 105], textColor: 255 }, // Slate 600
+      headStyles: { fillColor: [71, 85, 105], textColor: 255 },
       columnStyles: {
         0: { width: 90 },
         1: { width: 30, halign: "right", fontStyle: "bold" },
         2: { width: 30, halign: "right" },
-        3: { width: 20 }, // Para tildar
+        3: { width: 20 },
       },
     });
-
     yPos = doc.lastAutoTable.finalY + 20;
 
-    // --- 5. PIE DE PÁGINA (FIRMAS) ---
     if (yPos + 30 > 280) {
       doc.addPage();
       yPos = 40;
     }
-
     doc.setDrawColor(150);
     doc.setLineWidth(0.5);
-
-    // Firma 1
     doc.line(30, yPos, 80, yPos);
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
     doc.text("RESPONSABLE PRODUCCIÓN", 55, yPos + 5, { align: "center" });
-
-    // Firma 2
     doc.line(130, yPos, 180, yPos);
     doc.text("GERENCIA / CALIDAD", 155, yPos + 5, { align: "center" });
-
-    // Disclaimer final
     doc.setFontSize(7);
     doc.setTextColor(150);
     doc.text(
@@ -372,11 +322,10 @@ export default function PlanificacionPage({ onNavigate }) {
       285,
       { align: "center" },
     );
-
     doc.save(`Orden_Produccion_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // --- GENERADOR PDF MASIVO (FICHAS TÉCNICAS) ---
+  // --- GENERADOR PDF MASIVO (FICHAS TÉCNICAS - BOOK) ---
   const generarFichasMasivas = async () => {
     if (currentPlanItems.length === 0) return alert("El plan está vacío.");
     if (
@@ -387,7 +336,6 @@ export default function PlanificacionPage({ onNavigate }) {
     setGeneratingPDF(true);
 
     try {
-      // 1. Obtener datos de TODOS los productos del plan en paralelo
       const promises = currentPlanItems.map((item) =>
         authFetch(`${API_BASE_URL}/ingenieria/ficha/${item.semielaborado.id}`)
           .then((r) => (r.ok ? r.json() : null))
@@ -397,39 +345,37 @@ export default function PlanificacionPage({ onNavigate }) {
       const resultados = await Promise.all(promises);
       const doc = new jsPDF();
 
-      // 2. Iterar y dibujar cada página
       resultados.forEach((data, index) => {
-        if (!data) return; // Saltar si falló la carga de alguno
-
-        // Si no es el primero, nueva página
+        if (!data) return;
         if (index > 0) doc.addPage();
 
         const { producto, receta, specs = {}, ultima_version_receta } = data;
         const { tipo_proceso, parametros_maquina: pm = {} } = producto;
 
-        // --- AQUÍ VA LA LÓGICA DE DIBUJO DE FICHA (COPIADA Y ADAPTADA) ---
         const azulOscuro = [30, 41, 59];
         const grisClaro = [241, 245, 249];
         const rojoAlerta = [185, 28, 28];
 
         // 1. ENCABEZADO
         doc.setFillColor(...azulOscuro);
-        doc.rect(0, 0, 210, 22, "F");
-
+        doc.rect(0, 0, 210, 24, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(18);
         doc.setFont("helvetica", "bold");
-        doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 10);
+        doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 11);
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
-        doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 16);
-
+        doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 18);
         const fechaImpresion = new Date().toLocaleDateString("es-AR");
         doc.setFontSize(8);
-        doc.text(`Impreso: ${fechaImpresion}`, 195, 10, { align: "right" });
-        doc.text(`Plan: ${currentPlanNombre}`, 195, 16, { align: "right" }); // <--- Agregamos nombre del plan
+        doc.text(`Impreso: ${fechaImpresion}`, 195, 8, { align: "right" });
+        doc.text(`Plan: ${currentPlanNombre}`, 195, 13, { align: "right" }); // Nombre del Plan
+        doc.setFont("helvetica", "italic");
+        doc.text("Autorizado por: Jefe de Producción", 195, 18, {
+          align: "right",
+        });
 
-        let yPos = 30;
+        let yPos = 34;
 
         // 2. INFO PRODUCTO
         doc.setTextColor(0, 0, 0);
@@ -438,23 +384,23 @@ export default function PlanificacionPage({ onNavigate }) {
         doc.text(`${producto.nombre}`, 14, yPos);
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
-        doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 5);
+        doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 6);
 
         doc.setDrawColor(200);
         doc.setFillColor(...grisClaro);
         doc.roundedRect(120, yPos - 6, 75, 14, 1, 1, "FD");
         doc.setFontSize(8);
         doc.setTextColor(100);
-        doc.text("RECETA VIGENTE:", 123, yPos - 1);
+        doc.text("RECETA VIGENTE:", 124, yPos);
         doc.setTextColor(0);
         doc.setFont("helvetica", "bold");
         doc.text(
           ultima_version_receta?.nombre_version || "Estándar / Inicial",
-          123,
-          yPos + 4,
+          124,
+          yPos + 5,
         );
 
-        yPos += 12;
+        yPos += 16;
 
         // 3. SPECS
         const specsData = [
@@ -470,7 +416,7 @@ export default function PlanificacionPage({ onNavigate }) {
           theme: "plain",
           styles: {
             fontSize: 8,
-            cellPadding: 2,
+            cellPadding: 3,
             fontStyle: "bold",
             textColor: [50, 50, 50],
             halign: "center",
@@ -482,9 +428,9 @@ export default function PlanificacionPage({ onNavigate }) {
           },
           margin: { left: 14, right: 14 },
         });
-        yPos = doc.lastAutoTable.finalY + 8;
+        yPos = doc.lastAutoTable.finalY + 12;
 
-        // 4. BLOQUE CENTRAL (2 COLUMNAS)
+        // 4. BLOQUE CENTRAL
         const colLeftX = 14;
         const colRightX = 115;
         const colWidthLeft = 95;
@@ -493,17 +439,15 @@ export default function PlanificacionPage({ onNavigate }) {
 
         // IZQUIERDA: MÁQUINA
         doc.setFillColor(...azulOscuro);
-        doc.rect(colLeftX, yPos, colWidthLeft, 6, "F");
+        doc.rect(colLeftX, yPos, colWidthLeft, 7, "F");
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(9);
         doc.text(
-          `PARÁMETROS ${
-            tipo_proceso === "INYECCION" ? "INYECCIÓN" : "ROTOMOLDEO"
-          }`,
-          colLeftX + 2,
-          yPos + 4,
+          `PARÁMETROS ${tipo_proceso === "INYECCION" ? "INYECCIÓN" : "ROTOMOLDEO"}`,
+          colLeftX + 3,
+          yPos + 4.5,
         );
-        let yMachine = yPos + 7;
+        let yMachine = yPos + 8;
 
         if (tipo_proceso === "INYECCION") {
           const inyData = [
@@ -522,13 +466,13 @@ export default function PlanificacionPage({ onNavigate }) {
             headStyles: {
               fillColor: [80, 80, 80],
               fontSize: 8,
-              cellPadding: 1,
+              cellPadding: 2,
             },
-            styles: { fontSize: 8, halign: "center", cellPadding: 1 },
+            styles: { fontSize: 8, halign: "center", cellPadding: 2 },
             margin: { left: colLeftX },
             tableWidth: colWidthLeft,
           });
-          yMachine = doc.lastAutoTable.finalY + 4;
+          yMachine = doc.lastAutoTable.finalY + 6;
 
           doc.setFontSize(8);
           doc.setTextColor(0);
@@ -536,19 +480,28 @@ export default function PlanificacionPage({ onNavigate }) {
           doc.text("TEMPERATURAS:", colLeftX, yMachine);
           doc.setFont("helvetica", "normal");
           doc.text(pm.temperaturas_zonas || "-", colLeftX + 30, yMachine);
-          yMachine += 4;
+          yMachine += 5;
           doc.setFont("helvetica", "bold");
           doc.text("CHILLER:", colLeftX, yMachine);
           doc.setFont("helvetica", "normal");
           doc.text(pm.chiller_matriz || "-", colLeftX + 30, yMachine);
-          yMachine += 5;
+          yMachine += 6;
 
+          // --- TABLA DE CARGA / SUCCIÓN ARREGLADA (Sin cuadrado gris) ---
+          // Header Manual Gris Oscuro
+          doc.setFillColor(50, 50, 50);
+          doc.rect(colLeftX, yMachine, colWidthLeft, 6, "F");
+          doc.setTextColor(255);
+          doc.setFontSize(7);
+          doc.setFont("helvetica", "bold");
+          doc.text("CARGA CON SUCCIÓN (POS #5)", colLeftX + 2, yMachine + 4);
+
+          // Tabla de datos simple (Sin hacks)
           autoTable(doc, {
-            startY: yMachine,
-            head: [["CARGA / SUCCIÓN #5", "Pos", "Pres", "Vel", "P. Atrás"]],
+            startY: yMachine + 6,
+            head: [["Posición", "Presión", "Velocidad", "P. Atrás"]],
             body: [
               [
-                "",
                 pm.carga_pos || "-",
                 pm.carga_pres || "-",
                 pm.carga_vel || "-",
@@ -563,45 +516,69 @@ export default function PlanificacionPage({ onNavigate }) {
               fontSize: 7,
               halign: "center",
             },
-            styles: { fontSize: 7, halign: "center", cellPadding: 1 },
-            columnStyles: { 0: { cellWidth: 0.1 } },
+            styles: { fontSize: 8, halign: "center", cellPadding: 2 },
             margin: { left: colLeftX },
             tableWidth: colWidthLeft,
           });
           yMachine = doc.lastAutoTable.finalY;
         } else {
+          // --- CORRECCIÓN VARIABLES ROTOMOLDEO ---
+          // Ahora usa las claves v1mX y v2mX para que no aparezcan los "-"
           const rotoData = [
-            ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v1m2 || "-", pm.inv1 || "-"],
-            ["2", pm.t2 || "-", pm.v2m1 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
-            ["3", pm.t3 || "-", pm.v3m1 || "-", pm.v3m2 || "-", pm.inv3 || "-"],
-            ["4", pm.t4 || "-", pm.v4m1 || "-", pm.v4m2 || "-", pm.inv4 || "-"],
+            ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v2m1 || "-", pm.inv1 || "-"],
+            ["2", pm.t2 || "-", pm.v1m2 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
+            ["3", pm.t3 || "-", pm.v1m3 || "-", pm.v2m3 || "-", pm.inv3 || "-"], // <-- Corregido
+            ["4", pm.t4 || "-", pm.v1m4 || "-", pm.v2m4 || "-", pm.inv4 || "-"], // <-- Corregido
           ];
+
+          const tiempoCocinado =
+            (Number(pm.t1) || 0) +
+            (Number(pm.t2) || 0) +
+            (Number(pm.t3) || 0) +
+            (Number(pm.t4) || 0);
+          const tiempoEnfriado = Number(pm.frio_min) || 0;
+          const tiempoCiclo = tiempoCocinado + tiempoEnfriado;
+
           autoTable(doc, {
             startY: yMachine,
-            head: [["Etapa", "T (minutos)", "V1 %", "V2 %", "Inv %"]],
+            head: [["Etapa", "T (min)", "V1 %", "V2 %", "Inv %"]],
             body: rotoData,
             theme: "striped",
             headStyles: {
               fillColor: [80, 80, 80],
-              fontSize: 7,
-              cellPadding: 1,
+              fontSize: 8,
+              cellPadding: 2,
             },
-            styles: { fontSize: 8, halign: "center", cellPadding: 1.5 },
+            styles: { fontSize: 8, halign: "center", cellPadding: 2 },
             margin: { left: colLeftX },
             tableWidth: colWidthLeft,
           });
-          yMachine = doc.lastAutoTable.finalY + 3;
+          yMachine = doc.lastAutoTable.finalY + 4;
           autoTable(doc, {
             startY: yMachine,
-            head: [["ENFRIAMIENTO (minutos)", "TEMP. HORNO"]],
-            body: [[pm.frio_min || "-", (pm.temp_horno || "-") + " °C"]],
+            head: [
+              ["ENFRIAMIENTO", "TEMP. HORNO", "T. COCINADO", "T. CICLO TOTAL"],
+            ],
+            body: [
+              [
+                pm.frio_min ? `${pm.frio_min} min` : "-",
+                (pm.temp_horno || "-") + " °C",
+                `${tiempoCocinado} min`,
+                `${tiempoCiclo} min`,
+              ],
+            ],
             theme: "grid",
             headStyles: {
               fillColor: [100, 100, 100],
               fontSize: 7,
-              cellPadding: 1,
+              cellPadding: 2,
             },
-            styles: { fontSize: 8, halign: "center" },
+            styles: {
+              fontSize: 8,
+              halign: "center",
+              fontStyle: "bold",
+              cellPadding: 2,
+            },
             margin: { left: colLeftX },
             tableWidth: colWidthLeft,
           });
@@ -610,20 +587,20 @@ export default function PlanificacionPage({ onNavigate }) {
 
         // DERECHA: RECETA
         doc.setFillColor(...azulOscuro);
-        doc.rect(colRightX, startYBlock, colWidthRight, 6, "F");
+        doc.rect(colRightX, startYBlock, colWidthRight, 7, "F");
         doc.setTextColor(255, 255, 255);
-        doc.text("INGENIERÍA (RECETA)", colRightX + 2, startYBlock + 4);
-        let yRecipe = startYBlock + 7;
+        doc.text("INGENIERÍA (RECETA)", colRightX + 3, startYBlock + 4.5);
+        let yRecipe = startYBlock + 8;
         const tablaReceta = receta.map((item) => [
           item.nombre,
-          `${Number(item.cantidad).toFixed(2)}`, // 2 DECIMALES
-        ]);
+          `${Number(item.cantidad).toFixed(2)}`,
+        ]); // 2 Decimales
         autoTable(doc, {
           startY: yRecipe,
           head: [["INSUMO", "CANTIDAD"]],
           body: tablaReceta,
           theme: "striped",
-          styles: { fontSize: 8, cellPadding: 1.5 },
+          styles: { fontSize: 8, cellPadding: 2 },
           headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
           columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
           margin: { left: colRightX },
@@ -631,66 +608,75 @@ export default function PlanificacionPage({ onNavigate }) {
         });
         yRecipe = doc.lastAutoTable.finalY;
 
-        yPos = Math.max(yMachine, yRecipe) + 8;
+        yPos = Math.max(yMachine, yRecipe) + 12;
 
         // 5. PROCEDIMIENTO
+        if (yPos > 190) {
+          doc.addPage();
+          yPos = 20;
+        }
         doc.setFillColor(...azulOscuro);
-        doc.rect(14, yPos, 182, 6, "F");
+        doc.rect(14, yPos, 182, 7, "F");
         doc.setTextColor(255, 255, 255);
-        doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4);
-        yPos += 10;
+        doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4.5);
+        yPos += 12;
 
         doc.setTextColor(0, 0, 0);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(9);
-        doc.setLineHeightFactor(1.6); // Interlineado
+        doc.setLineHeightFactor(1.8);
         let textoProcedimiento =
           tipo_proceso === "INYECCION"
-            ? `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO. Se selecciona en la librería el modelo a fabricar. Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso, acudir al Encargado. Si no se encuentra, dejar el artículo identificado y separado correctamente para su posterior análisis.`
-            : `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema, acudir al Encargado. Si no está, dejar el artículo identificado y separado para análisis.`;
+            ? `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO DE PLANTA. Se selecciona en la librería el modelo a fabricar (constatando parámetros). Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso o finalización, acudir al Encargado de Planta. En caso de no encontrarse en ese momento, dejar el artículo identificado y separado correctamente para su posterior análisis y evaluación.`
+            : `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema con el proceso o finalización, acudir al Encargado de Planta. En caso de no encontrarse en ese momento, dejar el artículo identificado y separado correctamente para su posterior análisis y evaluación.`;
 
         const splitText = doc.splitTextToSize(textoProcedimiento, 182);
         doc.text(splitText, 14, yPos);
-        yPos += splitText.length * 4.5 + 8;
-        doc.setLineHeightFactor(1.15); // Reset
+        yPos += splitText.length * 6 + 10;
+        doc.setLineHeightFactor(1.15);
 
         // 6. PROBLEMAS
-        if (yPos > 240) yPos = 240;
+        if (yPos > 230) {
+          if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+          }
+        }
         let problemas =
           tipo_proceso === "INYECCION"
             ? [
-                ["Agujereada", "Regulación de carga, aire y presión"],
+                ["Agujereada", "Regulación carga/aire/presión"],
                 ["Manchada", "Avisar y esperar limpieza color. Anotar."],
                 ["Doblada", "Darle más enfriado"],
                 ["Quemada", "Consultar temperaturas"],
               ]
             : [
-                ["Cruda", "Subir tiempo cocinado (máx 2 min)"],
-                ["Quemada", "Bajar tiempo cocinado (máx 2 min)"],
-                ["Doblada", "Revisar silicona / Exceso temp"],
-                ["Incompleta", "Revisar respiradores y cierres"],
+                ["Cruda", "Subir cocinado (max 2 min)"],
+                ["Quemada", "Bajar cocinado (max 2 min)"],
+                ["Doblada", "Revisar silicona / Temp"],
+                ["Incompleta", "Revisar respiradores/cierres"],
               ];
 
-        const problemRowHeight = 9;
-        const problemHeaderHeight = 10;
+        const problemRowHeight = 12;
+        const problemHeaderHeight = 7;
         const problemBoxHeight =
           problemHeaderHeight +
           Math.ceil(problemas.length / 2) * problemRowHeight +
-          4;
+          5;
 
         doc.setFillColor(...rojoAlerta);
-        doc.rect(14, yPos, 182, 6, "F");
+        doc.rect(14, yPos, 182, 7, "F");
         doc.setDrawColor(...rojoAlerta);
         doc.setLineWidth(0.5);
         doc.rect(14, yPos, 182, problemBoxHeight);
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
-        doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4, {
+        doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4.5, {
           align: "center",
         });
 
-        yPos += 11;
+        yPos += 14;
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(8);
         problemas.forEach(([problema, solucion], i) => {
@@ -699,18 +685,19 @@ export default function PlanificacionPage({ onNavigate }) {
           doc.setFont("helvetica", "bold");
           doc.text(`• ${problema}:`, xOffset, yOffset);
           doc.setFont("helvetica", "normal");
-          doc.text(`${solucion}`, xOffset, yOffset + 3.5);
+          doc.text(`${solucion}`, xOffset, yOffset + 4);
         });
 
         // Disclaimer
-        yPos += Math.ceil(problemas.length / 2) * problemRowHeight + 6;
+        const footerY =
+          yPos + Math.ceil(problemas.length / 2) * problemRowHeight + 10;
         doc.setFontSize(7);
         doc.setFont("helvetica", "italic");
         doc.setTextColor(100);
         doc.text(
           "En todos los casos consultar previamente con un superior.",
           105,
-          yPos,
+          footerY,
           { align: "center" },
         );
       }); // FIN FOR EACH
@@ -725,6 +712,7 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   // ... (Resto de los handlers se mantienen igual) ...
+
   const handleSelectPlan = async (planId) => {
     if (isSaving) return;
     setLoading(true);
@@ -987,7 +975,7 @@ export default function PlanificacionPage({ onNavigate }) {
                 onClick={() => setShowMatrixModal(true)}
                 className="flex-1 md:flex-none bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-colors border border-purple-500/50"
               >
-                <FaCalendarAlt />
+                <FaCalendarAlt />{" "}
                 <span className="hidden sm:inline">Cronograma</span>
                 <span className="sm:hidden">Gantt</span>
               </motion.button>
@@ -996,7 +984,7 @@ export default function PlanificacionPage({ onNavigate }) {
                 onClick={() => setShowPendingDrawer(true)}
                 className="flex-1 md:flex-none bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-800/50 px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-colors"
               >
-                <FaExclamationTriangle className="animate-pulse" />
+                <FaExclamationTriangle className="animate-pulse" />{" "}
                 <span className="hidden sm:inline">Pedidos Sin Stock</span>
                 <span className="sm:hidden">Sin Stock</span>
               </motion.button>
@@ -1082,9 +1070,7 @@ export default function PlanificacionPage({ onNavigate }) {
                   <button
                     onClick={handleToggleEstado}
                     disabled={isSaving || isPlanNuevo}
-                    className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 text-white ${
-                      isPlanCerrado ? "bg-gray-600" : "bg-green-600"
-                    }`}
+                    className={`px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 text-white ${isPlanCerrado ? "bg-gray-600" : "bg-green-600"}`}
                   >
                     {isPlanCerrado ? <FaLock /> : <FaLockOpen />}{" "}
                     <span className="hidden sm:inline">
@@ -1157,10 +1143,10 @@ export default function PlanificacionPage({ onNavigate }) {
                               ? (item.producido / item.cantidad) * 100
                               : 0;
                           const isDone = item.producido >= item.cantidad;
-                          let statusText = "PENDIENTE";
-                          let statusColor = "bg-gray-600";
-                          let cardBorder = "border-gray-600";
-                          let bgGradient = "from-gray-800/50 to-gray-900/50";
+                          let statusText = "PENDIENTE",
+                            statusColor = "bg-gray-600",
+                            cardBorder = "border-gray-600",
+                            bgGradient = "from-gray-800/50 to-gray-900/50";
                           if (percent > 0 && percent < 100) {
                             statusText = "EN CURSO";
                             statusColor = "bg-blue-600";
@@ -1238,11 +1224,7 @@ export default function PlanificacionPage({ onNavigate }) {
                                     Real
                                   </span>
                                   <span
-                                    className={`text-2xl font-mono font-bold ${
-                                      isDone
-                                        ? "text-green-400"
-                                        : "text-blue-400"
-                                    }`}
+                                    className={`text-2xl font-mono font-bold ${isDone ? "text-green-400" : "text-blue-400"}`}
                                   >
                                     {item.producido}
                                   </span>
@@ -1250,9 +1232,7 @@ export default function PlanificacionPage({ onNavigate }) {
                               </div>
                               <div className="relative w-full h-3 bg-slate-800 rounded-full overflow-hidden shadow-inner">
                                 <div
-                                  className={`absolute top-0 left-0 h-full transition-all duration-700 ease-out ${
-                                    isDone ? "bg-green-500" : "bg-blue-500"
-                                  }`}
+                                  className={`absolute top-0 left-0 h-full transition-all duration-700 ease-out ${isDone ? "bg-green-500" : "bg-blue-500"}`}
                                   style={{
                                     width: `${Math.min(100, percent)}%`,
                                   }}
@@ -1352,11 +1332,7 @@ export default function PlanificacionPage({ onNavigate }) {
                                   {mp.stock}
                                 </td>
                                 <td
-                                  className={`px-4 py-3 text-right font-bold ${
-                                    mp.balance < 0
-                                      ? "text-red-400"
-                                      : "text-green-400"
-                                  }`}
+                                  className={`px-4 py-3 text-right font-bold ${mp.balance < 0 ? "text-red-400" : "text-green-400"}`}
                                 >
                                   {mp.balance}
                                 </td>
@@ -1385,7 +1361,6 @@ export default function PlanificacionPage({ onNavigate }) {
               onClick={() => setShowPendingDrawer(false)}
               className="fixed inset-0 bg-black/60 z-[60] backdrop-blur-sm"
             />
-
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
@@ -1404,7 +1379,6 @@ export default function PlanificacionPage({ onNavigate }) {
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  {/* BOTÓN NUEVO DE REFRESCAR */}
                   <button
                     onClick={handleForceSync}
                     className="text-blue-400 hover:text-white bg-slate-700 hover:bg-blue-600 p-2 rounded-full transition-colors"
@@ -1420,7 +1394,6 @@ export default function PlanificacionPage({ onNavigate }) {
                   </button>
                 </div>
               </div>
-
               <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3 bg-slate-900/50">
                 {loadingPending ? (
                   <div className="flex items-center justify-center h-40 text-gray-400">
