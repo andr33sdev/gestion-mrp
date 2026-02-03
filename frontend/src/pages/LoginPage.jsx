@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   FaKey,
   FaLock,
@@ -15,6 +15,7 @@ import { API_BASE_URL } from "../utils";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Estado para saber qué rol eligió el usuario (null = ninguno)
   const [selectedRole, setSelectedRole] = useState(null);
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false); // Estado para "Recordarme"
 
   // Mapa de configuración para cada rol
   const rolesConfig = {
@@ -65,29 +67,46 @@ export default function LoginPage() {
 
         // 2. Verificamos si el rol devuelto coincide con el seleccionado
         if (data.role === selectedRole) {
-          // Guardamos sesión
-          sessionStorage.setItem("api_key", input);
-          sessionStorage.setItem("role", data.role);
+          // --- PERSISTENCIA DE SESIÓN ---
+          // Si marcó "Recordarme", usamos localStorage (persistente).
+          // Si no, sessionStorage (se borra al cerrar pestaña).
+          const storage = rememberMe ? localStorage : sessionStorage;
 
-          // Redirigimos según el rol
-          if (data.role === "DEPOSITO") navigate("/recepcion");
-          else if (data.role === "MANTENIMIENTO") navigate("/mantenimiento");
-          else navigate("/");
+          storage.setItem("api_key", input);
+          storage.setItem("role", data.role);
 
-          // Recargamos para que App.jsx detecte el cambio de estado
-          window.location.reload();
+          // --- REDIRECCIÓN INTELIGENTE ---
+          // Leemos el parámetro 'returnTo' de la URL (inyectado por ProtectedRoute)
+          const searchParams = new URLSearchParams(location.search);
+          const returnTo = searchParams.get("returnTo");
+
+          let destino = "/";
+
+          if (returnTo && returnTo !== "/" && returnTo !== "null") {
+            // Si venía de un link específico (ej: /producto/X), volvemos ahí
+            destino = decodeURIComponent(returnTo);
+          } else {
+            // Si entró directo al login, vamos al home de su rol
+            if (data.role === "DEPOSITO") destino = "/logistica";
+            else if (data.role === "MANTENIMIENTO") destino = "/mantenimiento";
+            else destino = "/";
+          }
+
+          // Usamos replace para limpiar el historial y forzar la carga correcta del router
+          window.location.replace(destino);
         } else {
           setError(
-            `Esta contraseña no es de ${rolesConfig[selectedRole].title}`
+            `Esta contraseña no es de ${rolesConfig[selectedRole].title}`,
           );
+          setLoading(false);
         }
       } else {
         setError("Contraseña incorrecta");
+        setLoading(false);
       }
     } catch (err) {
       console.error(err);
       setError("Error de conexión con el servidor");
-    } finally {
       setLoading(false);
     }
   };
@@ -144,7 +163,7 @@ export default function LoginPage() {
           </p>
 
           <form onSubmit={handleLogin}>
-            <div className="relative mb-6">
+            <div className="relative mb-4">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
                 <FaKey />
               </span>
@@ -157,6 +176,23 @@ export default function LoginPage() {
                 autoFocus
                 disabled={loading}
               />
+            </div>
+
+            {/* Checkbox "Recordarme" */}
+            <div className="flex items-center mb-6">
+              <input
+                id="remember-me"
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 text-blue-600 bg-slate-900 border-gray-600 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
+              />
+              <label
+                htmlFor="remember-me"
+                className="ml-2 text-sm font-medium text-gray-400 cursor-pointer select-none hover:text-gray-300 transition-colors"
+              >
+                Mantener sesión iniciada
+              </label>
             </div>
 
             {error && (

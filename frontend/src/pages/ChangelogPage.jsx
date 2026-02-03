@@ -71,20 +71,34 @@ const LogRow = ({ log, configTipo, onDelete }) => {
             {log.producto}
           </h3>
 
+          {/* TAGS REFLECTIVOS */}
           {log.lleva_reflectiva && (
-            <div className="flex items-center gap-1 ml-auto">
+            <div className="flex flex-wrap items-center gap-1 ml-auto justify-end">
+              {/* Tag 1: Tipo */}
               <span
                 className="text-[9px] bg-blue-900/30 text-blue-300 px-2 py-0.5 rounded border border-blue-800"
-                title={`Reflectiva: ${log.tipo_reflectiva}`}
+                title="Tipo de lámina"
               >
                 {log.tipo_reflectiva}
               </span>
+
+              {/* Tag 2: Protector */}
               <span
                 className="text-[9px] bg-slate-700 text-gray-400 px-2 py-0.5 rounded border border-slate-600 hidden sm:inline-block"
-                title={`Protector: ${log.tipo_protector}`}
+                title="Tipo de protector"
               >
                 {log.tipo_protector}
               </span>
+
+              {/* Tag 3: Aplicación (NUEVO) */}
+              {log.tipo_aplicacion && (
+                <span
+                  className="text-[9px] bg-purple-900/30 text-purple-300 px-2 py-0.5 rounded border border-purple-800"
+                  title="Tipo de aplicación"
+                >
+                  {log.tipo_aplicacion}
+                </span>
+              )}
             </div>
           )}
         </div>

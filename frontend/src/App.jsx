@@ -159,9 +159,12 @@ const NAV_LINKS = [
 // --- COMPONENTE: RUTA PROTEGIDA ---
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { token, role } = getAuthData();
+  const location = useLocation();
 
   if (!token || !role) {
-    return <Navigate to="/login" replace />;
+    // CAMBIO CLAVE: Escribimos la ruta en la URL (query param)
+    const returnTo = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?returnTo=${returnTo}`} replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(role) && role !== "GERENCIA") {
