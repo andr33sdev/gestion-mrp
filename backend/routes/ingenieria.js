@@ -189,7 +189,7 @@ router.get("/recetas-semielaborados/:id", async (req, res) => {
   }
 });
 
-// --- FICHA TÉCNICA COMPLETA (CON HISTORIAL) ---
+// --- FICHA TÉCNICA COMPLETA (CON HISTORIAL Y SPECS) ---
 router.get("/ficha/:id", async (req, res) => {
   const { id } = req.params;
   try {
@@ -200,6 +200,8 @@ router.get("/ficha/:id", async (req, res) => {
     );
     if (semiRes.rowCount === 0)
       return res.status(404).json({ msg: "Producto no encontrado" });
+
+    const nombreProducto = semiRes.rows[0].nombre;
 
     // 2. Receta Activa (Detallada)
     const recetaRes = await db.query(
@@ -241,12 +243,24 @@ router.get("/ficha/:id", async (req, res) => {
     // 5. Cajón de Recetas (Versiones Guardadas)
     const versionesRes = await db.query(
       `
-            SELECT id, nombre_version, to_char(fecha_guardado, 'DD/MM/YYYY HH24:MI') as fecha, ingredientes_json
+            SELECT id, nombre_version, to_char(fecha_guardado, 'DD/MM/YYYY') as fecha
             FROM historial_recetas 
             WHERE semielaborado_id = $1 
             ORDER BY fecha_guardado DESC
+            LIMIT 1
         `,
       [id],
+    );
+
+    // 6. ÚLTIMAS ESPECIFICACIONES (Changelog) - NUEVO
+    const specsRes = await db.query(
+      `
+        SELECT * FROM historial_cambios_producto 
+        WHERE producto = $1 AND lleva_reflectiva = true
+        ORDER BY fecha DESC 
+        LIMIT 1
+      `,
+      [nombreProducto],
     );
 
     res.json({
@@ -254,7 +268,8 @@ router.get("/ficha/:id", async (req, res) => {
       receta: recetaRes.rows,
       historial: prodRes.rows,
       stats: statsRes.rows[0],
-      versiones: versionesRes.rows,
+      ultima_version_receta: versionesRes.rows[0], // Enviamos la última versión guardada
+      specs: specsRes.rows[0] || {}, // Enviamos las specs (reflectivos)
     });
   } catch (e) {
     console.error("Error ficha técnica:", e);
@@ -417,6 +432,23 @@ router.post("/recetas-semielaborados", async (req, res) => {
     res.status(500).send(e.message);
   } finally {
     client.release();
+  }
+});
+
+// ACTUALIZAR DATOS TÉCNICOS (PROCESO Y PARÁMETROS)
+router.put("/semielaborados/:id/tecnica", async (req, res) => {
+  const { id } = req.params;
+  const { tipo_proceso, parametros_maquina } = req.body;
+
+  try {
+    await db.query(
+      "UPDATE semielaborados SET tipo_proceso = $1, parametros_maquina = $2 WHERE id = $3",
+      [tipo_proceso, parametros_maquina, id],
+    );
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("Error al guardar datos técnicos");
   }
 });
 

@@ -1,6 +1,5 @@
-// frontend/src/pages/IngenieriaProductos.jsx
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom"; // <--- 1. IMPORTANTE: Importamos el hook
+import { useNavigate } from "react-router-dom";
 import {
   DndContext,
   useDraggable,
@@ -19,8 +18,7 @@ import {
   FaRecycle,
   FaLeaf,
   FaEye,
-  FaFileAlt,
-  FaHistory, // <--- Importamos ícono historial
+  FaHistory,
   FaTimes,
   FaClipboardList,
   FaArchive,
@@ -32,42 +30,755 @@ import {
   FaChevronRight,
   FaFilePdf,
   FaCogs,
+  FaPrint,
 } from "react-icons/fa";
 import { API_BASE_URL, PEDIDOS_API_URL, authFetch } from "../utils.js";
 import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
-// --- SUB-COMPONENTE: MODAL FICHA TÉCNICA (SOLO SEMIELABORADOS) ---
+// --- SUB-COMPONENTE: MODAL FICHA TÉCNICA AVANZADO ---
 function FichaTecnicaModal({ semiId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("RECETA");
 
-  useEffect(() => {
-    const cargarFicha = async () => {
-      try {
-        const res = await authFetch(
-          `${API_BASE_URL}/ingenieria/ficha/${semiId}`,
-        );
-        if (res.ok) setData(await res.json());
-      } catch (e) {
-        console.error(e);
+  // Estado para Edición de Parámetros
+  const [isEditingParams, setIsEditingParams] = useState(false);
+  const [editForm, setEditForm] = useState({
+    tipo_proceso: "ROTOMOLDEO",
+    parametros_maquina: {},
+  });
+
+  const fetchData = async () => {
+    try {
+      const res = await authFetch(`${API_BASE_URL}/ingenieria/ficha/${semiId}`);
+      if (res.ok) {
+        const jsonData = await res.json();
+        setData(jsonData);
+        setEditForm({
+          tipo_proceso: jsonData.producto.tipo_proceso || "ROTOMOLDEO",
+          parametros_maquina: jsonData.producto.parametros_maquina || {},
+        });
       }
-      setLoading(false);
-    };
-    cargarFicha();
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchData();
   }, [semiId]);
+
+  const handleSaveParams = async () => {
+    try {
+      await authFetch(
+        `${API_BASE_URL}/ingenieria/semielaborados/${semiId}/tecnica`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editForm),
+        },
+      );
+      alert("Datos técnicos actualizados.");
+      setIsEditingParams(false);
+      fetchData();
+    } catch (e) {
+      alert("Error al guardar");
+    }
+  };
+
+  // --- GENERAR PDF "SINGLE PAGE" BALANCEADO ---
+  const imprimirFichaTecnica = () => {
+    if (!data) return;
+    const { producto, receta, specs = {}, ultima_version_receta } = data;
+    const { tipo_proceso, parametros_maquina: pm } = producto;
+
+    const doc = new jsPDF();
+    const azulOscuro = [30, 41, 59];
+    const grisClaro = [241, 245, 249];
+    const rojoAlerta = [185, 28, 28];
+
+    // --- 1. ENCABEZADO (22mm) ---
+    doc.setFillColor(...azulOscuro);
+    doc.rect(0, 0, 210, 22, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(18);
+    doc.setFont("helvetica", "bold");
+    doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 10);
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 16);
+
+    const fechaImpresion = new Date().toLocaleDateString("es-AR");
+    doc.setFontSize(8);
+    doc.text(`Impreso: ${fechaImpresion}`, 195, 10, { align: "right" });
+    doc.text("Documento Controlado", 195, 16, { align: "right" });
+
+    let yPos = 30;
+
+    // --- 2. INFO PRODUCTO Y VERSIÓN (Fila Superior) ---
+    doc.setTextColor(0, 0, 0);
+
+    // Columna Izq: Datos Producto
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${producto.nombre}`, 14, yPos);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 5);
+
+    // Columna Der: Versión Receta (Caja Gris)
+    doc.setDrawColor(200);
+    doc.setFillColor(...grisClaro);
+    doc.roundedRect(120, yPos - 6, 75, 14, 1, 1, "FD");
+
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text("RECETA VIGENTE:", 123, yPos - 1);
+    doc.setTextColor(0);
+    doc.setFont("helvetica", "bold");
+    doc.text(
+      ultima_version_receta?.nombre_version || "Estándar / Inicial",
+      123,
+      yPos + 4,
+    );
+
+    yPos += 12;
+
+    // --- 3. SPECS VISUALES (Barra completa) ---
+    const specsData = [
+      [
+        `REFLECTIVA: ${specs.tipo_reflectiva || "N/A"}`,
+        `PROTECTOR: ${specs.tipo_protector || "N/A"}`,
+        `APLICACIÓN: ${specs.tipo_aplicacion || "N/A"}`,
+      ],
+    ];
+    autoTable(doc, {
+      startY: yPos,
+      body: specsData,
+      theme: "plain",
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        fontStyle: "bold",
+        textColor: [50, 50, 50],
+        halign: "center",
+      },
+      columnStyles: {
+        0: { fillColor: [230, 230, 230], cellWidth: 60 },
+        1: { fillColor: [230, 230, 230], cellWidth: 60 },
+        2: { fillColor: [230, 230, 230], cellWidth: "auto" },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    yPos = doc.lastAutoTable.finalY + 8;
+
+    // ============================================================
+    //    BLOQUE CENTRAL: 2 COLUMNAS (MÁQUINA vs RECETA)
+    // ============================================================
+
+    const colLeftX = 14;
+    const colRightX = 115;
+    const colWidthLeft = 95;
+    const colWidthRight = 80;
+
+    const startYBlock = yPos;
+
+    // --- COLUMNA IZQUIERDA: PARÁMETROS MÁQUINA ---
+    doc.setFillColor(...azulOscuro);
+    doc.rect(colLeftX, yPos, colWidthLeft, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.text(
+      `PARÁMETROS ${tipo_proceso === "INYECCION" ? "INYECCIÓN" : "ROTOMOLDEO"}`,
+      colLeftX + 2,
+      yPos + 4,
+    );
+
+    let yMachine = yPos + 7;
+
+    if (tipo_proceso === "INYECCION") {
+      const inyData = [
+        ["#1", pm.pos1 || "-", pm.pres1 || "-", pm.vel1 || "-"],
+        ["#2", pm.pos2 || "-", pm.pres2 || "-", pm.vel2 || "-"],
+        ["#3", pm.pos3 || "-", pm.pres3 || "-", pm.vel3 || "-"],
+        ["#4", pm.pos4 || "-", pm.pres4 || "-", pm.vel4 || "-"],
+        ["#5", pm.pos5 || "-", pm.pres5 || "-", pm.vel5 || "-"],
+        ["#6", pm.pos6 || "-", pm.pres6 || "-", pm.vel6 || "-"],
+      ];
+
+      autoTable(doc, {
+        startY: yMachine,
+        head: [["#", "Pos", "Pres", "Vel"]],
+        body: inyData,
+        theme: "grid",
+        headStyles: { fillColor: [80, 80, 80], fontSize: 8, cellPadding: 1 },
+        styles: { fontSize: 8, halign: "center", cellPadding: 1 },
+        margin: { left: colLeftX },
+        tableWidth: colWidthLeft,
+      });
+
+      yMachine = doc.lastAutoTable.finalY + 4;
+
+      // Datos extra Inyeccion
+      doc.setFontSize(8);
+      doc.setTextColor(0);
+      doc.setFont("helvetica", "bold");
+      doc.text("TEMPERATURAS:", colLeftX, yMachine);
+      doc.setFont("helvetica", "normal");
+      doc.text(pm.temperaturas_zonas || "-", colLeftX + 30, yMachine);
+      yMachine += 4;
+
+      doc.setFont("helvetica", "bold");
+      doc.text("CHILLER:", colLeftX, yMachine);
+      doc.setFont("helvetica", "normal");
+      doc.text(pm.chiller_matriz || "-", colLeftX + 30, yMachine);
+      yMachine += 5;
+
+      // Carga Succión
+      autoTable(doc, {
+        startY: yMachine,
+        head: [["CARGA / SUCCIÓN #5", "Pos", "Pres", "Vel", "P. Atrás"]],
+        body: [
+          [
+            "",
+            pm.carga_pos || "-",
+            pm.carga_pres || "-",
+            pm.carga_vel || "-",
+            pm.carga_pres_atras || "-",
+          ],
+        ],
+        theme: "grid",
+        headStyles: {
+          fontStyle: "bold",
+          fillColor: [220, 220, 220],
+          textColor: 0,
+          fontSize: 7,
+          halign: "center",
+        },
+        styles: {
+          fontSize: 7,
+          halign: "center",
+          cellPadding: 1,
+        },
+        columnStyles: { 0: { cellWidth: 0.1 } },
+        margin: { left: colLeftX },
+        tableWidth: colWidthLeft,
+      });
+      yMachine = doc.lastAutoTable.finalY;
+    } else {
+      // --- ROTOMOLDEO ---
+      const rotoData = [
+        ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v1m2 || "-", pm.inv1 || "-"],
+        ["2", pm.t2 || "-", pm.v2m1 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
+        ["3", pm.t3 || "-", pm.v3m1 || "-", pm.v3m2 || "-", pm.inv3 || "-"],
+        ["4", pm.t4 || "-", pm.v4m1 || "-", pm.v4m2 || "-", pm.inv4 || "-"],
+      ];
+
+      autoTable(doc, {
+        startY: yMachine,
+        head: [["Etapa", "T (minutos)", "V1 %", "V2 %", "Inv %"]],
+        body: rotoData,
+        theme: "striped",
+        headStyles: { fillColor: [80, 80, 80], fontSize: 8, cellPadding: 1 },
+        styles: { fontSize: 8, halign: "center", cellPadding: 1.5 },
+        margin: { left: colLeftX },
+        tableWidth: colWidthLeft,
+      });
+
+      yMachine = doc.lastAutoTable.finalY + 3;
+
+      autoTable(doc, {
+        startY: yMachine,
+        head: [["ENFRIAMIENTO (minutos)", "TEMP. HORNO"]],
+        body: [[pm.frio_min || "-", (pm.temp_horno || "-") + " °C"]],
+        theme: "grid",
+        headStyles: {
+          fillColor: [100, 100, 100],
+          fontSize: 8,
+          cellPadding: 1,
+        },
+        styles: { fontSize: 8, halign: "center" },
+        margin: { left: colLeftX },
+        tableWidth: colWidthLeft,
+      });
+      yMachine = doc.lastAutoTable.finalY;
+    }
+
+    // --- COLUMNA DERECHA: RECETA (INGENIERÍA) ---
+    doc.setFillColor(...azulOscuro);
+    doc.rect(colRightX, startYBlock, colWidthRight, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.text("INGENIERÍA (RECETA)", colRightX + 2, startYBlock + 4);
+
+    let yRecipe = startYBlock + 7;
+
+    const tablaReceta = receta.map((item) => [
+      item.nombre,
+      `${Number(item.cantidad).toFixed(2)}`, // <--- CAMBIO AQUÍ: 2 DECIMALES
+    ]);
+    autoTable(doc, {
+      startY: yRecipe,
+      head: [["INSUMO", "CANTIDAD"]],
+      body: tablaReceta,
+      theme: "striped",
+      styles: { fontSize: 8, cellPadding: 1.5 },
+      headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
+      columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+      margin: { left: colRightX },
+      tableWidth: colWidthRight,
+    });
+    yRecipe = doc.lastAutoTable.finalY;
+
+    // --- SINCRONIZAR Y ---
+    yPos = Math.max(yMachine, yRecipe) + 8;
+
+    // ============================================================
+    //    BLOQUE INFERIOR: PROCEDIMIENTO Y PROBLEMAS
+    // ============================================================
+
+    // --- PROCEDIMIENTO ---
+    if (yPos > 210) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFillColor(...azulOscuro);
+    doc.rect(14, yPos, 182, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4);
+    yPos += 10;
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setLineHeightFactor(1.6); // Interlineado para más aire
+
+    let textoProcedimiento = "";
+    if (tipo_proceso === "INYECCION") {
+      textoProcedimiento = `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO. Se selecciona en la librería el modelo a fabricar. Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso, acudir al Encargado. Si no se encuentra, dejar el artículo identificado y separado correctamente para su posterior análisis.`;
+    } else {
+      textoProcedimiento = `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema, acudir al Encargado. Si no está, dejar el artículo identificado y separado para análisis.`;
+    }
+
+    const splitText = doc.splitTextToSize(textoProcedimiento, 182);
+    doc.text(splitText, 14, yPos);
+
+    yPos += splitText.length * 4.5 + 8; // Ajuste espaciado
+    doc.setLineHeightFactor(1.15); // Reset interlineado
+
+    // --- SOLUCIÓN DE PROBLEMAS ---
+    if (yPos > 240) yPos = 240;
+
+    let problemas = [];
+    if (tipo_proceso === "INYECCION") {
+      problemas = [
+        ["Agujereada", "Regulación de carga, aire y presión"],
+        ["Manchada", "Avisar y esperar limpieza color. Anotar."],
+        ["Doblada", "Darle más enfriado"],
+        ["Quemada", "Consultar temperaturas"],
+      ];
+    } else {
+      problemas = [
+        ["Cruda", "Subir tiempo cocinado (máx 2 min)"],
+        ["Quemada", "Bajar tiempo cocinado (máx 2 min)"],
+        ["Doblada", "Revisar silicona / Exceso temp"],
+        ["Incompleta", "Revisar respiradores y cierres"],
+      ];
+    }
+
+    // Calcular altura caja
+    const problemRowHeight = 9;
+    const problemHeaderHeight = 10;
+    const problemBoxHeight =
+      problemHeaderHeight +
+      Math.ceil(problemas.length / 2) * problemRowHeight +
+      4;
+
+    // Caja
+    doc.setFillColor(...rojoAlerta);
+    doc.rect(14, yPos, 182, 6, "F");
+    doc.setDrawColor(...rojoAlerta);
+    doc.setLineWidth(0.5);
+    doc.rect(14, yPos, 182, problemBoxHeight);
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4, {
+      align: "center",
+    });
+
+    yPos += 11;
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8);
+
+    // Grid problemas
+    problemas.forEach(([problema, solucion], i) => {
+      const xOffset = i % 2 === 0 ? 20 : 110;
+      const yOffset = yPos + Math.floor(i / 2) * problemRowHeight;
+
+      doc.setFont("helvetica", "bold");
+      doc.text(`• ${problema}:`, xOffset, yOffset);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${solucion}`, xOffset, yOffset + 3.5);
+    });
+
+    // Disclaimer
+    yPos += Math.ceil(problemas.length / 2) * problemRowHeight + 6;
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "italic");
+    doc.setTextColor(100);
+    doc.text(
+      "En todos los casos consultar previamente con un superior.",
+      105,
+      yPos,
+      { align: "center" },
+    );
+
+    doc.save(`Ficha_${producto.nombre.replace(/\s+/g, "_")}.pdf`);
+  };
+
+  // --- RENDER FORMULARIO DE EDICIÓN ---
+  const renderEditForm = () => {
+    const isRot = editForm.tipo_proceso === "ROTOMOLDEO";
+    const pm = editForm.parametros_maquina || {};
+
+    const handleChange = (field, val) => {
+      setEditForm((prev) => ({
+        ...prev,
+        parametros_maquina: { ...prev.parametros_maquina, [field]: val },
+      }));
+    };
+
+    return (
+      <div className="bg-slate-700 p-4 rounded-lg mt-4 animate-in fade-in">
+        <div className="flex justify-between items-center mb-4">
+          <h4 className="text-white font-bold flex items-center gap-2">
+            <FaCogs /> Configuración de Máquina
+          </h4>
+          <select
+            value={editForm.tipo_proceso}
+            onChange={(e) =>
+              setEditForm({ ...editForm, tipo_proceso: e.target.value })
+            }
+            className="bg-slate-900 text-white p-1 rounded border border-slate-600 text-sm"
+          >
+            <option value="ROTOMOLDEO">ROTOMOLDEO</option>
+            <option value="INYECCION">INYECCIÓN</option>
+          </select>
+        </div>
+
+        {isRot ? (
+          <div className="grid grid-cols-5 gap-2 text-xs">
+            <div className="font-bold text-gray-400">Parámetro</div>
+            <div className="text-center text-gray-400">Etapa 1</div>
+            <div className="text-center text-gray-400">Etapa 2</div>
+            <div className="text-center text-gray-400">Etapa 3</div>
+            <div className="text-center text-gray-400">Etapa 4</div>
+
+            <div className="text-gray-300 py-1">Tiempo (minutos)</div>
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.t1 || ""}
+              onChange={(e) => handleChange("t1", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.t2 || ""}
+              onChange={(e) => handleChange("t2", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.t3 || ""}
+              onChange={(e) => handleChange("t3", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.t4 || ""}
+              onChange={(e) => handleChange("t4", e.target.value)}
+            />
+
+            <div className="text-gray-300 py-1">Vel M1 (%)</div>
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v1m1 || ""}
+              onChange={(e) => handleChange("v1m1", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v2m1 || ""}
+              onChange={(e) => handleChange("v2m1", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v3m1 || ""}
+              onChange={(e) => handleChange("v3m1", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v4m1 || ""}
+              onChange={(e) => handleChange("v4m1", e.target.value)}
+            />
+
+            <div className="text-gray-300 py-1">Vel M2 (%)</div>
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v1m2 || ""}
+              onChange={(e) => handleChange("v1m2", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v2m2 || ""}
+              onChange={(e) => handleChange("v2m2", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v3m2 || ""}
+              onChange={(e) => handleChange("v3m2", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.v4m2 || ""}
+              onChange={(e) => handleChange("v4m2", e.target.value)}
+            />
+
+            <div className="text-gray-300 py-1">Inversión (%)</div>
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.inv1 || ""}
+              onChange={(e) => handleChange("inv1", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.inv2 || ""}
+              onChange={(e) => handleChange("inv2", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.inv3 || ""}
+              onChange={(e) => handleChange("inv3", e.target.value)}
+            />
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1 text-center"
+              placeholder="-"
+              value={pm.inv4 || ""}
+              onChange={(e) => handleChange("inv4", e.target.value)}
+            />
+
+            <div className="col-span-5 border-t border-slate-600 my-2"></div>
+            <div className="text-gray-300">Temp Horno (°C)</div>
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1"
+              placeholder="Ej: 300"
+              value={pm.temp_horno || ""}
+              onChange={(e) => handleChange("temp_horno", e.target.value)}
+            />
+            <div className="text-gray-300">Frío (minutos)</div>
+            <input
+              type="text"
+              className="bg-slate-900 text-white rounded p-1"
+              placeholder="Ej: 18"
+              value={pm.frio_min || ""}
+              onChange={(e) => handleChange("frio_min", e.target.value)}
+            />
+            <div className="text-gray-300">Aire (Inicio/Fin)</div>
+            <div className="flex gap-1">
+              <input
+                type="text"
+                className="bg-slate-900 text-white rounded p-1 w-1/2"
+                placeholder="Ini"
+                value={pm.inicio_aire || ""}
+                onChange={(e) => handleChange("inicio_aire", e.target.value)}
+              />
+              <input
+                type="text"
+                className="bg-slate-900 text-white rounded p-1 w-1/2"
+                placeholder="Fin"
+                value={pm.fin_aire || ""}
+                onChange={(e) => handleChange("fin_aire", e.target.value)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 text-xs">
+            <div className="grid grid-cols-7 gap-1 text-center items-center">
+              <div className="font-bold text-gray-400">#</div>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="text-gray-400">
+                  #{i}
+                </div>
+              ))}
+
+              <div className="text-gray-300 text-left">Posición</div>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <input
+                  key={i}
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1 text-center"
+                  value={pm[`pos${i}`] || ""}
+                  onChange={(e) => handleChange(`pos${i}`, e.target.value)}
+                />
+              ))}
+
+              <div className="text-gray-300 text-left">Presión</div>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <input
+                  key={i}
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1 text-center"
+                  value={pm[`pres${i}`] || ""}
+                  onChange={(e) => handleChange(`pres${i}`, e.target.value)}
+                />
+              ))}
+
+              <div className="text-gray-300 text-left">Velocidad</div>
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <input
+                  key={i}
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1 text-center"
+                  value={pm[`vel${i}`] || ""}
+                  onChange={(e) => handleChange(`vel${i}`, e.target.value)}
+                />
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 border-t border-slate-600 pt-3">
+              <div>
+                <label className="text-gray-400 block mb-1">
+                  Temperaturas (separar con /)
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 text-white rounded p-2"
+                  placeholder="182 / 171 / 177..."
+                  value={pm.temperaturas_zonas || ""}
+                  onChange={(e) =>
+                    handleChange("temperaturas_zonas", e.target.value)
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 block mb-1">
+                  Chiller Matriz
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 text-white rounded p-2"
+                  placeholder="Sin datos..."
+                  value={pm.chiller_matriz || ""}
+                  onChange={(e) =>
+                    handleChange("chiller_matriz", e.target.value)
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-800 p-2 rounded border border-slate-600">
+              <label className="text-purple-400 font-bold block mb-2">
+                Carga con Succión (Posición #5)
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                <input
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1"
+                  placeholder="Pos"
+                  value={pm.carga_pos || ""}
+                  onChange={(e) => handleChange("carga_pos", e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1"
+                  placeholder="Pres"
+                  value={pm.carga_pres || ""}
+                  onChange={(e) => handleChange("carga_pres", e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1"
+                  placeholder="Vel"
+                  value={pm.carga_vel || ""}
+                  onChange={(e) => handleChange("carga_vel", e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="bg-slate-900 text-white rounded p-1"
+                  placeholder="P. Atrás"
+                  value={pm.carga_pres_atras || ""}
+                  onChange={(e) =>
+                    handleChange("carga_pres_atras", e.target.value)
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={() => setIsEditingParams(false)}
+            className="px-3 py-1 text-gray-400 hover:text-white"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSaveParams}
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold"
+          >
+            Guardar Cambios
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   if (!data && loading)
     return (
-      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80">
+      <div className="fixed inset-0 flex items-center justify-center bg-black/80">
         <FaSpinner className="animate-spin text-4xl text-white" />
       </div>
     );
   if (!data) return null;
 
-  const { producto, receta, historial, stats, versiones } = data;
+  const { producto, receta, historial, stats, versiones, specs = {} } = data;
 
   return (
     <div
@@ -80,201 +791,123 @@ function FichaTecnicaModal({ semiId, onClose }) {
         className="bg-slate-800 w-full max-w-4xl rounded-2xl border border-slate-600 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* HEADER */}
         <div className="p-6 bg-slate-900 border-b border-slate-700 flex justify-between items-start">
           <div className="flex gap-4">
             <div className="bg-blue-600/20 p-4 rounded-xl text-blue-400 border border-blue-500/30">
               <FaBoxOpen className="text-3xl" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">
-                {producto.nombre}
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold text-white">
+                  {producto.nombre}
+                </h2>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold border ${
+                    producto.tipo_proceso === "INYECCION"
+                      ? "bg-orange-900/50 text-orange-200 border-orange-500"
+                      : "bg-blue-900/50 text-blue-200 border-blue-500"
+                  }`}
+                >
+                  {producto.tipo_proceso || "ROTOMOLDEO"}
+                </span>
+              </div>
               <p className="text-gray-400 font-mono text-sm">
                 {producto.codigo}
               </p>
-              <div className="flex gap-3 mt-2">
-                <span className="text-xs bg-slate-700 px-2 py-1 rounded text-gray-300 border border-slate-600">
-                  Stock:{" "}
-                  <strong className="text-white">
-                    {Number(producto.stock_planta_26) +
-                      Number(producto.stock_planta_37) +
-                      Number(producto.stock_deposito_ayolas) +
-                      Number(producto.stock_deposito_quintana)}{" "}
-                    u.
-                  </strong>
-                </span>
-                <span className="text-xs bg-slate-700 px-2 py-1 rounded text-gray-300 border border-slate-600">
-                  Total Histórico:{" "}
-                  <strong className="text-emerald-400">
-                    {stats.total_historico || 0} u.
-                  </strong>
-                </span>
-              </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-slate-700 transition-colors"
-          >
-            <FaTimes className="text-xl" />
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsEditingParams(!isEditingParams)}
+              className="bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg flex items-center gap-2 font-bold text-sm transition-colors border border-slate-500"
+              title="Configurar Parámetros de Máquina"
+            >
+              <FaCogs /> {isEditingParams ? "Cerrar Config" : "Configurar"}
+            </button>
+            <button
+              onClick={imprimirFichaTecnica}
+              className="bg-blue-700 hover:bg-blue-600 text-white p-3 rounded-lg flex items-center gap-2 font-bold text-sm transition-colors shadow-lg"
+            >
+              <FaPrint /> Imprimir PDF
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white p-3 rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              <FaTimes className="text-xl" />
+            </button>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-slate-700 bg-slate-800/50">
-          <button
-            onClick={() => setActiveTab("RECETA")}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
-              activeTab === "RECETA"
-                ? "text-blue-400 border-b-2 border-blue-400 bg-blue-900/10"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <FaClipboardList /> Activa
-          </button>
-          <button
-            onClick={() => setActiveTab("ARCHIVO")}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
-              activeTab === "ARCHIVO"
-                ? "text-yellow-400 border-b-2 border-yellow-400 bg-yellow-900/10"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <FaArchive /> Cajón de Recetas
-          </button>
-          <button
-            onClick={() => setActiveTab("HISTORIAL")}
-            className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
-              activeTab === "HISTORIAL"
-                ? "text-purple-400 border-b-2 border-purple-400 bg-purple-900/10"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            <FaHistory /> Producción
-          </button>
-        </div>
-
-        {/* Contenido */}
+        {/* CONTENIDO PRINCIPAL */}
         <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-800">
-          {/* TAB 1: RECETA ACTIVA */}
-          {activeTab === "RECETA" && (
-            <div className="space-y-4">
-              {receta.length === 0 ? (
-                <p className="text-center text-gray-500 italic">
-                  Sin receta activa.
-                </p>
-              ) : (
-                <table className="w-full text-left text-sm border-collapse">
+          {isEditingParams ? (
+            renderEditForm()
+          ) : (
+            <>
+              {/* TABS (SOLO SI NO ESTÁ EDITANDO) */}
+              <div className="flex border-b border-slate-700 bg-slate-800/50 mb-4">
+                <button
+                  onClick={() => setActiveTab("RECETA")}
+                  className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
+                    activeTab === "RECETA"
+                      ? "text-blue-400 border-b-2 border-blue-400"
+                      : "text-gray-500"
+                  }`}
+                >
+                  <FaClipboardList /> Receta
+                </button>
+                <button
+                  onClick={() => setActiveTab("HISTORIAL")}
+                  className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${
+                    activeTab === "HISTORIAL"
+                      ? "text-purple-400 border-b-2 border-purple-400"
+                      : "text-gray-500"
+                  }`}
+                >
+                  <FaHistory /> Producción
+                </button>
+              </div>
+
+              {activeTab === "RECETA" && (
+                <table className="w-full text-left text-sm border-collapse mb-6">
                   <thead className="text-gray-400 border-b border-slate-700 text-xs uppercase">
                     <tr>
                       <th>Material</th>
                       <th className="text-right">Cantidad</th>
-                      <th className="text-right">Stock MP</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700/50">
                     {receta.map((i, k) => (
                       <tr key={k} className="hover:bg-slate-700/30">
-                        <td className="py-2">
+                        <td className="py-2 text-white">
                           {i.nombre}{" "}
-                          <span className="text-xs text-gray-500 block">
+                          <span className="text-xs text-gray-500">
                             {i.codigo}
                           </span>
                         </td>
                         <td className="py-2 text-right font-mono text-yellow-300">
                           {Number(i.cantidad).toFixed(2)}
                         </td>
-                        <td className="py-2 text-right text-gray-400">
-                          {Number(i.stock_mp).toFixed(2)}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
-            </div>
-          )}
 
-          {/* TAB 2: CAJÓN DE RECETAS (HISTORIAL) */}
-          {activeTab === "ARCHIVO" && (
-            <div className="space-y-4">
-              {!versiones || versiones.length === 0 ? (
-                <div className="text-center py-10 text-gray-500 italic">
-                  No hay versiones guardadas en el historial.
-                </div>
-              ) : (
-                versiones.map((v) => (
-                  <div
-                    key={v.id}
-                    className="bg-slate-700/30 border border-slate-600 rounded-lg p-4 transition-all hover:bg-slate-700/50"
-                  >
-                    <div className="flex justify-between items-center mb-3 border-b border-slate-600/50 pb-2">
-                      <div>
-                        <h4 className="font-bold text-white text-base flex items-center gap-2">
-                          <FaCheckDouble className="text-yellow-500" />{" "}
-                          {v.nombre_version}
-                        </h4>
-                        <p className="text-xs text-gray-400">{v.fecha}</p>
-                      </div>
-                      <span className="text-xs bg-slate-800 px-2 py-1 rounded text-gray-300">
-                        {v.ingredientes_json.length} ingredientes
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-300">
-                      {v.ingredientes_json.map((ing, i) => (
-                        <div
-                          key={i}
-                          className="flex justify-between border-b border-slate-600/30 pb-1"
-                        >
-                          <span>{ing.nombre}</span>
-                          <span className="font-mono text-white">
-                            {Number(ing.cantidad).toFixed(2)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: HISTORIAL PRODUCCIÓN */}
-          {activeTab === "HISTORIAL" && (
-            <div className="space-y-2">
-              {historial.length === 0 ? (
-                <p className="text-center text-gray-500 italic">
-                  Sin registros de producción.
+              {/* VISTA RÁPIDA DE PARÁMETROS CARGADOS */}
+              <div className="bg-slate-900/50 p-4 rounded border border-slate-700">
+                <h5 className="text-xs font-bold text-gray-400 uppercase mb-2">
+                  Resumen Técnico ({producto.tipo_proceso || "ROTOMOLDEO"})
+                </h5>
+                <p className="text-sm text-gray-300 italic">
+                  {Object.keys(producto.parametros_maquina || {}).length > 0
+                    ? "Parámetros de máquina configurados. Listos para imprimir en PDF."
+                    : "⚠️ No hay parámetros de máquina configurados. El PDF saldrá vacío en esa sección."}
                 </p>
-              ) : (
-                historial.map((h, i) => (
-                  <div
-                    key={i}
-                    className="flex justify-between items-center p-3 bg-slate-700/30 rounded text-sm border border-slate-700/50"
-                  >
-                    <div>
-                      <span className="text-white font-bold block">
-                        {new Date(h.fecha_produccion).toLocaleDateString()}
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        {h.operario || "S/D"} ({h.turno})
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-emerald-400 font-bold block">
-                        +{h.cantidad_ok} OK
-                      </span>
-                      {Number(h.cantidad_scrap) > 0 && (
-                        <span className="text-red-400 text-xs">
-                          {h.cantidad_scrap} Scrap
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+              </div>
+            </>
           )}
         </div>
       </motion.div>
@@ -282,11 +915,11 @@ function FichaTecnicaModal({ semiId, onClose }) {
   );
 }
 
-// --- MODAL CALCULADORA DE MÍNIMOS (DISEÑO PRO PDF - ANCHO TOTAL) ---
+// ... (El resto del código del componente principal y auxiliares se mantiene igual)
+
 function CalculadoraMinimosModal({ onClose }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
 
@@ -358,7 +991,6 @@ function CalculadoraMinimosModal({ onClose }) {
 
     autoTable(doc, {
       startY: 45,
-      // HEADER CORTO Y SIN SALTOS
       head: [
         [
           "CÓDIGO",
@@ -371,7 +1003,6 @@ function CalculadoraMinimosModal({ onClose }) {
       ],
       body: tableBody,
       theme: "striped",
-      // MÁRGENES MÍNIMOS PARA ANCHO TOTAL
       margin: { left: 5, right: 5 },
       styles: {
         fontSize: 9,
@@ -391,7 +1022,6 @@ function CalculadoraMinimosModal({ onClose }) {
       },
       columnStyles: {
         0: { fontStyle: "bold" },
-        // Al quitar los anchos fijos en la mayoría, se adaptarán al 100%
         2: { halign: "center", fontStyle: "bold", textColor: [30, 58, 138] },
         3: { halign: "center", textColor: [100, 116, 139] },
         4: { halign: "center", fontStyle: "bold", textColor: [21, 128, 61] },
@@ -444,7 +1074,7 @@ function CalculadoraMinimosModal({ onClose }) {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-slate-800 w-full max-w-6xl rounded-2xl border border-slate-600 shadow-2xl flex flex-col max-h-[95vh]" // Mantiene el diseño ancho en pantalla también
+        className="bg-slate-800 w-full max-w-6xl rounded-2xl border border-slate-600 shadow-2xl flex flex-col max-h-[95vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 border-b border-slate-700 bg-slate-900 flex justify-between items-center rounded-t-2xl">
@@ -567,7 +1197,6 @@ function CalculadoraMinimosModal({ onClose }) {
   );
 }
 
-// --- ITEM DRAGGABLE MODIFICADO PARA INCLUIR BOTÓN HISTORIAL ---
 function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: `source-${item.id}`, data: item, disabled: isOverlay });
@@ -603,7 +1232,6 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
 
       {!isOverlay && (
         <div className="flex gap-1 mr-2">
-          {/* NUEVO: Botón de Historial */}
           {onVerHistorial && (
             <button
               onPointerDown={(e) => {
@@ -617,7 +1245,6 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
             </button>
           )}
 
-          {/* Botón Ficha Técnica */}
           {onVerFicha && (
             <button
               onPointerDown={(e) => {
@@ -706,9 +1333,8 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
   );
 }
 
-// --- COMPONENTE PRINCIPAL ---
 export default function IngenieriaProductos() {
-  const navigate = useNavigate(); // <--- 2. IMPORTANTE: Inicializamos el hook
+  const navigate = useNavigate();
   const [productos, setProductos] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -720,7 +1346,6 @@ export default function IngenieriaProductos() {
   const [filtroDer, setFiltroDer] = useState("");
   const [loading, setLoading] = useState(false);
   const [activeDragId, setActiveDragId] = useState(null);
-
   const [fichaSeleccionada, setFichaSeleccionada] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
 
@@ -1037,7 +1662,6 @@ export default function IngenieriaProductos() {
         </div>
 
         <div className="grid grid-cols-12 gap-6 flex-1 overflow-hidden">
-          {/* COLUMNA IZQUIERDA */}
           <div className="col-span-3 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
             <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
               <h3
@@ -1094,11 +1718,9 @@ export default function IngenieriaProductos() {
                       </span>
 
                       <div className="flex items-center gap-1">
-                        {/* BOTÓN HISTORIAL (Hoja de Vida) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Obtenemos el nombre limpio sea Producto o Semielaborado
                             const nombreParaUrl =
                               modo === "PRODUCTO" ? item : item.nombre;
                             navigate(
@@ -1115,7 +1737,6 @@ export default function IngenieriaProductos() {
                           <FaHistory />
                         </button>
 
-                        {/* BOTÓN FICHA TÉCNICA (Solo Semielaborados) */}
                         {modo === "SEMIELABORADO" && (
                           <button
                             onClick={(e) => {
@@ -1140,7 +1761,6 @@ export default function IngenieriaProductos() {
             </div>
           </div>
 
-          {/* COLUMNA CENTRAL */}
           <div className="col-span-5 flex flex-col bg-slate-900/50 rounded-xl border border-slate-700 overflow-hidden shadow-lg relative">
             <div className="p-5 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
               <div>
@@ -1194,7 +1814,6 @@ export default function IngenieriaProductos() {
             </div>
           </div>
 
-          {/* COLUMNA DERECHA */}
           <div className="col-span-4 bg-slate-800 rounded-xl flex flex-col border border-slate-700 overflow-hidden shadow-lg">
             <div className="p-4 bg-slate-800 border-b border-slate-700 z-10">
               <h3

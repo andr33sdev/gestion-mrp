@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { API_BASE_URL, authFetch } from "../utils.js"; // <--- YA NO NECESITAMOS PEDIDOS_API_URL AQUÍ
+import { API_BASE_URL, authFetch } from "../utils.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -38,6 +38,8 @@ import {
   FaTimes,
   FaClock,
   FaSync,
+  FaFilePdf,
+  FaBook,
 } from "react-icons/fa";
 
 export default function PlanificacionPage({ onNavigate }) {
@@ -60,12 +62,13 @@ export default function PlanificacionPage({ onNavigate }) {
 
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
   const [activeTab, setActiveTab] = useState("items");
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showGanttModal, setShowGanttModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
 
-  // --- CARGA DE DATOS ---
+  // ... (Efectos de carga y lógica de MRP se mantienen igual) ...
   useEffect(() => {
     const cargarDatosMaestros = async () => {
       try {
@@ -90,33 +93,25 @@ export default function PlanificacionPage({ onNavigate }) {
     cargarDatosMaestros();
   }, []);
 
-  // --- CARGAR PEDIDOS SIN STOCK (DIRECTO DB) ---
   const loadPendingOrders = async () => {
     setLoadingPending(true);
     try {
-      // Consulta al nuevo endpoint dedicado
       const res = await authFetch(`${API_BASE_URL}/planificacion/sin-stock`);
       if (res.ok) {
         const data = await res.json();
         setPendingOrders(data);
-      } else {
-        console.error("Error al cargar pedidos sin stock");
       }
     } catch (e) {
-      console.error("Error de red:", e);
+      console.error(e);
     } finally {
       setLoadingPending(false);
     }
   };
 
-  // Cargar pedidos cuando se abre el drawer
   useEffect(() => {
-    if (showPendingDrawer) {
-      loadPendingOrders();
-    }
+    if (showPendingDrawer) loadPendingOrders();
   }, [showPendingDrawer]);
 
-  // --- CÁLCULO MRP ---
   const explosion = useMemo(() => {
     const totalNecesario = {};
     currentPlanItems.forEach((item) => {
@@ -152,35 +147,584 @@ export default function PlanificacionPage({ onNavigate }) {
       .sort((a, b) => a.balance - b.balance);
   }, [currentPlanItems, recetasMap, allMPs]);
 
-  // --- GENERADOR PDF ---
-  const generarPDF = () => {
+  // --- GENERADOR PDF ORDEN DE PRODUCCIÓN (PROFESIONAL) ---
+  const generarPDFOrden = () => {
     const doc = new jsPDF();
     const fecha = new Date().toLocaleDateString("es-AR");
     const hora = new Date().toLocaleTimeString("es-AR", {
       hour: "2-digit",
       minute: "2-digit",
     });
+
+    // Colores corporativos
+    const azulOscuro = [30, 41, 59];
+    const grisClaro = [241, 245, 249];
+    const bordeGris = [203, 213, 225];
+
+    // --- 1. ENCABEZADO ---
+    doc.setFillColor(...azulOscuro);
+    doc.rect(0, 0, 210, 30, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.text("ORDEN DE PRODUCCIÓN", 14, 18);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("PLANIFICACIÓN Y CONTROL", 14, 24);
+
+    // Datos del Plan (Derecha)
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text(`#${currentPlanNombre.toUpperCase()}`, 195, 18, {
+      align: "right",
+    });
+
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Emisión: ${fecha} - ${hora} hs`, 195, 24, { align: "right" });
+
+    // --- 2. RESUMEN EJECUTIVO (Caja) ---
+    let yPos = 40;
+
+    // Totales
     const totalItems = currentPlanItems.length;
     const totalUnidades = currentPlanItems.reduce(
       (acc, i) => acc + Number(i.cantidad),
-      0
+      0,
     );
-    const totalProducido = currentPlanItems.reduce(
+    const totalAvance = currentPlanItems.reduce(
       (acc, i) => acc + Number(i.producido),
-      0
+      0,
     );
-    const avancePorcentaje =
-      totalUnidades > 0
-        ? ((totalProducido / totalUnidades) * 100).toFixed(1)
-        : "0.0";
+    const pctAvance =
+      totalUnidades > 0 ? Math.round((totalAvance / totalUnidades) * 100) : 0;
 
-    doc.setFontSize(18);
-    doc.text("ORDEN DE PRODUCCIÓN", 14, 20);
-    // ... (Lógica de PDF abreviada para mantener el foco en la corrección) ...
-    doc.save(`Plan_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`);
+    // Dibujar caja resumen
+    doc.setDrawColor(...bordeGris);
+    doc.setFillColor(...grisClaro);
+    doc.roundedRect(14, yPos, 182, 18, 2, 2, "FD");
+
+    doc.setTextColor(50);
+    doc.setFontSize(9);
+
+    // Columnas de la caja
+    const colW = 182 / 4;
+
+    // Items
+    doc.setFont("helvetica", "normal");
+    doc.text("TOTAL ÍTEMS", 14 + colW * 0.5, yPos + 6, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(String(totalItems), 14 + colW * 0.5, yPos + 12, {
+      align: "center",
+    });
+
+    // Unidades
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("OBJETIVO (Unid)", 14 + colW * 1.5, yPos + 6, {
+      align: "center",
+    });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(String(totalUnidades), 14 + colW * 1.5, yPos + 12, {
+      align: "center",
+    });
+
+    // Estado
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("ESTADO", 14 + colW * 2.5, yPos + 6, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(currentPlanEstado, 14 + colW * 2.5, yPos + 12, {
+      align: "center",
+    });
+
+    // Avance
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text("AVANCE ACTUAL", 14 + colW * 3.5, yPos + 6, { align: "center" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(`${pctAvance}%`, 14 + colW * 3.5, yPos + 12, { align: "center" });
+
+    yPos += 28;
+
+    // --- 3. DETALLE DE PRODUCCIÓN (TABLA PRINCIPAL) ---
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+    doc.setFont("helvetica", "bold");
+    doc.text("1. DETALLE DE PRODUCCIÓN", 14, yPos);
+    yPos += 2;
+
+    const tableData = currentPlanItems.map((i) => [
+      i.semielaborado.codigo,
+      i.semielaborado.nombre,
+      i.cantidad,
+      "", // Espacio para anotar REAL
+      "", // Espacio para LOTE/OBS
+      `${i.producido} (${((i.producido / i.cantidad) * 100).toFixed(0)}%)`, // Info sistema
+    ]);
+
+    autoTable(doc, {
+      startY: yPos + 2,
+      head: [
+        [
+          "CÓDIGO",
+          "PRODUCTO",
+          "META",
+          "REAL (Manual)",
+          "OBSERVACIONES / LOTE",
+          "SISTEMA",
+        ],
+      ],
+      body: tableData,
+      theme: "grid",
+      styles: {
+        fontSize: 9,
+        cellPadding: 3,
+        valign: "middle",
+        lineColor: [200, 200, 200],
+      },
+      headStyles: {
+        fillColor: azulOscuro,
+        textColor: 255,
+        fontStyle: "bold",
+        halign: "center",
+      },
+      columnStyles: {
+        0: { width: 25, fontStyle: "bold" },
+        1: { width: 55 },
+        2: { width: 15, halign: "center", fontStyle: "bold" },
+        3: { width: 25 }, // Columna vacía para escribir
+        4: { width: 35 }, // Columna vacía para escribir
+        5: { width: 25, halign: "right", fontSize: 8, textColor: 100 },
+      },
+    });
+
+    yPos = doc.lastAutoTable.finalY + 15;
+
+    // --- 4. MATERIALES NECESARIOS (MRP - KITTING) ---
+    // Chequeamos si entra en la hoja
+    if (yPos + 40 > 280) {
+      doc.addPage();
+      yPos = 20;
+    }
+
+    doc.setFontSize(11);
+    doc.setTextColor(30);
+    doc.setFont("helvetica", "bold");
+    doc.text("2. MATERIALES REQUERIDOS (PREPARACIÓN)", 14, yPos);
+
+    // Usamos la variable 'explosion' que ya calcula el MRP
+    const mrpData = explosion.map((m) => [
+      m.nombre,
+      m.necesario, // Cantidad total necesaria para el plan
+      m.stock, // Stock actual sistema
+      "", // Checkbox manual
+    ]);
+
+    autoTable(doc, {
+      startY: yPos + 4,
+      head: [["INSUMO / MATERIA PRIMA", "CANT. TOTAL", "STOCK DISP.", "CHECK"]],
+      body: mrpData,
+      theme: "striped",
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [71, 85, 105], textColor: 255 }, // Slate 600
+      columnStyles: {
+        0: { width: 90 },
+        1: { width: 30, halign: "right", fontStyle: "bold" },
+        2: { width: 30, halign: "right" },
+        3: { width: 20 }, // Para tildar
+      },
+    });
+
+    yPos = doc.lastAutoTable.finalY + 20;
+
+    // --- 5. PIE DE PÁGINA (FIRMAS) ---
+    if (yPos + 30 > 280) {
+      doc.addPage();
+      yPos = 40;
+    }
+
+    doc.setDrawColor(150);
+    doc.setLineWidth(0.5);
+
+    // Firma 1
+    doc.line(30, yPos, 80, yPos);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text("RESPONSABLE PRODUCCIÓN", 55, yPos + 5, { align: "center" });
+
+    // Firma 2
+    doc.line(130, yPos, 180, yPos);
+    doc.text("GERENCIA / CALIDAD", 155, yPos + 5, { align: "center" });
+
+    // Disclaimer final
+    doc.setFontSize(7);
+    doc.setTextColor(150);
+    doc.text(
+      "Este documento es una orden oficial de trabajo. Cualquier desviación debe ser reportada inmediatamente.",
+      105,
+      285,
+      { align: "center" },
+    );
+
+    doc.save(`Orden_Produccion_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // --- HANDLERS ---
+  // --- GENERADOR PDF MASIVO (FICHAS TÉCNICAS) ---
+  const generarFichasMasivas = async () => {
+    if (currentPlanItems.length === 0) return alert("El plan está vacío.");
+    if (
+      !confirm(`¿Generar book técnico con ${currentPlanItems.length} fichas?`)
+    )
+      return;
+
+    setGeneratingPDF(true);
+
+    try {
+      // 1. Obtener datos de TODOS los productos del plan en paralelo
+      const promises = currentPlanItems.map((item) =>
+        authFetch(`${API_BASE_URL}/ingenieria/ficha/${item.semielaborado.id}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      );
+
+      const resultados = await Promise.all(promises);
+      const doc = new jsPDF();
+
+      // 2. Iterar y dibujar cada página
+      resultados.forEach((data, index) => {
+        if (!data) return; // Saltar si falló la carga de alguno
+
+        // Si no es el primero, nueva página
+        if (index > 0) doc.addPage();
+
+        const { producto, receta, specs = {}, ultima_version_receta } = data;
+        const { tipo_proceso, parametros_maquina: pm = {} } = producto;
+
+        // --- AQUÍ VA LA LÓGICA DE DIBUJO DE FICHA (COPIADA Y ADAPTADA) ---
+        const azulOscuro = [30, 41, 59];
+        const grisClaro = [241, 245, 249];
+        const rojoAlerta = [185, 28, 28];
+
+        // 1. ENCABEZADO
+        doc.setFillColor(...azulOscuro);
+        doc.rect(0, 0, 210, 22, "F");
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(18);
+        doc.setFont("helvetica", "bold");
+        doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 10);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 16);
+
+        const fechaImpresion = new Date().toLocaleDateString("es-AR");
+        doc.setFontSize(8);
+        doc.text(`Impreso: ${fechaImpresion}`, 195, 10, { align: "right" });
+        doc.text(`Plan: ${currentPlanNombre}`, 195, 16, { align: "right" }); // <--- Agregamos nombre del plan
+
+        let yPos = 30;
+
+        // 2. INFO PRODUCTO
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text(`${producto.nombre}`, 14, yPos);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 5);
+
+        doc.setDrawColor(200);
+        doc.setFillColor(...grisClaro);
+        doc.roundedRect(120, yPos - 6, 75, 14, 1, 1, "FD");
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        doc.text("RECETA VIGENTE:", 123, yPos - 1);
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "bold");
+        doc.text(
+          ultima_version_receta?.nombre_version || "Estándar / Inicial",
+          123,
+          yPos + 4,
+        );
+
+        yPos += 12;
+
+        // 3. SPECS
+        const specsData = [
+          [
+            `REFLECTIVA: ${specs.tipo_reflectiva || "N/A"}`,
+            `PROTECTOR: ${specs.tipo_protector || "N/A"}`,
+            `APLICACIÓN: ${specs.tipo_aplicacion || "N/A"}`,
+          ],
+        ];
+        autoTable(doc, {
+          startY: yPos,
+          body: specsData,
+          theme: "plain",
+          styles: {
+            fontSize: 8,
+            cellPadding: 2,
+            fontStyle: "bold",
+            textColor: [50, 50, 50],
+            halign: "center",
+          },
+          columnStyles: {
+            0: { fillColor: [230, 230, 230], cellWidth: 60 },
+            1: { fillColor: [230, 230, 230], cellWidth: 60 },
+            2: { fillColor: [230, 230, 230], cellWidth: "auto" },
+          },
+          margin: { left: 14, right: 14 },
+        });
+        yPos = doc.lastAutoTable.finalY + 8;
+
+        // 4. BLOQUE CENTRAL (2 COLUMNAS)
+        const colLeftX = 14;
+        const colRightX = 115;
+        const colWidthLeft = 95;
+        const colWidthRight = 80;
+        const startYBlock = yPos;
+
+        // IZQUIERDA: MÁQUINA
+        doc.setFillColor(...azulOscuro);
+        doc.rect(colLeftX, yPos, colWidthLeft, 6, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(9);
+        doc.text(
+          `PARÁMETROS ${
+            tipo_proceso === "INYECCION" ? "INYECCIÓN" : "ROTOMOLDEO"
+          }`,
+          colLeftX + 2,
+          yPos + 4,
+        );
+        let yMachine = yPos + 7;
+
+        if (tipo_proceso === "INYECCION") {
+          const inyData = [
+            ["#1", pm.pos1 || "-", pm.pres1 || "-", pm.vel1 || "-"],
+            ["#2", pm.pos2 || "-", pm.pres2 || "-", pm.vel2 || "-"],
+            ["#3", pm.pos3 || "-", pm.pres3 || "-", pm.vel3 || "-"],
+            ["#4", pm.pos4 || "-", pm.pres4 || "-", pm.vel4 || "-"],
+            ["#5", pm.pos5 || "-", pm.pres5 || "-", pm.vel5 || "-"],
+            ["#6", pm.pos6 || "-", pm.pres6 || "-", pm.vel6 || "-"],
+          ];
+          autoTable(doc, {
+            startY: yMachine,
+            head: [["#", "Pos", "Pres", "Vel"]],
+            body: inyData,
+            theme: "grid",
+            headStyles: {
+              fillColor: [80, 80, 80],
+              fontSize: 8,
+              cellPadding: 1,
+            },
+            styles: { fontSize: 8, halign: "center", cellPadding: 1 },
+            margin: { left: colLeftX },
+            tableWidth: colWidthLeft,
+          });
+          yMachine = doc.lastAutoTable.finalY + 4;
+
+          doc.setFontSize(8);
+          doc.setTextColor(0);
+          doc.setFont("helvetica", "bold");
+          doc.text("TEMPERATURAS:", colLeftX, yMachine);
+          doc.setFont("helvetica", "normal");
+          doc.text(pm.temperaturas_zonas || "-", colLeftX + 30, yMachine);
+          yMachine += 4;
+          doc.setFont("helvetica", "bold");
+          doc.text("CHILLER:", colLeftX, yMachine);
+          doc.setFont("helvetica", "normal");
+          doc.text(pm.chiller_matriz || "-", colLeftX + 30, yMachine);
+          yMachine += 5;
+
+          autoTable(doc, {
+            startY: yMachine,
+            head: [["CARGA / SUCCIÓN #5", "Pos", "Pres", "Vel", "P. Atrás"]],
+            body: [
+              [
+                "",
+                pm.carga_pos || "-",
+                pm.carga_pres || "-",
+                pm.carga_vel || "-",
+                pm.carga_pres_atras || "-",
+              ],
+            ],
+            theme: "grid",
+            headStyles: {
+              fontStyle: "bold",
+              fillColor: [220, 220, 220],
+              textColor: 0,
+              fontSize: 7,
+              halign: "center",
+            },
+            styles: { fontSize: 7, halign: "center", cellPadding: 1 },
+            columnStyles: { 0: { cellWidth: 0.1 } },
+            margin: { left: colLeftX },
+            tableWidth: colWidthLeft,
+          });
+          yMachine = doc.lastAutoTable.finalY;
+        } else {
+          const rotoData = [
+            ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v1m2 || "-", pm.inv1 || "-"],
+            ["2", pm.t2 || "-", pm.v2m1 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
+            ["3", pm.t3 || "-", pm.v3m1 || "-", pm.v3m2 || "-", pm.inv3 || "-"],
+            ["4", pm.t4 || "-", pm.v4m1 || "-", pm.v4m2 || "-", pm.inv4 || "-"],
+          ];
+          autoTable(doc, {
+            startY: yMachine,
+            head: [["Etapa", "T (minutos)", "V1 %", "V2 %", "Inv %"]],
+            body: rotoData,
+            theme: "striped",
+            headStyles: {
+              fillColor: [80, 80, 80],
+              fontSize: 7,
+              cellPadding: 1,
+            },
+            styles: { fontSize: 8, halign: "center", cellPadding: 1.5 },
+            margin: { left: colLeftX },
+            tableWidth: colWidthLeft,
+          });
+          yMachine = doc.lastAutoTable.finalY + 3;
+          autoTable(doc, {
+            startY: yMachine,
+            head: [["ENFRIAMIENTO (minutos)", "TEMP. HORNO"]],
+            body: [[pm.frio_min || "-", (pm.temp_horno || "-") + " °C"]],
+            theme: "grid",
+            headStyles: {
+              fillColor: [100, 100, 100],
+              fontSize: 7,
+              cellPadding: 1,
+            },
+            styles: { fontSize: 8, halign: "center" },
+            margin: { left: colLeftX },
+            tableWidth: colWidthLeft,
+          });
+          yMachine = doc.lastAutoTable.finalY;
+        }
+
+        // DERECHA: RECETA
+        doc.setFillColor(...azulOscuro);
+        doc.rect(colRightX, startYBlock, colWidthRight, 6, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.text("INGENIERÍA (RECETA)", colRightX + 2, startYBlock + 4);
+        let yRecipe = startYBlock + 7;
+        const tablaReceta = receta.map((item) => [
+          item.nombre,
+          `${Number(item.cantidad).toFixed(2)}`, // 2 DECIMALES
+        ]);
+        autoTable(doc, {
+          startY: yRecipe,
+          head: [["INSUMO", "CANTIDAD"]],
+          body: tablaReceta,
+          theme: "striped",
+          styles: { fontSize: 8, cellPadding: 1.5 },
+          headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
+          columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
+          margin: { left: colRightX },
+          tableWidth: colWidthRight,
+        });
+        yRecipe = doc.lastAutoTable.finalY;
+
+        yPos = Math.max(yMachine, yRecipe) + 8;
+
+        // 5. PROCEDIMIENTO
+        doc.setFillColor(...azulOscuro);
+        doc.rect(14, yPos, 182, 6, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4);
+        yPos += 10;
+
+        doc.setTextColor(0, 0, 0);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setLineHeightFactor(1.6); // Interlineado
+        let textoProcedimiento =
+          tipo_proceso === "INYECCION"
+            ? `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO. Se selecciona en la librería el modelo a fabricar. Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso, acudir al Encargado. Si no se encuentra, dejar el artículo identificado y separado correctamente para su posterior análisis.`
+            : `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema, acudir al Encargado. Si no está, dejar el artículo identificado y separado para análisis.`;
+
+        const splitText = doc.splitTextToSize(textoProcedimiento, 182);
+        doc.text(splitText, 14, yPos);
+        yPos += splitText.length * 4.5 + 8;
+        doc.setLineHeightFactor(1.15); // Reset
+
+        // 6. PROBLEMAS
+        if (yPos > 240) yPos = 240;
+        let problemas =
+          tipo_proceso === "INYECCION"
+            ? [
+                ["Agujereada", "Regulación de carga, aire y presión"],
+                ["Manchada", "Avisar y esperar limpieza color. Anotar."],
+                ["Doblada", "Darle más enfriado"],
+                ["Quemada", "Consultar temperaturas"],
+              ]
+            : [
+                ["Cruda", "Subir tiempo cocinado (máx 2 min)"],
+                ["Quemada", "Bajar tiempo cocinado (máx 2 min)"],
+                ["Doblada", "Revisar silicona / Exceso temp"],
+                ["Incompleta", "Revisar respiradores y cierres"],
+              ];
+
+        const problemRowHeight = 9;
+        const problemHeaderHeight = 10;
+        const problemBoxHeight =
+          problemHeaderHeight +
+          Math.ceil(problemas.length / 2) * problemRowHeight +
+          4;
+
+        doc.setFillColor(...rojoAlerta);
+        doc.rect(14, yPos, 182, 6, "F");
+        doc.setDrawColor(...rojoAlerta);
+        doc.setLineWidth(0.5);
+        doc.rect(14, yPos, 182, problemBoxHeight);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4, {
+          align: "center",
+        });
+
+        yPos += 11;
+        doc.setTextColor(0, 0, 0);
+        doc.setFontSize(8);
+        problemas.forEach(([problema, solucion], i) => {
+          const xOffset = i % 2 === 0 ? 20 : 110;
+          const yOffset = yPos + Math.floor(i / 2) * problemRowHeight;
+          doc.setFont("helvetica", "bold");
+          doc.text(`• ${problema}:`, xOffset, yOffset);
+          doc.setFont("helvetica", "normal");
+          doc.text(`${solucion}`, xOffset, yOffset + 3.5);
+        });
+
+        // Disclaimer
+        yPos += Math.ceil(problemas.length / 2) * problemRowHeight + 6;
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "italic");
+        doc.setTextColor(100);
+        doc.text(
+          "En todos los casos consultar previamente con un superior.",
+          105,
+          yPos,
+          { align: "center" },
+        );
+      }); // FIN FOR EACH
+
+      doc.save(`BOOK_TECNICO_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert("Hubo un error generando las fichas. Revisa la consola.");
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  // ... (Resto de los handlers se mantienen igual) ...
   const handleSelectPlan = async (planId) => {
     if (isSaving) return;
     setLoading(true);
@@ -218,7 +762,7 @@ export default function PlanificacionPage({ onNavigate }) {
     if (!hasRole("GERENCIA")) return alert("⛔ ACCESO DENEGADO");
     setSelectedPlanId("NEW");
     setCurrentPlanNombre(
-      `Nuevo Plan ${new Date().toLocaleDateString("es-AR")}`
+      `Nuevo Plan ${new Date().toLocaleDateString("es-AR")}`,
     );
     setCurrentPlanItems([]);
     setCurrentPlanEstado("ABIERTO");
@@ -231,14 +775,14 @@ export default function PlanificacionPage({ onNavigate }) {
     if (!hasRole("GERENCIA")) return alert("⛔ ACCESO DENEGADO");
     const cantidadInput = prompt(
       `Cantidad a fabricar de "${semielaborado.nombre}":`,
-      "10"
+      "10",
     );
     if (!cantidadInput) return;
     const cantidad = Number(cantidadInput);
     if (cantidad > 0) {
       setCurrentPlanItems((prev) => {
         const index = prev.findIndex(
-          (item) => item.semielaborado.id === semielaborado.id
+          (item) => item.semielaborado.id === semielaborado.id,
         );
         if (index !== -1) {
           const nuevos = [...prev];
@@ -316,7 +860,7 @@ export default function PlanificacionPage({ onNavigate }) {
       if (!res.ok) throw new Error("Error al guardar");
       const data = await res.json();
       const all = await authFetch(`${API_BASE_URL}/planificacion`).then((r) =>
-        r.json()
+        r.json(),
       );
       setMasterPlanList(all);
       if (selectedPlanId === "NEW") setSelectedPlanId(data.planId);
@@ -341,11 +885,11 @@ export default function PlanificacionPage({ onNavigate }) {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ estado }),
-        }
+        },
       );
       setCurrentPlanEstado(estado);
       setMasterPlanList((prev) =>
-        prev.map((p) => (p.id === selectedPlanId ? { ...p, estado } : p))
+        prev.map((p) => (p.id === selectedPlanId ? { ...p, estado } : p)),
       );
       setIsSaving(false);
     }
@@ -376,45 +920,31 @@ export default function PlanificacionPage({ onNavigate }) {
   const isPlanCerrado = currentPlanEstado === "CERRADO";
   const isPlanNuevo = selectedPlanId === "NEW";
 
-  // --- HELPER PARA FECHAS ---
   const formatearFecha = (fechaStr) => {
     if (!fechaStr) return "-";
-
     const str = String(fechaStr).trim();
-
-    // Caso 1: Si ya viene con barras (Ej: "25/02/2025" o "2/5/2025")
-    // Asumimos que es texto plano del Excel y NO lo tocamos para que no se rompa.
-    if (str.includes("/")) {
-      // Solo cortamos si tuviera hora, pero devolvemos el string directo
-      return str.split(" ")[0];
-    }
-
-    // Caso 2: Formato ISO de base de datos (Ej: "2025-02-25T14:00:00.000Z")
+    if (str.includes("/")) return str.split(" ")[0];
     try {
       const d = new Date(str);
-      if (isNaN(d.getTime())) return str; // Si falla, devuelve original
+      if (isNaN(d.getTime())) return str;
       return d.toLocaleDateString("es-AR", { timeZone: "UTC" });
     } catch (e) {
       return str;
     }
   };
 
-  // Función para forzar sync
   const handleForceSync = async () => {
     if (
       confirm(
-        "¿Forzar actualización desde el Excel? Esto puede tardar unos segundos."
+        "¿Forzar actualización desde el Excel? Esto puede tardar unos segundos.",
       )
     ) {
-      setLoadingPending(true); // Usamos el mismo loader
+      setLoadingPending(true);
       try {
         await authFetch(`${API_BASE_URL}/planificacion/sincronizar-ya`, {
           method: "POST",
         });
-        // Esperamos 2 seg para dar tiempo a la DB
-        setTimeout(() => {
-          loadPendingOrders();
-        }, 2000);
+        setTimeout(() => loadPendingOrders(), 2000);
       } catch (e) {
         alert("Error sincronizando");
         setLoadingPending(false);
@@ -453,7 +983,6 @@ export default function PlanificacionPage({ onNavigate }) {
             </div>
 
             <div className="flex gap-3 w-full md:w-auto">
-              {/* --- BOTÓN GANTT / CRONOGRAMA (NUEVO) --- */}
               <motion.button
                 onClick={() => setShowMatrixModal(true)}
                 className="flex-1 md:flex-none bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg transition-colors border border-purple-500/50"
@@ -462,8 +991,6 @@ export default function PlanificacionPage({ onNavigate }) {
                 <span className="hidden sm:inline">Cronograma</span>
                 <span className="sm:hidden">Gantt</span>
               </motion.button>
-
-              {/* --- BOTÓN DE PEDIDOS SIN STOCK --- */}
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setShowPendingDrawer(true)}
@@ -473,7 +1000,6 @@ export default function PlanificacionPage({ onNavigate }) {
                 <span className="hidden sm:inline">Pedidos Sin Stock</span>
                 <span className="sm:hidden">Sin Stock</span>
               </motion.button>
-
               <motion.button
                 onClick={handleCreateNew}
                 className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 shadow-lg"
@@ -522,13 +1048,29 @@ export default function PlanificacionPage({ onNavigate }) {
                   disabled={isPlanCerrado || isSaving}
                 />
                 <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+                  {/* --- BOTÓN NUEVO: FICHAS TÉCNICAS (BOOK) --- */}
                   <button
-                    onClick={generarPDF}
+                    onClick={generarFichasMasivas}
+                    disabled={isPlanNuevo || generatingPDF}
+                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white shadow-lg transition-all disabled:opacity-50 border border-slate-600"
+                  >
+                    {generatingPDF ? (
+                      <FaSpinner className="animate-spin" />
+                    ) : (
+                      <FaBook className="text-yellow-500" />
+                    )}
+                    <span className="hidden sm:inline">Fichas Téc.</span>
+                  </button>
+
+                  <button
+                    onClick={generarPDFOrden}
                     disabled={isPlanNuevo}
                     className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white shadow-lg transition-all disabled:opacity-50"
                   >
-                    <FaPrint /> <span className="hidden sm:inline">PDF</span>
+                    <FaPrint />{" "}
+                    <span className="hidden sm:inline">PDF Orden</span>
                   </button>
+
                   <button
                     onClick={() => setShowGanttModal(true)}
                     disabled={isPlanNuevo || currentPlanItems.length === 0}
@@ -662,7 +1204,7 @@ export default function PlanificacionPage({ onNavigate }) {
                                         onClick={() => {
                                           const newQty = prompt(
                                             "Nueva meta:",
-                                            item.cantidad
+                                            item.cantidad,
                                           );
                                           if (newQty && !isNaN(newQty))
                                             handleEditItem(i, Number(newQty));
@@ -758,7 +1300,7 @@ export default function PlanificacionPage({ onNavigate }) {
                               <tr key={reg.id} className="hover:bg-white/5">
                                 <td className="px-4 md:px-6 py-4 text-white">
                                   {new Date(
-                                    reg.fecha_produccion
+                                    reg.fecha_produccion,
                                   ).toLocaleDateString()}
                                 </td>
                                 <td className="px-4 md:px-6 py-4 text-gray-300">
