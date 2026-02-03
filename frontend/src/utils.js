@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"; // Esto probablemente sobre, utils 
 import { getAuthData, logout } from "./auth/authHelper";
 
 // --- CONSTANTES ---
-export const API_BASE_URL = "https://horno-backend.onrender.com/api";
+export const API_BASE_URL = "https://horno-backend.onrender.com/api"; //
 //export const API_BASE_URL = "http://localhost:4000/api";
 
 export const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
