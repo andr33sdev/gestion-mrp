@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   FaUsers,
@@ -26,6 +26,7 @@ import {
   FaCalendarDay,
   FaCalendarWeek,
   FaCalendarAlt,
+  FaCalendar,
 } from "react-icons/fa";
 import {
   ResponsiveContainer,
@@ -50,25 +51,66 @@ const STOCK_SEMIS_URL = `${API_BASE_URL}/ingenieria/semielaborados`;
 
 const normalizeKey = (key) => (key || "").trim().toUpperCase();
 
+// --- PARSEO DE FECHAS "TODOTERRENO" ---
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
+
+  // Si ya es objeto fecha
   if (Object.prototype.toString.call(dateStr) === "[object Date]") {
     return isNaN(dateStr) ? null : dateStr;
   }
+
   const str = String(dateStr).trim();
+
+  // 1. Caso ISO (YYYY-MM-DD...) - Formato DB Nuevo
+  if (str.match(/^\d{4}-\d{2}-\d{2}/)) {
+    const d = new Date(str);
+    // Ajuste de zona horaria simple si viene sin hora (evita el día anterior)
+    if (str.length === 10) {
+      return new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+    }
+    return isNaN(d) ? null : d;
+  }
+
+  // 2. Caso Barras (DD/MM/YYYY o DD/MM/YY) - Formato Excel Humano
+  // ESTE ES EL QUE ARREGLA EL PROBLEMA DE MES INVERTIDO
   if (str.includes("/")) {
     const parts = str.split("/");
     if (parts.length === 3) {
       const day = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10) - 1;
+      const month = parseInt(parts[1], 10) - 1; // Meses 0-11
       let year = parseInt(parts[2], 10);
-      if (year < 100) year += 2000;
+      if (year < 100) year += 2000; // Corrección año corto
       const d = new Date(year, month, day);
       return isNaN(d) ? null : d;
     }
   }
+
+  // 3. Caso Serial Excel (Número como String) - Formato Excel Crudo
+  if (str.match(/^\d+$/)) {
+    const val = parseInt(str, 10);
+    if (val > 30000 && val < 60000) {
+      // Rango razonable de fechas actuales
+      const fechaBase = new Date(1899, 11, 30);
+      const dias = Math.floor(val);
+      const ms = (val - dias) * 86400 * 1000;
+      return new Date(fechaBase.getTime() + dias * 86400000 + ms);
+    }
+  }
+
+  // Fallback
   const d = new Date(str);
   return isNaN(d) ? null : d;
+};
+
+// --- PARSEO DE CANTIDAD ROBUSTO ---
+const parseCantidad = (val) => {
+  if (!val) return 0;
+  if (typeof val === "number") return val;
+  // Quitamos puntos de mil y convertimos coma decimal a punto (si hubiera)
+  const limpio = val.toString().replace(/\./g, "").replace(",", ".");
+  const num = parseFloat(limpio);
+  return isNaN(num) ? 0 : num;
 };
 
 const RankIcon = ({ index }) => {
@@ -95,7 +137,7 @@ const PortalTooltip = ({ coords, children }) => {
     >
       {children}
     </div>,
-    document.body
+    document.body,
   );
 };
 
@@ -383,7 +425,9 @@ export default function AnalisisPedidos() {
       const estado = (row.estado || row.ESTADO || "").toString().toUpperCase();
       if (estado.includes("CANCELADO")) return;
 
-      const cantVendida = Number(row.cantidad || row.CANTIDAD || 1);
+      // PARSEO SEGURO DE CANTIDAD
+      const cantVendida = parseCantidad(row.cantidad || row.CANTIDAD || 1);
+
       const prodName = row.modelo || row.MODELO || "Desconocido";
       const cliName = row.cliente || row.CLIENTE || "Desconocido";
       const detalles = (row.detalles || row.DETALLES || "")
@@ -430,7 +474,7 @@ export default function AnalisisPedidos() {
                   total: 0,
                   months: Array(12).fill(0),
                   usedIn: {},
-                  history: [], // <--- NUEVO: Inicializamos historial
+                  history: [],
                 };
               }
               const cantidadConsumida = insumo.cantidad * cantVendida;
@@ -442,9 +486,8 @@ export default function AnalisisPedidos() {
               consumoTotalPeriodo[insumoKey].usedIn[prodName] +=
                 cantidadConsumida;
 
-              // <--- NUEVO: Guardamos el registro histórico
               consumoTotalPeriodo[insumoKey].history.push({
-                fecha: d.toLocaleDateString("es-AR"), // Formato DD/MM/YYYY
+                fecha: d.toLocaleDateString("es-AR"),
                 cant: cantidadConsumida,
               });
             });
@@ -464,11 +507,11 @@ export default function AnalisisPedidos() {
       const startOfCurrentMonth = new Date(
         now.getFullYear(),
         now.getMonth(),
-        1
+        1,
       );
       const startOfWeek = new Date(now);
       startOfWeek.setDate(
-        now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)
+        now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1),
       );
       startOfWeek.setHours(0, 0, 0, 0);
 
@@ -540,7 +583,7 @@ export default function AnalisisPedidos() {
       ventas: m.total,
     }));
     const recordMonth = [...salesByMonth].sort(
-      (a, b) => b.ventas - a.ventas
+      (a, b) => b.ventas - a.ventas,
     )[0];
 
     let criticalItemsCount = 0;
@@ -575,13 +618,13 @@ export default function AnalisisPedidos() {
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 5),
-          history: data.history, // <--- NUEVO: Pasamos el historial al hijo
+          history: data.history,
         };
       })
       .sort((a, b) => a.daysLeftVal - b.daysLeftVal);
 
     const missingData = Object.values(missingRecipesMap).sort(
-      (a, b) => b.count - a.count
+      (a, b) => b.count - a.count,
     );
     const oneYearAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
     const filteredRaw = datosPedidos.filter((row) => {
@@ -622,14 +665,6 @@ export default function AnalisisPedidos() {
   const mainChartData = useMemo(() => {
     if (!datosPedidos || datosPedidos.length === 0) return [];
     const now = new Date();
-
-    const getWeekNumber = (d) => {
-      d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-      d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-      const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-      return `${d.getUTCFullYear()}-W${weekNo}`;
-    };
 
     const buckets = {};
     let labels = [];
@@ -702,7 +737,7 @@ export default function AnalisisPedidos() {
           ? analysisData.prod.list
           : analysisData.cli.list;
       setSugerencias(
-        list.filter((i) => i.toLowerCase().includes(val.toLowerCase()))
+        list.filter((i) => i.toLowerCase().includes(val.toLowerCase())),
       );
       setMostrarSugerencias(true);
     } else setMostrarSugerencias(false);
@@ -718,7 +753,7 @@ export default function AnalisisPedidos() {
       (r) =>
         (modoVista === "PRODUCTOS"
           ? r.modelo || r.MODELO
-          : r.cliente || r.CLIENTE) === name
+          : r.cliente || r.CLIENTE) === name,
     );
 
     let total = 0;
@@ -738,7 +773,9 @@ export default function AnalisisPedidos() {
         return db - da;
       })
       .map((r) => {
-        const cant = Number(r.cantidad || r.CANTIDAD || 1);
+        // PARSEO DE CANTIDAD TAMBIÉN AQUÍ
+        const cant = parseCantidad(r.cantidad || r.CANTIDAD || 1);
+
         total += cant;
         const key =
           modoVista === "CLIENTES"
@@ -835,7 +872,7 @@ export default function AnalisisPedidos() {
   const daysInCurrentMonth = new Date(
     now.getFullYear(),
     now.getMonth() + 1,
-    0
+    0,
   ).getDate();
   const currentDay = now.getDate();
   const currentSales = lastMonthData.ventas;
@@ -843,7 +880,7 @@ export default function AnalisisPedidos() {
   let projectedValue = 0;
   if (currentSales > 0) {
     projectedValue = Math.round(
-      (currentSales / currentDay) * daysInCurrentMonth
+      (currentSales / currentDay) * daysInCurrentMonth,
     );
   } else {
     projectedValue = promedioMensual;
@@ -858,13 +895,13 @@ export default function AnalisisPedidos() {
       historialFilter === "TODOS"
         ? true
         : historialFilter === "SIN_ML"
-        ? !h.isML
-        : h.isML
+          ? !h.isML
+          : h.isML,
     );
     totalPages = Math.ceil(filtered.length / MODAL_ITEMS_PER_PAGE);
     modalHistory = filtered.slice(
       (modalPage - 1) * MODAL_ITEMS_PER_PAGE,
-      modalPage * MODAL_ITEMS_PER_PAGE
+      modalPage * MODAL_ITEMS_PER_PAGE,
     );
 
     const aggregatedChart = new Array(12).fill(0);
@@ -1046,8 +1083,8 @@ export default function AnalisisPedidos() {
                         trendDiff > 0
                           ? "text-green-400"
                           : trendDiff < 0
-                          ? "text-red-400"
-                          : "text-gray-400"
+                            ? "text-red-400"
+                            : "text-gray-400"
                       }`}
                     >
                       {trendDiff > 0 ? (

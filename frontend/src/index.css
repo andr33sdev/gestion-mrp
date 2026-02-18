@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* AGREGA ESTO SI NO LO TIENES */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Esto bloquea el scroll en toda la app, solo permitimos interno */
+}
+
 /* --- ESTILOS PARA LA IMPRESIÓN DEL REPORTE (PDF) --- */
 @media print {
     /* Oculta todo el contenido de la aplicación */

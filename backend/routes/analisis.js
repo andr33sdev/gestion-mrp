@@ -1,3 +1,4 @@
+// backend/routes/analisis.js
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
@@ -35,14 +36,17 @@ function calcularEstabilidad(valores) {
 
 router.get("/tendencias", async (req, res) => {
   try {
+    // NOTA: Usamos '::DATE' para convertir el texto a fecha y '::NUMERIC' para la cantidad.
+    // Usamos la tabla correcta: 'pedidos_clientes'
+
     // 1. CONSULTA HISTÓRICA MENSUAL (PRODUCTOS)
     const queryMensualProd = `
       SELECT 
-        to_char(fecha, 'YYYY-MM') as periodo,
+        to_char(fecha::DATE, 'YYYY-MM') as periodo,
         modelo,
-        SUM(cantidad) as total
-      FROM pedidos
-      WHERE fecha >= date_trunc('month', NOW() - INTERVAL '6 months')
+        SUM(REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC) as total
+      FROM pedidos_clientes
+      WHERE fecha::DATE >= date_trunc('month', NOW() - INTERVAL '6 months')
         AND (estado IS NULL OR UPPER(estado) NOT LIKE '%CANCELADO%')
       GROUP BY 1, 2
       ORDER BY 1 ASC
@@ -51,11 +55,11 @@ router.get("/tendencias", async (req, res) => {
     // 2. CONSULTA SEMANAL
     const querySemanal = `
       SELECT 
-        to_char(fecha, 'IYYY-IW') as periodo,
+        to_char(fecha::DATE, 'IYYY-IW') as periodo,
         modelo,
-        SUM(cantidad) as total
-      FROM pedidos
-      WHERE fecha >= date_trunc('week', NOW() - INTERVAL '12 weeks')
+        SUM(REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC) as total
+      FROM pedidos_clientes
+      WHERE fecha::DATE >= date_trunc('week', NOW() - INTERVAL '12 weeks')
         AND (estado IS NULL OR UPPER(estado) NOT LIKE '%CANCELADO%')
       GROUP BY 1, 2
       ORDER BY 1 ASC
@@ -64,12 +68,12 @@ router.get("/tendencias", async (req, res) => {
     // 3. CONSULTA GLOBALES (12 MESES)
     const queryGlobal = `
       SELECT 
-        to_char(fecha, 'YYYY-MM') as mes_key,
-        to_char(fecha, 'TMMon') as mes_nombre,
-        COALESCE(SUM(cantidad), 0) as total,
-        COALESCE(SUM(CASE WHEN detalles ILIKE '%MercadoLibre%' OR cliente ILIKE '%MercadoLibre%' THEN cantidad ELSE 0 END), 0) as ml
-      FROM pedidos
-      WHERE fecha >= date_trunc('month', NOW() - INTERVAL '11 months')
+        to_char(fecha::DATE, 'YYYY-MM') as mes_key,
+        to_char(fecha::DATE, 'TMMon') as mes_nombre,
+        COALESCE(SUM(REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC), 0) as total,
+        COALESCE(SUM(CASE WHEN detalles ILIKE '%MercadoLibre%' OR cliente ILIKE '%MercadoLibre%' THEN REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC ELSE 0 END), 0) as ml
+      FROM pedidos_clientes
+      WHERE fecha::DATE >= date_trunc('month', NOW() - INTERVAL '11 months')
         AND (estado IS NULL OR UPPER(estado) NOT LIKE '%CANCELADO%')
       GROUP BY 1, 2
       ORDER BY 1 ASC
@@ -80,25 +84,25 @@ router.get("/tendencias", async (req, res) => {
       SELECT 
         -- Actual Total
         COALESCE(SUM(CASE 
-            WHEN date_trunc('month', fecha) = date_trunc('month', NOW()) 
-            THEN cantidad ELSE 0 
+            WHEN date_trunc('month', fecha::DATE) = date_trunc('month', NOW()) 
+            THEN REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC ELSE 0 
         END), 0) as actual_total,
         
         -- Anterior Mismo Día
         COALESCE(SUM(CASE 
-            WHEN date_trunc('month', fecha) = date_trunc('month', NOW() - INTERVAL '1 month') 
-                 AND EXTRACT(DAY FROM fecha) <= EXTRACT(DAY FROM NOW())
-            THEN cantidad ELSE 0 
+            WHEN date_trunc('month', fecha::DATE) = date_trunc('month', NOW() - INTERVAL '1 month') 
+                 AND EXTRACT(DAY FROM fecha::DATE) <= EXTRACT(DAY FROM NOW())
+            THEN REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC ELSE 0 
         END), 0) as anterior_mismo_dia,
 
         -- Anterior Total Final
         COALESCE(SUM(CASE 
-            WHEN date_trunc('month', fecha) = date_trunc('month', NOW() - INTERVAL '1 month') 
-            THEN cantidad ELSE 0 
+            WHEN date_trunc('month', fecha::DATE) = date_trunc('month', NOW() - INTERVAL '1 month') 
+            THEN REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC ELSE 0 
         END), 0) as anterior_total_final
 
-      FROM pedidos
-      WHERE fecha >= date_trunc('month', NOW() - INTERVAL '1 month')
+      FROM pedidos_clientes
+      WHERE fecha::DATE >= date_trunc('month', NOW() - INTERVAL '1 month')
       AND (estado IS NULL OR UPPER(estado) NOT LIKE '%CANCELADO%')
     `;
 
@@ -185,43 +189,38 @@ router.get("/tendencias", async (req, res) => {
       ml: Number(r.ml),
     }));
 
-    // --- NUEVO CÁLCULO DE PROYECCIÓN (RUN RATE) ---
+    // --- CÁLCULO DE PROYECCIÓN (RUN RATE) ---
     const mtdRaw = resMTD.rows[0] || {};
     const actualMTD = Number(mtdRaw.actual_total || 0);
 
     const hoy = new Date();
-    const diaActual = hoy.getDate(); // Ej: 4
+    const diaActual = hoy.getDate();
     const diasEnMes = new Date(
       hoy.getFullYear(),
       hoy.getMonth() + 1,
-      0
-    ).getDate(); // Ej: 31
+      0,
+    ).getDate();
 
     let proyeccionGlobal = 0;
 
     if (actualMTD > 0 && diaActual > 0) {
-      // Fórmula Run Rate: (Lo que llevo / Días que pasaron) * Días Totales
-      // Ejemplo: (2000 / 4) * 31 = 15.500
       proyeccionGlobal = Math.round((actualMTD / diaActual) * diasEnMes);
     } else {
-      // Fallback a histórico si es día 1 a la mañana
       const historiaGlobal = graficoGlobal.slice(0, -1).map((r) => r.total);
       const pendienteGlobal = calcularPendiente(historiaGlobal.slice(-6));
       const ultimoTotal = historiaGlobal[historiaGlobal.length - 1] || 0;
       proyeccionGlobal = Math.max(0, Math.round(ultimoTotal + pendienteGlobal));
     }
 
-    // ML Share
     const totalYear = graficoGlobal.reduce((acc, curr) => acc + curr.total, 0);
     const mlYear = graficoGlobal.reduce((acc, curr) => acc + curr.ml, 0);
     const mlShare = totalYear > 0 ? Math.round((mlYear / totalYear) * 100) : 0;
 
-    // MTD Progreso
     const anteriorMismoDia = Number(mtdRaw.anterior_mismo_dia || 0);
     let progreso = 0;
     if (anteriorMismoDia > 0) {
       progreso = Math.round(
-        ((actualMTD - anteriorMismoDia) / anteriorMismoDia) * 100
+        ((actualMTD - anteriorMismoDia) / anteriorMismoDia) * 100,
       );
     } else if (actualMTD > 0) {
       progreso = 100;
@@ -233,7 +232,7 @@ router.get("/tendencias", async (req, res) => {
       aceleracion: aceleracion,
       cooling_down: coolingDown,
       grafico_global: graficoGlobal,
-      proyeccion_global: proyeccionGlobal, // Ahora usa Run Rate
+      proyeccion_global: proyeccionGlobal,
       ml_share: mlShare,
       mtd: {
         actual: actualMTD,
@@ -248,29 +247,23 @@ router.get("/tendencias", async (req, res) => {
   }
 });
 
-// --- NUEVO: RUNWAY DE INSUMOS (RELOJ DE ARENA) ---
+// --- RUNWAY DE INSUMOS (RELOJ DE ARENA) ---
 router.get("/insumos-runway", async (req, res) => {
   try {
-    const diasAnalisis = 90; // Miramos 3 meses atrás para el promedio
+    const diasAnalisis = 90;
 
-    // 1. Traer Stock Actual de Materias Primas
     const { rows: mps } = await db.query(
-      "SELECT id, codigo, nombre, stock_actual, stock_minimo FROM materias_primas"
+      "SELECT id, codigo, nombre, stock_actual, stock_minimo FROM materias_primas",
     );
 
-    // 2. Traer Ventas de los últimos 90 días
-    // (Normalizamos nombre para cruzar con recetas)
     const ventasRes = await db.query(`
-        SELECT UPPER(modelo) as modelo, SUM(cantidad) as total_vendido
-        FROM pedidos
-        WHERE fecha >= NOW() - INTERVAL '${diasAnalisis} days'
+        SELECT UPPER(modelo) as modelo, SUM(REGEXP_REPLACE(cantidad, '[^0-9.]', '', 'g')::NUMERIC) as total_vendido
+        FROM pedidos_clientes
+        WHERE fecha::DATE >= NOW() - INTERVAL '${diasAnalisis} days'
           AND (estado IS NULL OR UPPER(estado) NOT LIKE '%CANCELADO%')
         GROUP BY UPPER(modelo)
     `);
 
-    // 3. Traer Recetas (Semielaborado -> Materias Primas)
-    // Necesitamos cruzar el Nombre del Modelo (Venta) -> Semielaborado -> MP
-    // Asumimos que el "Modelo" del pedido coincide con el "Nombre" del Semielaborado
     const recetasRes = await db.query(`
         SELECT UPPER(s.nombre) as modelo, mp.id as mp_id, rs.cantidad
         FROM recetas_semielaborados rs
@@ -278,13 +271,11 @@ router.get("/insumos-runway", async (req, res) => {
         JOIN materias_primas mp ON rs.materia_prima_id = mp.id
     `);
 
-    // --- CÁLCULO DE CONSUMO DIARIO (BURN RATE) ---
-    const consumoDiarioMap = {}; // { mp_id: 2.5 } (2.5 kg por día)
+    const consumoDiarioMap = {};
 
     ventasRes.rows.forEach((venta) => {
-      // Buscar recetas que coincidan con este modelo vendido
       const recetasDelModelo = recetasRes.rows.filter(
-        (r) => r.modelo === venta.modelo
+        (r) => r.modelo === venta.modelo,
       );
 
       recetasDelModelo.forEach((ingrediente) => {
@@ -297,9 +288,8 @@ router.get("/insumos-runway", async (req, res) => {
       });
     });
 
-    // --- ARMADO DEL REPORTE FINAL ---
     const reporte = mps.map((mp) => {
-      const burnRate = consumoDiarioMap[mp.id] || 0; // Consumo diario
+      const burnRate = consumoDiarioMap[mp.id] || 0;
       const stock = Number(mp.stock_actual);
 
       let diasRestantes = 9999;
@@ -315,10 +305,9 @@ router.get("/insumos-runway", async (req, res) => {
         });
       }
 
-      // Clasificación de Urgencia
-      let status = "SAFE"; // +30 días
-      if (diasRestantes <= 7) status = "CRITICAL"; // 1 semana o menos
-      else if (diasRestantes <= 30) status = "WARNING"; // Menos de un mes
+      let status = "SAFE";
+      if (diasRestantes <= 7) status = "CRITICAL";
+      else if (diasRestantes <= 30) status = "WARNING";
 
       return {
         id: mp.id,
@@ -326,16 +315,15 @@ router.get("/insumos-runway", async (req, res) => {
         codigo: mp.codigo,
         stock_actual: stock,
         stock_minimo: Number(mp.stock_minimo),
-        burn_rate: Number(burnRate.toFixed(2)), // Cuánto gasto por día
+        burn_rate: Number(burnRate.toFixed(2)),
         dias_restantes: diasRestantes,
         fecha_agotamiento: fechaAgotamiento,
         status,
       };
     });
 
-    // Ordenar: Primero lo Crítico (menor días restantes)
     const reporteOrdenado = reporte.sort(
-      (a, b) => a.dias_restantes - b.dias_restantes
+      (a, b) => a.dias_restantes - b.dias_restantes,
     );
 
     res.json(reporteOrdenado);

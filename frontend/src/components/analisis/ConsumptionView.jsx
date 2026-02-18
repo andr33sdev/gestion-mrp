@@ -84,7 +84,7 @@ const PortalTooltip = ({ coords, children }) => {
     >
       {children}
     </div>,
-    document.body
+    document.body,
   );
 };
 
@@ -178,12 +178,127 @@ const TrendIcon = ({ trend }) => {
   );
 };
 
-// ... MODALES SIMPLES ...
 function MissingRecipesModal({ items, onClose }) {
-  /* ... Código anterior igual ... */ return null;
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[120] p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-600 flex flex-col overflow-hidden max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+          <h3 className="text-lg font-bold text-white flex items-center gap-2">
+            <FaBug className="text-red-400" /> Productos sin Receta
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-slate-800"
+          >
+            <FaTimes />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+          {items.map((item, idx) => (
+            <div
+              key={idx}
+              className="p-3 rounded-xl hover:bg-slate-700/50 border border-transparent hover:border-slate-600 mb-1 flex justify-between items-center"
+            >
+              <div>
+                <p className="font-bold text-white text-sm">{item.name}</p>
+                <p className="text-xs text-red-300">{item.reason}</p>
+              </div>
+              <span className="text-xs font-mono font-bold text-gray-500 bg-slate-900 px-2 py-1 rounded">
+                {item.count} ventas
+              </span>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  );
 }
+
 function SuggestionsModal({ items, onClose, onSelect }) {
-  /* ... Código anterior igual ... */ return null;
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[120] p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-600 flex flex-col overflow-hidden max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <FaLightbulb className="text-yellow-400" /> Sugerencias de
+              Reposición
+            </h3>
+            <p className="text-xs text-gray-400">
+              Basado en consumo reciente y stock bajo
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors"
+          >
+            <FaTimes />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+          {items.length === 0 ? (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              No hay sugerencias críticas por el momento.
+            </div>
+          ) : (
+            items.map((item, idx) => (
+              <div
+                key={idx}
+                onClick={() => {
+                  onSelect(item);
+                  onClose();
+                }}
+                className="group p-3 rounded-xl hover:bg-slate-700/50 cursor-pointer transition-all border border-transparent hover:border-slate-600 mb-1"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-white text-sm group-hover:text-blue-300 transition-colors">
+                      {item.name}
+                    </p>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-[10px] bg-red-900/30 text-red-300 px-1.5 py-0.5 rounded border border-red-800/50">
+                        Stock: {item.stock}
+                      </span>
+                      <span className="text-[10px] bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800/50">
+                        Consumo: ~{item.monthly}/mes
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-yellow-400 block">
+                      {item.daysLeft} días
+                    </span>
+                    <span className="text-[9px] text-gray-500 uppercase">
+                      Cobertura
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
 // --- MODAL DETALLE AVANZADO (SEMIELABORADOS) ---

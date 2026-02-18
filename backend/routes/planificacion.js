@@ -12,28 +12,45 @@ router.use(protect);
 
 router.get("/", async (req, res) => {
   const { rows } = await db.query(
-    "SELECT * FROM planes_produccion ORDER BY fecha_creacion DESC"
+    "SELECT * FROM planes_produccion ORDER BY fecha_creacion DESC",
   );
   res.json(rows);
 });
 
 router.get("/abiertos", async (req, res) => {
   const { rows } = await db.query(
-    "SELECT id, nombre FROM planes_produccion WHERE estado = 'ABIERTO' ORDER BY fecha_creacion DESC"
+    "SELECT id, nombre FROM planes_produccion WHERE estado = 'ABIERTO' ORDER BY fecha_creacion DESC",
   );
   res.json(rows);
 });
 
-// NUEVA RUTA: Obtener Pedidos Sin Stock directo de la DB
+// NUEVA RUTA: Obtener Pedidos Sin Stock (MEJORADA CON ESTRUCTURA JSON)
 router.get("/sin-stock", async (req, res) => {
   try {
-    // CORRECCIÓN: Eliminamos el CASE complejo que mezclaba tipos.
-    // Ordenamos por ID DESC (los últimos cargados primero) para evitar errores de conversión de fecha.
     const query = `
       SELECT * FROM pedidos_clientes 
-      WHERE estado ILIKE '%SIN STOCK%' 
-      AND estado NOT ILIKE '%CANCELADO%'
-      AND estado NOT ILIKE '%ENTREGADO%'
+      WHERE 
+        -- 1. CRITERIO DE INCLUSIÓN (Variantes de texto que indican falta de stock)
+        (
+          estado ILIKE '%SIN STOCK%' 
+          OR estado ILIKE '%S/STOCK%' 
+          OR estado ILIKE '%FALTA%'
+          OR estado ILIKE '%A PRODUCIR%'
+          OR estado ILIKE '%REVISAR%'
+          OR estado ILIKE '%ATRASADO%'
+        )
+        -- 2. CRITERIO DE EXCLUSIÓN POR ESTADO (No cancelados ni finalizados explícitos)
+        AND estado NOT ILIKE '%CANCELADO%'
+        AND estado NOT ILIKE '%ENTREGADO%'
+        AND estado NOT ILIKE '%DESPACHADO%'
+        AND estado NOT ILIKE '%ANULADO%'
+        
+        -- 3. CRITERIO DE EXCLUSIÓN POR PROCESO (La clave para limpiar "viejos")
+        -- Si ya tiene fecha de despacho, ya salió (no es sin stock).
+        AND (fecha_despacho IS NULL OR fecha_despacho = '')
+        -- Si ya tiene fecha de preparación, ya se armó (el stock estaba).
+        AND (fecha_preparacion IS NULL OR fecha_preparacion = '')
+
       ORDER BY id DESC
     `;
 
@@ -41,7 +58,7 @@ router.get("/sin-stock", async (req, res) => {
     res.json(result.rows);
   } catch (e) {
     console.error("Error al buscar pedidos sin stock:", e);
-    // Importante: devolver un array vacío en caso de error para no romper el frontend
+    // Devolvemos array vacío para no romper el frontend si falla
     res.status(500).json([]);
   }
 });
@@ -56,7 +73,7 @@ router.get("/:id/operarios", async (req, res) => {
      JOIN operarios o ON r.operario_id = o.id 
      JOIN planes_items pi ON r.plan_item_id = pi.id 
      WHERE pi.plan_id = $1 GROUP BY o.nombre ORDER BY total_producido DESC`,
-    [req.params.id]
+    [req.params.id],
   );
   res.json(rows);
 });
@@ -69,7 +86,7 @@ router.get("/:id/historial", async (req, res) => {
      JOIN semielaborados s ON rp.semielaborado_id = s.id 
      JOIN operarios o ON rp.operario_id = o.id 
      WHERE pi.plan_id = $1 ORDER BY rp.fecha_produccion DESC`,
-    [req.params.id]
+    [req.params.id],
   );
   res.json(rows);
 });
@@ -119,7 +136,7 @@ router.post("/", restrictTo("GERENCIA"), async (req, res) => {
     await client.query("BEGIN");
     const resPlan = await client.query(
       "INSERT INTO planes_produccion (nombre, estado) VALUES ($1, 'ABIERTO') RETURNING id",
-      [nombre]
+      [nombre],
     );
     const planId = resPlan.rows[0].id;
 
@@ -133,7 +150,7 @@ router.post("/", restrictTo("GERENCIA"), async (req, res) => {
           item.cantidad,
           item.ritmo_turno || 50,
           item.fecha_inicio_estimada || null,
-        ]
+        ],
       );
     }
     await verificarAlertasMRP(client, planId, nombre);
@@ -177,7 +194,7 @@ router.put("/:id", restrictTo("GERENCIA"), async (req, res) => {
 
   // Log para depuración en consola del servidor
   console.log(
-    `💾 Guardando Plan ${req.params.id}. Items recibidos: ${items?.length}`
+    `💾 Guardando Plan ${req.params.id}. Items recibidos: ${items?.length}`,
   );
 
   const client = await db.connect();
@@ -186,13 +203,13 @@ router.put("/:id", restrictTo("GERENCIA"), async (req, res) => {
     if (nombre) {
       await client.query(
         "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
-        [nombre, req.params.id]
+        [nombre, req.params.id],
       );
     }
 
     const current = await client.query(
       "SELECT id FROM planes_items WHERE plan_id = $1",
-      [req.params.id]
+      [req.params.id],
     );
     const dbIds = current.rows.map((r) => r.id);
     const incomingIds = [];
@@ -210,14 +227,14 @@ router.put("/:id", restrictTo("GERENCIA"), async (req, res) => {
                ritmo_turno = $2, 
                fecha_inicio_estimada = $3
            WHERE id = $4`,
-          [item.cantidad, ritmo, fecha, item.plan_item_id]
+          [item.cantidad, ritmo, fecha, item.plan_item_id],
         );
         incomingIds.push(item.plan_item_id);
       } else {
         // INSERCION (Nuevos items/remanentes): Agregamos ritmo y fecha
         await client.query(
           "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada) VALUES ($1, $2, $3, $4, $5)",
-          [req.params.id, item.semielaborado.id, item.cantidad, ritmo, fecha]
+          [req.params.id, item.semielaborado.id, item.cantidad, ritmo, fecha],
         );
       }
     }

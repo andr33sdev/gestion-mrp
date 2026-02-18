@@ -15,6 +15,7 @@ router.use(protect);
 
 router.get("/semielaborados", async (req, res) => {
   try {
+    // Ahora devuelve también la columna 'variantes' si existe en la tabla
     const { rows } = await db.query(
       "SELECT * FROM semielaborados ORDER BY nombre ASC",
     );
@@ -70,9 +71,9 @@ router.get("/deposito/pallets", async (req, res) => {
 
 // 2. Crear un nuevo pallet
 router.post("/deposito/pallets", async (req, res) => {
-  const { materia_prima_id, cantidad, fila, lado, columna } = req.body; // <--- Agregado columna
+  const { materia_prima_id, cantidad, fila, lado, columna } = req.body;
   try {
-    // Validación básica de colisión (Opcional en backend, fuerte en frontend)
+    // Validación básica de colisión
     const existe = await db.query(
       "SELECT id FROM ubicaciones_iglu WHERE fila=$1 AND lado=$2 AND columna=$3",
       [fila, lado, columna],
@@ -193,7 +194,7 @@ router.get("/recetas-semielaborados/:id", async (req, res) => {
 router.get("/ficha/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    // 1. Info Básica + Stock
+    // 1. Info Básica + Stock + Variantes
     const semiRes = await db.query(
       "SELECT * FROM semielaborados WHERE id = $1",
       [id],
@@ -264,12 +265,12 @@ router.get("/ficha/:id", async (req, res) => {
     );
 
     res.json({
-      producto: semiRes.rows[0],
+      producto: semiRes.rows[0], // Aquí vienen las variantes si existen en la tabla
       receta: recetaRes.rows,
       historial: prodRes.rows,
       stats: statsRes.rows[0],
-      ultima_version_receta: versionesRes.rows[0], // Enviamos la última versión guardada
-      specs: specsRes.rows[0] || {}, // Enviamos las specs (reflectivos)
+      ultima_version_receta: versionesRes.rows[0],
+      specs: specsRes.rows[0] || {},
     });
   } catch (e) {
     console.error("Error ficha técnica:", e);
@@ -280,26 +281,19 @@ router.get("/ficha/:id", async (req, res) => {
 // --- CÁLCULO DE STOCK MÍNIMO SUGERIDO (IA/ESTADÍSTICA) ---
 router.get("/sugerencias-stock-minimo", async (req, res) => {
   try {
-    // LÓGICA DE DEMANDA REAL (Ventas x Receta) - Últimos 6 meses
     const query = `
         SELECT 
             s.id, 
             s.codigo, 
             s.nombre, 
             s.alerta_1 as minimo_actual,
-            -- Sumamos el stock de todas las plantas para mostrar la realidad actual
             (s.stock_planta_26 + s.stock_planta_37 + s.stock_deposito_ayolas + s.stock_deposito_quintana) as stock_total,
-            -- Calculamos consumo teórico basado en ventas
             COALESCE(SUM(p.cantidad * r.cantidad), 0) as total_periodo
         FROM semielaborados s
-        -- Unimos con la tabla 'recetas' que define qué semielaborado usa cada producto terminado
         JOIN recetas r ON s.id = r.semielaborado_id
-        -- Unimos con 'pedidos' coincidiendo el modelo vendido con el producto terminado de la receta
         JOIN pedidos p ON UPPER(p.modelo) = UPPER(r.producto_terminado)
-        
         WHERE p.fecha >= NOW() - INTERVAL '6 months'
           AND (p.estado IS NULL OR UPPER(p.estado) NOT LIKE '%CANCELADO%')
-          
         GROUP BY s.id, s.codigo, s.nombre, s.alerta_1, s.stock_planta_26, s.stock_planta_37, s.stock_deposito_ayolas, s.stock_deposito_quintana
         HAVING COALESCE(SUM(p.cantidad * r.cantidad), 0) > 0
         ORDER BY total_periodo DESC
@@ -309,7 +303,7 @@ router.get("/sugerencias-stock-minimo", async (req, res) => {
 
     const sugerencias = rows.map((row) => {
       const total = Number(row.total_periodo);
-      const promedioMensual = Math.ceil(total / 6); // Promedio mensual (base 6 meses)
+      const promedioMensual = Math.ceil(total / 6);
       const stockActual = Number(row.stock_total);
 
       return {
@@ -319,7 +313,7 @@ router.get("/sugerencias-stock-minimo", async (req, res) => {
         minimo_actual: Number(row.minimo_actual),
         stock_actual: stockActual,
         promedio_mensual: promedioMensual,
-        sugerido: promedioMensual, // Sugerimos cubrir 1 mes de demanda
+        sugerido: promedioMensual,
         diferencia: promedioMensual - Number(row.minimo_actual),
       };
     });
@@ -331,8 +325,6 @@ router.get("/sugerencias-stock-minimo", async (req, res) => {
   }
 });
 
-// --- APLICAR SUGERENCIA (ACTUALIZAR DB) ---
-// Nota: Aunque ahora lo manejes por Excel, dejo la ruta por si decides usarla a futuro.
 router.put("/aplicar-minimo/:id", async (req, res) => {
   const { id } = req.params;
   const { nuevo_minimo } = req.body;
@@ -449,6 +441,23 @@ router.put("/semielaborados/:id/tecnica", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).send("Error al guardar datos técnicos");
+  }
+});
+
+// --- NUEVA RUTA: ACTUALIZAR VARIANTES DE TERMINACIÓN ---
+router.put("/semielaborados/:id/variantes", async (req, res) => {
+  const { id } = req.params;
+  const { variantes } = req.body;
+
+  try {
+    await db.query(
+      "UPDATE semielaborados SET variantes = $1 WHERE id = $2",
+      [JSON.stringify(variantes), id], // Guarda el array de objetos en formato JSON
+    );
+    res.json({ success: true, msg: "Variantes actualizadas" });
+  } catch (e) {
+    console.error(e);
+    res.status(500).send("Error al guardar variantes");
   }
 });
 

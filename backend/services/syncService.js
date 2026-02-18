@@ -7,14 +7,15 @@ const {
   leerMateriasPrimas,
 } = require("../google-drive");
 const { parsearLog } = require("../parser");
-// const { enviarAlertaStock } = require("./telegramBotListener"); // Descomenta si lo usas
 const format = require("pg-format");
 const XLSX = require("xlsx");
 
-// --- HELPERS ---
+// --- HELPER DE FECHAS SEGURO ---
 function parsearFechaExcel(valor) {
   if (!valor) return null;
   if (valor instanceof Date) return isNaN(valor.getTime()) ? null : valor;
+
+  // Caso Número de Serie Excel
   if (typeof valor === "number") {
     const fechaBase = new Date(1899, 11, 30);
     const dias = Math.floor(valor);
@@ -22,13 +23,15 @@ function parsearFechaExcel(valor) {
     const fecha = new Date(fechaBase.getTime() + dias * 86400000 + ms);
     return isNaN(fecha.getTime()) ? null : fecha;
   }
+
+  // Caso Texto (DD/MM/YY o DD/MM/YYYY)
   if (typeof valor === "string") {
     const partes = valor.trim().split("/");
     if (partes.length === 3) {
       let dia = parseInt(partes[0], 10);
-      let mes = parseInt(partes[1], 10) - 1;
+      let mes = parseInt(partes[1], 10) - 1; // Meses en JS son 0-11
       let anio = parseInt(partes[2], 10);
-      if (anio < 100) anio += 2000;
+      if (anio < 100) anio += 2000; // Corrección año corto (26 -> 2026)
       const fecha = new Date(anio, mes, dia);
       return isNaN(fecha.getTime()) ? null : fecha;
     }
@@ -37,6 +40,18 @@ function parsearFechaExcel(valor) {
   }
   return null;
 }
+
+// --- HELPER FORMATO ISO (LA SOLUCIÓN) ---
+// Convierte la fecha a "YYYY-MM-DDTHH:mm:ss" para que el frontend no la invierta.
+function formatearParaDB(fechaObj) {
+  if (!fechaObj) return null;
+  const y = fechaObj.getFullYear();
+  const m = String(fechaObj.getMonth() + 1).padStart(2, "0");
+  const d = String(fechaObj.getDate()).padStart(2, "0");
+  // Forzamos mediodía para evitar problemas de timezone (-3hs) que cambien el día
+  return `${y}-${m}-${d}T12:00:00`;
+}
+
 function normalizarEncabezado(txt) {
   if (!txt) return "";
   return txt
@@ -152,7 +167,6 @@ async function sincronizarBaseDeDatos() {
     return { success: true, msg: "Sincronización completa." };
   } catch (err) {
     await client.query("ROLLBACK");
-    // Manejo de errores de conexión para no tumbar el servidor
     if (err.code === "ETIMEDOUT" || err.code === "ECONNRESET") {
       console.warn("⚠️ Timeout Logs Horno (reintentando luego).");
       return { success: false, msg: "Timeout" };
@@ -271,7 +285,7 @@ async function sincronizarPedidos() {
 }
 
 // =====================================================
-// 3. SYNC STOCK + ALERTAS (CORREGIDO PARA NO CREAR BASURA)
+// 3. SYNC STOCK + ALERTAS
 // =====================================================
 async function sincronizarStockSemielaborados() {
   const client = await db.connect();
@@ -281,7 +295,6 @@ async function sincronizarStockSemielaborados() {
     const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
     await client.query("BEGIN");
 
-    // ALERTAS
     const sheetGeneral = workbook.Sheets[workbook.SheetNames[0]];
     const rawGeneral = XLSX.utils.sheet_to_json(sheetGeneral, { header: 1 });
     let headerRowIdx = 0;
@@ -314,8 +327,6 @@ async function sincronizarStockSemielaborados() {
         else if (kSinEspacios.includes("ALERTA3") || kSinEspacios === "MAXIMO")
           a3 = limpiarNumero(row[key]);
       }
-
-      // FILTRO: Solo agregar si tiene código Y nombre
       if (codigo && nombre && nombre.trim() !== "") {
         mapaAlertas.set(codigo, [codigo, nombre, a1, a2, a3]);
       }
@@ -330,7 +341,6 @@ async function sincronizarStockSemielaborados() {
       );
     }
 
-    // STOCK
     const sheetMapping = {
       "STOCK 26": "stock_planta_26",
       "STOCK 37": "stock_planta_37",
@@ -371,8 +381,6 @@ async function sincronizarStockSemielaborados() {
           else if (kSin === "STOCK" || kSin === "SALDO")
             stock = limpiarNumero(row[key]);
         }
-
-        // CORRECCIÓN: Evitar "Sin Nombre". Si no hay nombre, no se procesa.
         if (codigo && nombre && nombre.trim() !== "") {
           mapaStock.set(codigo, [codigo, nombre, stock]);
         }
@@ -446,8 +454,6 @@ async function sincronizarMateriasPrimas() {
         else if (kSin.includes("STOCKMIN") || kSin.includes("MINIMO"))
           minimo = limpiarNumero(row[key]);
       }
-
-      // FILTRO: Solo si tiene nombre y código válido
       if (codigo && nombre && nombre.trim() !== "" && codigo.length < 30)
         mapaMP.set(codigo, [codigo, nombre, stock, minimo, new Date()]);
     }

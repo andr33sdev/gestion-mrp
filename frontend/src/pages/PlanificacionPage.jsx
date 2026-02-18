@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE_URL, authFetch } from "../utils.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import QRCode from "qrcode";
 
 import { hasRole } from "../auth/authHelper";
 
@@ -40,8 +41,342 @@ import {
   FaSync,
   FaFilePdf,
   FaBook,
+  FaHammer,
+  FaCamera,
+  FaImages,
+  FaCheckDouble,
+  FaChevronLeft, // Importante para el select
 } from "react-icons/fa";
 
+// --- NUEVO MODAL: SELECCIÓN ESTRUCTURADA DE TAREA ---
+function VisualTaskModal({ allSemis, onClose, onSave }) {
+  const [selectedSemiId, setSelectedSemiId] = useState("");
+  const [selectedVariantId, setSelectedVariantId] = useState("");
+  const [cantidad, setCantidad] = useState("");
+
+  // Buscamos el objeto completo para acceder a sus variantes
+  const selectedSemi = allSemis.find(
+    (s) => String(s.id) === String(selectedSemiId),
+  );
+
+  // Las variantes vendrían del backend en el objeto semielaborado. Si no hay, array vacío.
+  // IMPORTANTE: Asegúrate que el endpoint /semielaborados traiga la columna 'variantes'
+  const variantesDisponibles = selectedSemi?.variantes || [];
+
+  const selectedVariant = variantesDisponibles.find(
+    (v) => String(v.id) === String(selectedVariantId),
+  );
+
+  const handleSubmit = () => {
+    if (!selectedSemi || !selectedVariant || !cantidad)
+      return alert("Por favor complete todos los campos.");
+
+    // Construimos la tarea "congelando" la info actual de la variante para que quede registrada
+    const nuevaTarea = {
+      titulo: `${selectedSemi.nombre} - ${selectedVariant.nombre}`,
+      producto_origen: selectedSemi.nombre,
+      codigo_origen: selectedSemi.codigo,
+      variante: selectedVariant.nombre,
+      instrucciones: selectedVariant.especificaciones,
+      fotos: selectedVariant.fotos, // Array de URLs
+      meta: Number(cantidad),
+    };
+
+    onSave(nuevaTarea);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95 }}
+        animate={{ scale: 1 }}
+        className="bg-slate-800 w-full max-w-xl rounded-xl border border-slate-600 shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <FaHammer className="text-orange-500" /> Asignar Terminación
+          </h3>
+          <button onClick={onClose}>
+            <FaTimes className="text-gray-400 hover:text-white" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* 1. PRODUCTO BASE */}
+          <div>
+            <label className="text-xs font-bold text-gray-400 uppercase block mb-1">
+              1. Producto Semielaborado
+            </label>
+            <div className="relative">
+              <select
+                className="w-full bg-slate-700 border border-slate-600 rounded p-3 text-white appearance-none focus:border-orange-500 outline-none cursor-pointer"
+                value={selectedSemiId}
+                onChange={(e) => {
+                  setSelectedSemiId(e.target.value);
+                  setSelectedVariantId("");
+                }}
+              >
+                <option value="">Seleccione un producto...</option>
+                {allSemis.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.codigo} - {s.nombre}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-gray-400">
+                <FaChevronLeft className="-rotate-90 text-xs" />
+              </div>
+            </div>
+          </div>
+
+          {/* 2. VARIANTE (O AVISO DE ERROR) */}
+          <AnimatePresence mode="wait">
+            {selectedSemiId && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+              >
+                <label className="text-xs font-bold text-gray-400 uppercase block mb-1">
+                  2. Variante de Armado
+                </label>
+
+                {variantesDisponibles.length > 0 ? (
+                  <div className="relative">
+                    <select
+                      className="w-full bg-slate-700 border border-slate-600 rounded p-3 text-white appearance-none focus:border-orange-500 outline-none cursor-pointer"
+                      value={selectedVariantId}
+                      onChange={(e) => setSelectedVariantId(e.target.value)}
+                    >
+                      <option value="">Seleccione variante...</option>
+                      {variantesDisponibles.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.nombre}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-gray-400">
+                      <FaChevronLeft className="-rotate-90 text-xs" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-red-900/20 border border-red-500/30 p-4 rounded-lg flex items-start gap-3">
+                    <FaExclamationTriangle className="text-red-400 mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="text-red-200 text-sm font-bold">
+                        Sin variantes definidas.
+                      </p>
+                      <p className="text-red-300/70 text-xs mt-1">
+                        Este producto no tiene configuraciones de armado en
+                        Ingeniería. Debes crearlas allí primero.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* 3. PREVIEW DE DATOS (READ ONLY) */}
+          {selectedVariant && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 flex gap-4"
+            >
+              <div className="w-24 h-24 bg-black rounded-lg border border-slate-600 overflow-hidden flex-shrink-0 relative">
+                {selectedVariant.fotos && selectedVariant.fotos[0] ? (
+                  <img
+                    src={selectedVariant.fotos[0]}
+                    className="w-full h-full object-cover"
+                    alt="ref"
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-600 text-xs text-center p-2">
+                    <FaImages size={20} />
+                    <span className="mt-1">Sin Foto</span>
+                  </div>
+                )}
+                {/* Indicador si hay más fotos */}
+                {(selectedVariant.fotos || []).length > 1 && (
+                  <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[9px] px-1.5 py-0.5 rounded-full">
+                    +{selectedVariant.fotos.length - 1}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h5 className="font-bold text-white text-sm mb-1 flex items-center gap-2">
+                  <FaCheckDouble className="text-green-500" /> Especificación
+                  Estándar
+                </h5>
+                <p className="text-xs text-gray-400 leading-relaxed line-clamp-3 overflow-hidden text-ellipsis">
+                  {selectedVariant.especificaciones ||
+                    "Sin especificaciones detalladas."}
+                </p>
+              </div>
+            </motion.div>
+          )}
+
+          {/* 4. CANTIDAD */}
+          <div>
+            <label className="text-xs font-bold text-gray-400 uppercase block mb-1">
+              3. Cantidad a Realizar
+            </label>
+            <input
+              type="number"
+              className="w-full bg-slate-700 border border-slate-600 rounded p-3 text-white font-mono text-xl focus:border-orange-500 outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder="Ej: 300"
+              value={cantidad}
+              onChange={(e) => setCantidad(e.target.value)}
+              disabled={!selectedVariant}
+            />
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-700 bg-slate-900 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-400 hover:text-white font-bold text-sm transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!selectedVariant || !cantidad}
+            className="px-6 py-2 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95"
+          >
+            <FaSave /> Confirmar Tarea
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// --- FUNCIÓN EXPORTAR PDF ORDEN DE TERMINACIÓN (INDIVIDUAL) ---
+const generarOrdenTerminacionPDF = (task) => {
+  const doc = new jsPDF();
+  const azulOscuro = [30, 41, 59];
+
+  // Encabezado
+  doc.setFillColor(...azulOscuro);
+  doc.rect(0, 0, 210, 25, "F");
+  doc.setTextColor(255);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("ORDEN DE TERMINACIÓN / ARMADO", 14, 12);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `PLANTA DE TERMINACIÓN - ${new Date().toLocaleDateString("es-AR")}`,
+    14,
+    19,
+  );
+
+  // Datos Tarea
+  doc.setTextColor(0);
+  let yPos = 40;
+
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text(task.titulo, 14, yPos); // Título grande
+
+  yPos += 10;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `PRODUCTO BASE: ${task.producto_origen} (${task.codigo_origen})`,
+    14,
+    yPos,
+  );
+  yPos += 6;
+  doc.text(`VARIANTE APLICADA: ${task.variante}`, 14, yPos);
+  yPos += 6;
+  doc.text(`CANTIDAD OBJETIVO: ${task.meta} unidades`, 14, yPos);
+
+  yPos += 15;
+
+  // Instrucciones
+  doc.setFillColor(240, 240, 240);
+  doc.setDrawColor(200);
+  doc.rect(14, yPos, 182, 40, "FD");
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(50);
+  doc.text("INSTRUCCIONES TÉCNICAS ESTÁNDAR:", 18, yPos + 8);
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(0);
+  const splitText = doc.splitTextToSize(
+    task.instrucciones || "Sin instrucciones específicas.",
+    174,
+  );
+  doc.text(splitText, 18, yPos + 15);
+
+  yPos += 50;
+
+  // Fotos
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text("REFERENCIAS VISUALES (ESTÁNDAR):", 14, yPos);
+  yPos += 5;
+
+  const fotos = task.fotos || [];
+  fotos.forEach((fotoUrl, i) => {
+    if (fotoUrl) {
+      const x = 14 + i * 65;
+      try {
+        // Intentamos dibujar la imagen. Si es URL externa puede fallar por CORS en navegador
+        // En producción real, estas imágenes deberían ser base64 o venir del mismo dominio
+        doc.addImage(fotoUrl, "JPEG", x, yPos, 60, 60);
+        doc.setDrawColor(0);
+        doc.rect(x, yPos, 60, 60); // Borde
+      } catch (e) {
+        // Fallback si falla la imagen
+        doc.setFillColor(200);
+        doc.rect(x, yPos, 60, 60, "F");
+        doc.setFontSize(8);
+        doc.setTextColor(100);
+        doc.text("IMAGEN DE REFERENCIA", x + 30, yPos + 30, {
+          align: "center",
+        });
+      }
+    }
+  });
+
+  // Pie de Control
+  const pieY = 240;
+  doc.setDrawColor(0);
+  doc.setLineWidth(0.5);
+  doc.rect(14, pieY, 182, 35);
+
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0);
+  doc.text("CONTROL DE CALIDAD FINAL Y CIERRE:", 18, pieY + 8);
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.text("CANTIDAD TERMINADA OK: ______________", 18, pieY + 20);
+  doc.text("SCRAP / RECHAZO: ______________", 110, pieY + 20);
+
+  doc.text(
+    "FIRMA RESPONSABLE: ____________________________________",
+    18,
+    pieY + 30,
+  );
+
+  doc.save(`OT_Manual_${task.titulo.replace(/\s+/g, "_")}.pdf`);
+};
+
+// --- COMPONENTE PRINCIPAL ---
 export default function PlanificacionPage({ onNavigate }) {
   const [allSemis, setAllSemis] = useState([]);
   const [allMPs, setAllMPs] = useState([]);
@@ -67,6 +402,10 @@ export default function PlanificacionPage({ onNavigate }) {
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showGanttModal, setShowGanttModal] = useState(false);
   const [showMatrixModal, setShowMatrixModal] = useState(false);
+
+  // Estados para Tareas Manuales (Terminación)
+  const [manualTasks, setManualTasks] = useState([]);
+  const [showTaskModal, setShowTaskModal] = useState(false);
 
   // ... (Efectos de carga) ...
   useEffect(() => {
@@ -147,8 +486,8 @@ export default function PlanificacionPage({ onNavigate }) {
       .sort((a, b) => a.balance - b.balance);
   }, [currentPlanItems, recetasMap, allMPs]);
 
-  // --- GENERADOR PDF ORDEN DE PRODUCCIÓN ---
-  const generarPDFOrden = () => {
+  // --- 1. GENERADOR PDF ORDEN DE PRODUCCIÓN CON QR ---
+  const generarPDFOrden = async () => {
     const doc = new jsPDF();
     const fecha = new Date().toLocaleDateString("es-AR");
     const hora = new Date().toLocaleTimeString("es-AR", {
@@ -159,8 +498,29 @@ export default function PlanificacionPage({ onNavigate }) {
     const grisClaro = [241, 245, 249];
     const bordeGris = [203, 213, 225];
 
+    // URL dinámica para el QR
+    const urlPlan = `${window.location.origin}/planificacion/${selectedPlanId}`;
+    let qrDataUrl = null;
+    try {
+      qrDataUrl = await QRCode.toDataURL(urlPlan, {
+        margin: 1,
+        color: { dark: "#000000", light: "#ffffff" },
+      });
+    } catch (err) {
+      console.error("Error QR", err);
+    }
+
+    // Header
     doc.setFillColor(...azulOscuro);
     doc.rect(0, 0, 210, 30, "F");
+
+    // Dibujar QR
+    if (qrDataUrl) {
+      doc.setFillColor(255, 255, 255);
+      doc.rect(176, 2, 26, 26, "F");
+      doc.addImage(qrDataUrl, "PNG", 177, 3, 24, 24);
+    }
+
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
@@ -170,12 +530,12 @@ export default function PlanificacionPage({ onNavigate }) {
     doc.text("PLANIFICACIÓN Y CONTROL", 14, 24);
     doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
-    doc.text(`#${currentPlanNombre.toUpperCase()}`, 195, 18, {
+    doc.text(`#${currentPlanNombre.toUpperCase()}`, 170, 18, {
       align: "right",
     });
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
-    doc.text(`Emisión: ${fecha} - ${hora} hs`, 195, 24, { align: "right" });
+    doc.text(`Emisión: ${fecha} - ${hora} hs`, 170, 24, { align: "right" });
 
     let yPos = 40;
     const totalItems = currentPlanItems.length;
@@ -306,14 +666,32 @@ export default function PlanificacionPage({ onNavigate }) {
       doc.addPage();
       yPos = 40;
     }
+
+    // Pie de página con control de desvío
     doc.setDrawColor(150);
     doc.setLineWidth(0.5);
-    doc.line(30, yPos, 80, yPos);
+
+    // Caja de Control de Desvíos
+    doc.setFillColor(245, 245, 245);
+    doc.rect(14, yPos - 10, 182, 15, "FD");
     doc.setFontSize(8);
+    doc.setTextColor(0);
+    doc.text("CIERRE DE ORDEN - CONTROL DE DESVÍOS:", 16, yPos - 5);
+    doc.text("¿Exceso > 10%?  [  ] SI   [  ] NO", 16, yPos + 1);
+    doc.text(
+      "Justificación: ___________________________________________________",
+      80,
+      yPos + 1,
+    );
+
+    // Firmas
+    yPos += 15;
+    doc.line(30, yPos, 80, yPos);
     doc.setFont("helvetica", "normal");
     doc.text("RESPONSABLE PRODUCCIÓN", 55, yPos + 5, { align: "center" });
     doc.line(130, yPos, 180, yPos);
     doc.text("GERENCIA / CALIDAD", 155, yPos + 5, { align: "center" });
+
     doc.setFontSize(7);
     doc.setTextColor(150);
     doc.text(
@@ -325,14 +703,9 @@ export default function PlanificacionPage({ onNavigate }) {
     doc.save(`Orden_Produccion_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // --- GENERADOR PDF MASIVO (FICHAS TÉCNICAS - BOOK) ---
-  const generarFichasMasivas = async () => {
+  // --- 2. GENERADOR PLANILLA DE CONTROL (AUDITORÍA) ---
+  const generarPlanillaControl = async () => {
     if (currentPlanItems.length === 0) return alert("El plan está vacío.");
-    if (
-      !confirm(`¿Generar book técnico con ${currentPlanItems.length} fichas?`)
-    )
-      return;
-
     setGeneratingPDF(true);
 
     try {
@@ -343,6 +716,157 @@ export default function PlanificacionPage({ onNavigate }) {
       );
 
       const resultados = await Promise.all(promises);
+      const doc = new jsPDF("l", "mm", "a4"); // Horizontal
+      const fecha = new Date().toLocaleDateString("es-AR");
+      const colAzulHeader = [30, 41, 59];
+
+      // Encabezado
+      doc.setFillColor(...colAzulHeader);
+      doc.rect(0, 0, 297, 25, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text("PLANILLA DE VERIFICACIÓN DE PROCESO", 14, 12);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("CONTROL DE PARÁMETROS CRÍTICOS Y CALIDAD EN LÍNEA", 14, 19);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text(`PLAN: #${currentPlanNombre}`, 283, 12, { align: "right" });
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Fecha de Control: ${fecha}`, 283, 19, { align: "right" });
+
+      let tableRows = [];
+      resultados.forEach((data, index) => {
+        if (!data) return;
+        const itemPlan = currentPlanItems[index];
+        const { producto } = data;
+        const { tipo_proceso, parametros_maquina: pm = {} } = producto;
+
+        let parametrosTeoricos = "";
+        if (tipo_proceso === "INYECCION") {
+          const temps = pm.temperaturas_zonas
+            ? pm.temperaturas_zonas.split("/")[0]
+            : "?";
+          parametrosTeoricos = `Proc: INYECCIÓN\nTemp Z1: ${temps}°C\nPresión #1: ${pm.pres1 || "-"} bar`;
+        } else {
+          const tCocinado =
+            (Number(pm.t1) || 0) +
+            (Number(pm.t2) || 0) +
+            (Number(pm.t3) || 0) +
+            (Number(pm.t4) || 0);
+          parametrosTeoricos = `Proc: ROTOMOLDEO\nTemp Horno: ${pm.temp_horno || "-"}°C\nT. Cocinado: ${tCocinado} min`;
+        }
+
+        tableRows.push([
+          itemPlan.semielaborado.codigo,
+          itemPlan.semielaborado.nombre,
+          parametrosTeoricos,
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+      });
+
+      autoTable(doc, {
+        startY: 35,
+        head: [
+          [
+            "CÓDIGO",
+            "PRODUCTO",
+            "PARÁMETROS ESTÁNDAR (TEÓRICO)",
+            "HORA",
+            "LECTURA REAL (MÁQUINA)",
+            "CANT. LOTE",
+            "DESVÍO?",
+            "FIRMA SUP.",
+          ],
+        ],
+        body: tableRows,
+        theme: "grid",
+        styles: {
+          fontSize: 9,
+          valign: "middle",
+          cellPadding: 3,
+          lineColor: [150, 150, 150],
+          lineWidth: 0.1,
+        },
+        headStyles: {
+          fillColor: [50, 50, 50],
+          textColor: 255,
+          fontStyle: "bold",
+          halign: "center",
+        },
+        columnStyles: {
+          0: { width: 25, fontStyle: "bold" },
+          1: { width: 50 },
+          2: {
+            width: 50,
+            fontSize: 8,
+            fontStyle: "italic",
+            textColor: [80, 80, 80],
+            fillColor: [245, 245, 245],
+          },
+          3: { width: 20 },
+          4: { width: 40 },
+          5: { width: 20 },
+          6: { width: 20 },
+          7: { width: 30 },
+        },
+        bodyStyles: { minCellHeight: 15 },
+      });
+
+      const finalY = doc.lastAutoTable.finalY + 15;
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.1);
+      doc.rect(14, finalY, 180, 20);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(0);
+      doc.text("OBSERVACIONES DEL AUDITOR / SUPERVISOR:", 16, finalY + 5);
+      doc.line(210, finalY + 15, 280, finalY + 15);
+      doc.text("FIRMA RESPONSABLE CALIDAD", 245, finalY + 20, {
+        align: "center",
+      });
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      doc.text(
+        "Documento generado para Auditoría Interna - Control de correspondencia Proceso/Estándar.",
+        148,
+        195,
+        { align: "center" },
+      );
+
+      doc.save(
+        `Planilla_Control_${currentPlanNombre.replace(/\s+/g, "_")}.pdf`,
+      );
+    } catch (e) {
+      console.error(e);
+      alert("Error generando planilla.");
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  // --- 3. GENERADOR PDF MASIVO (BOOK TÉCNICO CORREGIDO) ---
+  const generarFichasMasivas = async () => {
+    if (currentPlanItems.length === 0) return alert("El plan está vacío.");
+    if (
+      !confirm(`¿Generar book técnico con ${currentPlanItems.length} fichas?`)
+    )
+      return;
+    setGeneratingPDF(true);
+
+    try {
+      const promises = currentPlanItems.map((item) =>
+        authFetch(`${API_BASE_URL}/ingenieria/ficha/${item.semielaborado.id}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      );
+      const resultados = await Promise.all(promises);
       const doc = new jsPDF();
 
       resultados.forEach((data, index) => {
@@ -351,12 +875,10 @@ export default function PlanificacionPage({ onNavigate }) {
 
         const { producto, receta, specs = {}, ultima_version_receta } = data;
         const { tipo_proceso, parametros_maquina: pm = {} } = producto;
-
         const azulOscuro = [30, 41, 59];
         const grisClaro = [241, 245, 249];
         const rojoAlerta = [185, 28, 28];
 
-        // 1. ENCABEZADO
         doc.setFillColor(...azulOscuro);
         doc.rect(0, 0, 210, 24, "F");
         doc.setTextColor(255, 255, 255);
@@ -369,15 +891,13 @@ export default function PlanificacionPage({ onNavigate }) {
         const fechaImpresion = new Date().toLocaleDateString("es-AR");
         doc.setFontSize(8);
         doc.text(`Impreso: ${fechaImpresion}`, 195, 8, { align: "right" });
-        doc.text(`Plan: ${currentPlanNombre}`, 195, 13, { align: "right" }); // Nombre del Plan
+        doc.text(`Plan: ${currentPlanNombre}`, 195, 13, { align: "right" });
         doc.setFont("helvetica", "italic");
         doc.text("Autorizado por: Jefe de Producción", 195, 18, {
           align: "right",
         });
 
         let yPos = 34;
-
-        // 2. INFO PRODUCTO
         doc.setTextColor(0, 0, 0);
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
@@ -385,7 +905,6 @@ export default function PlanificacionPage({ onNavigate }) {
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 6);
-
         doc.setDrawColor(200);
         doc.setFillColor(...grisClaro);
         doc.roundedRect(120, yPos - 6, 75, 14, 1, 1, "FD");
@@ -399,10 +918,8 @@ export default function PlanificacionPage({ onNavigate }) {
           124,
           yPos + 5,
         );
-
         yPos += 16;
 
-        // 3. SPECS
         const specsData = [
           [
             `REFLECTIVA: ${specs.tipo_reflectiva || "N/A"}`,
@@ -430,14 +947,11 @@ export default function PlanificacionPage({ onNavigate }) {
         });
         yPos = doc.lastAutoTable.finalY + 12;
 
-        // 4. BLOQUE CENTRAL
         const colLeftX = 14;
         const colRightX = 115;
         const colWidthLeft = 95;
         const colWidthRight = 80;
         const startYBlock = yPos;
-
-        // IZQUIERDA: MÁQUINA
         doc.setFillColor(...azulOscuro);
         doc.rect(colLeftX, yPos, colWidthLeft, 7, "F");
         doc.setTextColor(255, 255, 255);
@@ -473,7 +987,6 @@ export default function PlanificacionPage({ onNavigate }) {
             tableWidth: colWidthLeft,
           });
           yMachine = doc.lastAutoTable.finalY + 6;
-
           doc.setFontSize(8);
           doc.setTextColor(0);
           doc.setFont("helvetica", "bold");
@@ -487,16 +1000,7 @@ export default function PlanificacionPage({ onNavigate }) {
           doc.text(pm.chiller_matriz || "-", colLeftX + 30, yMachine);
           yMachine += 6;
 
-          // --- TABLA DE CARGA / SUCCIÓN ARREGLADA (Sin cuadrado gris) ---
-          // Header Manual Gris Oscuro
-          doc.setFillColor(50, 50, 50);
-          doc.rect(colLeftX, yMachine, colWidthLeft, 6, "F");
-          doc.setTextColor(255);
-          doc.setFontSize(7);
-          doc.setFont("helvetica", "bold");
-          doc.text("CARGA CON SUCCIÓN (POS #5)", colLeftX + 2, yMachine + 4);
-
-          // Tabla de datos simple (Sin hacks)
+          // TABLA LIMPIA CARGA SUCCION
           autoTable(doc, {
             startY: yMachine + 6,
             head: [["Posición", "Presión", "Velocidad", "P. Atrás"]],
@@ -511,8 +1015,8 @@ export default function PlanificacionPage({ onNavigate }) {
             theme: "grid",
             headStyles: {
               fontStyle: "bold",
-              fillColor: [220, 220, 220],
-              textColor: 0,
+              fillColor: [50, 50, 50],
+              textColor: 255,
               fontSize: 7,
               halign: "center",
             },
@@ -522,8 +1026,7 @@ export default function PlanificacionPage({ onNavigate }) {
           });
           yMachine = doc.lastAutoTable.finalY;
         } else {
-          // --- CORRECCIÓN VARIABLES ROTOMOLDEO ---
-          // Ahora usa las claves v1mX y v2mX para que no aparezcan los "-"
+          // CORREGIDO VARIABLES ROTOMOLDEO
           const rotoData = [
             ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v2m1 || "-", pm.inv1 || "-"],
             ["2", pm.t2 || "-", pm.v1m2 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
@@ -585,7 +1088,6 @@ export default function PlanificacionPage({ onNavigate }) {
           yMachine = doc.lastAutoTable.finalY;
         }
 
-        // DERECHA: RECETA
         doc.setFillColor(...azulOscuro);
         doc.rect(colRightX, startYBlock, colWidthRight, 7, "F");
         doc.setTextColor(255, 255, 255);
@@ -711,8 +1213,32 @@ export default function PlanificacionPage({ onNavigate }) {
     }
   };
 
-  // ... (Resto de los handlers se mantienen igual) ...
+  // --- HANDLERS TAREAS MANUALES ---
+  const handleSaveTask = (newTask) => {
+    // Idealmente aquí se haría el POST al backend para guardar la tarea
+    // Para esta versión, guardamos en estado local del plan
+    const taskWithId = { ...newTask, id: Date.now(), realizado: 0 };
+    setManualTasks([...manualTasks, taskWithId]);
+    setShowTaskModal(false);
+  };
 
+  const handleReportTask = (taskId) => {
+    const task = manualTasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const realizadoStr = prompt(
+      `Cantidad realizada para "${task.titulo}":`,
+      task.realizado,
+    );
+    if (realizadoStr === null) return;
+    const realizado = Number(realizadoStr);
+
+    // Aquí se haría el PUT al backend
+    setManualTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, realizado } : t)),
+    );
+  };
+
+  // ... (Resto de handlers de items, guardar, etc. se mantienen) ...
   const handleSelectPlan = async (planId) => {
     if (isSaving) return;
     setLoading(true);
@@ -797,31 +1323,27 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   const handleEditItem = (idx, qty) => {
-    if (!hasRole("GERENCIA")) return alert("⛔ ACCESO DENEGADO");
-    setCurrentPlanItems((prev) => {
-      const n = [...prev];
-      n[idx] = { ...n[idx], cantidad: qty };
+    if (!hasRole("GERENCIA")) return alert("⛔");
+    setCurrentPlanItems((p) => {
+      const n = [...p];
+      n[idx].cantidad = qty;
       return n;
     });
   };
   const handleRemoveItem = (idx) => {
-    if (!hasRole("GERENCIA")) return alert("⛔ ACCESO DENEGADO");
-    setCurrentPlanItems((prev) => prev.filter((_, i) => i !== idx));
+    if (!hasRole("GERENCIA")) return alert("⛔");
+    setCurrentPlanItems((p) => p.filter((_, i) => i !== idx));
   };
 
   const handleSavePlan = async () => {
     const role = sessionStorage.getItem("role");
-    if (role !== "GERENCIA") return alert("⛔ ACCESO DENEGADO");
+    if (role !== "GERENCIA") return alert("⛔");
     if (!currentPlanNombre) return;
-    await guardarPlanEnBD(currentPlanItems);
-  };
-
-  const guardarPlanEnBD = async (itemsAGuardar) => {
     setIsSaving(true);
     try {
       const body = {
         nombre: currentPlanNombre,
-        items: itemsAGuardar.map((i) => ({
+        items: currentPlanItems.map((i) => ({
           semielaborado: i.semielaborado,
           cantidad: i.cantidad,
           producido: i.producido,
@@ -840,20 +1362,12 @@ export default function PlanificacionPage({ onNavigate }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.status === 403) {
-        alert("⛔ No tienes permisos.");
-        setIsSaving(false);
-        return;
-      }
-      if (!res.ok) throw new Error("Error al guardar");
+      if (!res.ok) throw new Error("Error");
       const data = await res.json();
-      const all = await authFetch(`${API_BASE_URL}/planificacion`).then((r) =>
-        r.json(),
+      setMasterPlanList(
+        await authFetch(`${API_BASE_URL}/planificacion`).then((r) => r.json()),
       );
-      setMasterPlanList(all);
       if (selectedPlanId === "NEW") setSelectedPlanId(data.planId);
-      setCurrentPlanItems(itemsAGuardar);
-      console.log("Plan guardado.");
     } catch (e) {
       alert("Error: " + e.message);
     } finally {
@@ -862,8 +1376,7 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   const handleToggleEstado = async () => {
-    if (!hasRole("GERENCIA")) return alert("⛔ Solo Gerencia.");
-    if (selectedPlanId === "NEW") return;
+    if (!hasRole("GERENCIA")) return alert("⛔");
     const estado = currentPlanEstado === "ABIERTO" ? "CERRADO" : "ABIERTO";
     if (confirm("¿Cambiar estado?")) {
       setIsSaving(true);
@@ -882,18 +1395,8 @@ export default function PlanificacionPage({ onNavigate }) {
       setIsSaving(false);
     }
   };
-
-  const handleUpdateFromGantt = (u) => {
-    setShowGanttModal(false);
-    guardarPlanEnBD(u);
-  };
-
   const handleDeletePlan = async () => {
-    if (!hasRole("GERENCIA")) return alert("⛔ Solo Gerencia.");
-    if (selectedPlanId === "NEW") {
-      setSelectedPlanId(null);
-      return;
-    }
+    if (!hasRole("GERENCIA")) return alert("⛔");
     if (confirm("¿Eliminar?")) {
       setIsSaving(true);
       await authFetch(`${API_BASE_URL}/planificacion/${selectedPlanId}`, {
@@ -904,40 +1407,40 @@ export default function PlanificacionPage({ onNavigate }) {
       setIsSaving(false);
     }
   };
-
   const isPlanCerrado = currentPlanEstado === "CERRADO";
   const isPlanNuevo = selectedPlanId === "NEW";
+  const formatearFecha = (d) => {
+    if (!d) return "-";
+    const str = String(d).trim();
 
-  const formatearFecha = (fechaStr) => {
-    if (!fechaStr) return "-";
-    const str = String(fechaStr).trim();
-    if (str.includes("/")) return str.split(" ")[0];
+    // 1. SI TIENE BARRAS ("/"): Es formato Excel (ej: "11/2/26")
+    // Lo devolvemos directo o cortamos la hora si la tuviera.
+    // NO usamos new Date() aquí para evitar que lo invierta a formato USA.
+    if (str.includes("/")) {
+      return str.split(" ")[0];
+    }
+
+    // 2. SI ES ISO (Guiones "-"): Es formato Base de Datos (ej: "2026-02-11")
+    // Aquí sí usamos new Date() con UTC para formatearlo bien.
     try {
-      const d = new Date(str);
-      if (isNaN(d.getTime())) return str;
-      return d.toLocaleDateString("es-AR", { timeZone: "UTC" });
-    } catch (e) {
+      return new Date(str).toLocaleDateString("es-AR", { timeZone: "UTC" });
+    } catch {
       return str;
     }
   };
-
   const handleForceSync = async () => {
-    if (
-      confirm(
-        "¿Forzar actualización desde el Excel? Esto puede tardar unos segundos.",
-      )
-    ) {
+    if (confirm("¿Forzar actualización?")) {
       setLoadingPending(true);
-      try {
-        await authFetch(`${API_BASE_URL}/planificacion/sincronizar-ya`, {
-          method: "POST",
-        });
-        setTimeout(() => loadPendingOrders(), 2000);
-      } catch (e) {
-        alert("Error sincronizando");
-        setLoadingPending(false);
-      }
+      await authFetch(`${API_BASE_URL}/planificacion/sincronizar-ya`, {
+        method: "POST",
+      });
+      setTimeout(() => loadPendingOrders(), 2000);
     }
+  };
+  const handleUpdateFromGantt = (u) => {
+    setShowGanttModal(false);
+    setCurrentPlanItems(u);
+    handleSavePlan();
   };
 
   return (
@@ -969,7 +1472,6 @@ export default function PlanificacionPage({ onNavigate }) {
                 </button>
               </div>
             </div>
-
             <div className="flex gap-3 w-full md:w-auto">
               <motion.button
                 onClick={() => setShowMatrixModal(true)}
@@ -1036,7 +1538,17 @@ export default function PlanificacionPage({ onNavigate }) {
                   disabled={isPlanCerrado || isSaving}
                 />
                 <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
-                  {/* --- BOTÓN NUEVO: FICHAS TÉCNICAS (BOOK) --- */}
+                  {/* BOTÓN "SURPRISE" PARA EL AUDITOR */}
+                  <button
+                    onClick={generarPlanillaControl}
+                    disabled={isPlanNuevo || generatingPDF}
+                    className="px-3 py-2 rounded-lg font-bold text-sm flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-black shadow-lg transition-all disabled:opacity-50"
+                    title="Generar planilla para ronda de control"
+                  >
+                    <FaCheckCircle />{" "}
+                    <span className="hidden sm:inline">Planilla Control</span>
+                  </button>
+
                   <button
                     onClick={generarFichasMasivas}
                     disabled={isPlanNuevo || generatingPDF}
@@ -1046,10 +1558,9 @@ export default function PlanificacionPage({ onNavigate }) {
                       <FaSpinner className="animate-spin" />
                     ) : (
                       <FaBook className="text-yellow-500" />
-                    )}
+                    )}{" "}
                     <span className="hidden sm:inline">Fichas Téc.</span>
                   </button>
-
                   <button
                     onClick={generarPDFOrden}
                     disabled={isPlanNuevo}
@@ -1058,7 +1569,6 @@ export default function PlanificacionPage({ onNavigate }) {
                     <FaPrint />{" "}
                     <span className="hidden sm:inline">PDF Orden</span>
                   </button>
-
                   <button
                     onClick={() => setShowGanttModal(true)}
                     disabled={isPlanNuevo || currentPlanItems.length === 0}
@@ -1099,18 +1609,23 @@ export default function PlanificacionPage({ onNavigate }) {
                 </div>
               </div>
 
-              {/* CONTENIDO TABS */}
               <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex border-b border-slate-700 bg-slate-800/50 overflow-x-auto">
                   <TabButton
                     icon={<FaTasks />}
-                    label="Items"
+                    label="Producción (Máquina)"
                     active={activeTab === "items"}
                     onClick={() => setActiveTab("items")}
                   />
                   <TabButton
+                    icon={<FaHammer />}
+                    label="Terminación (Manual)"
+                    active={activeTab === "manual"}
+                    onClick={() => setActiveTab("manual")}
+                  />
+                  <TabButton
                     icon={<FaIndustry />}
-                    label="Producción"
+                    label="Historial"
                     active={activeTab === "produccion"}
                     onClick={() => setActiveTab("produccion")}
                   />
@@ -1127,6 +1642,7 @@ export default function PlanificacionPage({ onNavigate }) {
                     onClick={() => setShowStatsModal(true)}
                   />
                 </div>
+
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6">
                   {activeTab === "items" && (
                     <div>
@@ -1257,6 +1773,127 @@ export default function PlanificacionPage({ onNavigate }) {
                       </div>
                     </div>
                   )}
+
+                  {activeTab === "manual" && (
+                    <div className="space-y-6">
+                      <div className="flex justify-between items-center">
+                        <h3 className="text-white font-bold text-lg">
+                          Órdenes de Trabajo Manual
+                        </h3>
+                        <button
+                          onClick={() => setShowTaskModal(true)}
+                          className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold shadow flex items-center gap-2 text-sm"
+                        >
+                          <FaPlus /> Nueva Tarea
+                        </button>
+                      </div>
+                      {manualTasks.length === 0 ? (
+                        <div className="h-64 flex flex-col items-center justify-center text-gray-500 border-2 border-dashed border-slate-700 rounded-xl bg-slate-800/30">
+                          <FaHammer size={40} className="mb-4 opacity-20" />
+                          <p>
+                            No hay tareas de terminación cargadas para este
+                            plan.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {manualTasks.map((task) => {
+                            const percent =
+                              task.meta > 0
+                                ? (task.realizado / task.meta) * 100
+                                : 0;
+                            const isDone = task.realizado >= task.meta;
+                            return (
+                              <div
+                                key={task.id}
+                                className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-lg flex flex-col"
+                              >
+                                <div className="h-40 bg-slate-800 relative group">
+                                  {task.fotos[0] ? (
+                                    <img
+                                      src={task.fotos[0]}
+                                      className="w-full h-full object-cover"
+                                      alt="Ref"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-600">
+                                      <FaImages size={30} />
+                                    </div>
+                                  )}
+                                  <div className="absolute bottom-2 right-2 flex gap-1">
+                                    {task.fotos.slice(1).map(
+                                      (f, idx) =>
+                                        f && (
+                                          <div
+                                            key={idx}
+                                            className="w-8 h-8 rounded border border-white overflow-hidden shadow-lg"
+                                          >
+                                            <img
+                                              src={f}
+                                              className="w-full h-full object-cover"
+                                            />
+                                          </div>
+                                        ),
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="p-4 flex-1 flex flex-col">
+                                  <h4 className="text-white font-bold text-lg mb-1">
+                                    {task.titulo}
+                                  </h4>
+                                  <p className="text-gray-400 text-xs line-clamp-2 mb-4 h-8">
+                                    {task.instrucciones}
+                                  </p>
+                                  <div className="mt-auto">
+                                    <div className="flex justify-between items-end mb-1">
+                                      <span className="text-xs font-bold text-gray-500 uppercase">
+                                        Progreso
+                                      </span>
+                                      <span
+                                        className={`text-xl font-mono font-bold ${isDone ? "text-green-400" : "text-orange-400"}`}
+                                      >
+                                        {task.realizado}{" "}
+                                        <span className="text-sm text-gray-500">
+                                          / {task.meta}
+                                        </span>
+                                      </span>
+                                    </div>
+                                    <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden mb-4">
+                                      <div
+                                        className={`h-full ${isDone ? "bg-green-500" : "bg-orange-500"} transition-all duration-500`}
+                                        style={{
+                                          width: `${Math.min(percent, 100)}%`,
+                                        }}
+                                      ></div>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() =>
+                                          generarOrdenTerminacionPDF(task)
+                                        }
+                                        className="flex-1 bg-slate-700 hover:bg-slate-600 border border-slate-500 text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                                      >
+                                        <FaPrint /> OT PDF
+                                      </button>
+                                      <button
+                                        onClick={() =>
+                                          handleReportTask(task.id)
+                                        }
+                                        className="flex-1 bg-green-700 hover:bg-green-600 border border-green-500 text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                                      >
+                                        <FaCheckDouble /> Avance
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {activeTab === "produccion" && (
                     <div className="overflow-hidden bg-slate-800/50 border border-slate-700 rounded-xl shadow-xl backdrop-blur-sm">
                       <div className="overflow-x-auto">
@@ -1350,7 +1987,6 @@ export default function PlanificacionPage({ onNavigate }) {
         </AnimatePresence>
       </motion.div>
 
-      {/* --- DRAWER DESLIZANTE DE PEDIDOS PENDIENTES --- */}
       <AnimatePresence>
         {showPendingDrawer && (
           <>
@@ -1474,6 +2110,15 @@ export default function PlanificacionPage({ onNavigate }) {
             orders={pendingOrders}
             allSemis={allSemis}
             onClose={() => setShowMatrixModal(false)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showTaskModal && (
+          <VisualTaskModal
+            allSemis={allSemis}
+            onClose={() => setShowTaskModal(false)}
+            onSave={handleSaveTask}
           />
         )}
       </AnimatePresence>

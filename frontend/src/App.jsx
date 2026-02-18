@@ -30,6 +30,7 @@ import {
   FaUserClock,
   FaHistory,
   FaClipboardCheck,
+  FaTruckLoading,
 } from "react-icons/fa";
 
 // Importación de Páginas
@@ -50,6 +51,7 @@ import RRHHPage from "./pages/RRHHPage";
 import ChangelogPage from "./pages/ChangelogPage";
 import DetalleProducto from "./pages/DetalleProducto";
 import DepositoPage from "./pages/DepositoPage.jsx";
+import DepositoDespacho from "./pages/DepositoDespacho.jsx";
 import SugerenciasPage from "./pages/SugerenciasPage.jsx";
 
 // Componentes Globales
@@ -153,6 +155,12 @@ const NAV_LINKS = [
     label: "Buzón Compras",
     icon: <FaClipboardCheck />, // Importa este icono de 'react-icons/fa'
     roles: ["GERENCIA", "DEPOSITO", "MANTENIMIENTO", "OPERARIO", "PANEL"], // Todos pueden sugerir
+  },
+  {
+    path: "/deposito-despacho",
+    label: "Despacho & QR",
+    icon: <FaTruckLoading />, // Importar de react-icons/fa
+    roles: ["GERENCIA", "DEPOSITO"],
   },
 ];
 
@@ -643,6 +651,16 @@ export default function App() {
             >
               <Layout>
                 <SugerenciasPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/deposito-despacho"
+          element={
+            <ProtectedRoute allowedRoles={["GERENCIA", "DEPOSITO", "PANEL"]}>
+              <Layout>
+                <DepositoDespacho />
               </Layout>
             </ProtectedRoute>
           }

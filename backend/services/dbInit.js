@@ -29,7 +29,8 @@ async function inicializarTablas() {
         alerta_2 NUMERIC DEFAULT 0,
         alerta_3 NUMERIC DEFAULT 0,
         velocidad_estandar INTEGER DEFAULT 100,
-        ultima_actualizacion TIMESTAMP DEFAULT NOW()
+        ultima_actualizacion TIMESTAMP DEFAULT NOW(),
+        variantes JSONB DEFAULT '[]' -- Columna nueva para variantes
       );
     `);
 
@@ -43,7 +44,7 @@ async function inicializarTablas() {
     for (const col of columnasStock) {
       try {
         await client.query(
-          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`,
+          `ALTER TABLE semielaborados ADD COLUMN IF NOT EXISTS ${col} NUMERIC DEFAULT 0;`,
         );
       } catch (e) {}
     }
@@ -51,10 +52,16 @@ async function inicializarTablas() {
     for (const col of columnasAlerta) {
       try {
         await client.query(
-          `ALTER TABLE semielaborados ADD COLUMN ${col} NUMERIC DEFAULT 0;`,
+          `ALTER TABLE semielaborados ADD COLUMN IF NOT EXISTS ${col} NUMERIC DEFAULT 0;`,
         );
       } catch (e) {}
     }
+    // Asegurar columna variantes
+    try {
+      await client.query(
+        `ALTER TABLE semielaborados ADD COLUMN IF NOT EXISTS variantes JSONB DEFAULT '[]';`,
+      );
+    } catch (e) {}
 
     // --- 3. MATERIAS PRIMAS E INGENIERÍA ---
     await client.query(
@@ -62,7 +69,7 @@ async function inicializarTablas() {
     );
     try {
       await client.query(
-        `ALTER TABLE materias_primas ADD COLUMN stock_minimo NUMERIC DEFAULT 0;`,
+        `ALTER TABLE materias_primas ADD COLUMN IF NOT EXISTS stock_minimo NUMERIC DEFAULT 0;`,
       );
     } catch (e) {}
 
@@ -100,20 +107,21 @@ async function inicializarTablas() {
     await client.query(
       `CREATE TABLE IF NOT EXISTS planes_items (id SERIAL PRIMARY KEY, plan_id INTEGER REFERENCES planes_produccion(id) ON DELETE CASCADE, semielaborado_id INTEGER REFERENCES semielaborados(id), cantidad_requerida NUMERIC NOT NULL DEFAULT 0, cantidad_producida NUMERIC NOT NULL DEFAULT 0, fecha_inicio_estimada DATE DEFAULT CURRENT_DATE, ritmo_turno NUMERIC DEFAULT 50);`,
     );
+
     // Migraciones Planes
     try {
       await client.query(
-        `ALTER TABLE planes_items ADD COLUMN cantidad_producida NUMERIC NOT NULL DEFAULT 0;`,
+        `ALTER TABLE planes_items ADD COLUMN IF NOT EXISTS cantidad_producida NUMERIC NOT NULL DEFAULT 0;`,
       );
     } catch (e) {}
     try {
       await client.query(
-        `ALTER TABLE planes_items ADD COLUMN fecha_inicio_estimada DATE DEFAULT CURRENT_DATE;`,
+        `ALTER TABLE planes_items ADD COLUMN IF NOT EXISTS fecha_inicio_estimada DATE DEFAULT CURRENT_DATE;`,
       );
     } catch (e) {}
     try {
       await client.query(
-        `ALTER TABLE planes_items ADD COLUMN ritmo_turno NUMERIC DEFAULT 50;`,
+        `ALTER TABLE planes_items ADD COLUMN IF NOT EXISTS ritmo_turno NUMERIC DEFAULT 50;`,
       );
     } catch (e) {}
 
@@ -142,12 +150,12 @@ async function inicializarTablas() {
     `);
     try {
       await client.query(
-        `ALTER TABLE movimientos_logistica ADD COLUMN codigo_remito VARCHAR(100);`,
+        `ALTER TABLE movimientos_logistica ADD COLUMN IF NOT EXISTS codigo_remito VARCHAR(100);`,
       );
     } catch (e) {}
     try {
       await client.query(
-        `ALTER TABLE movimientos_logistica ADD COLUMN chofer VARCHAR(100);`,
+        `ALTER TABLE movimientos_logistica ADD COLUMN IF NOT EXISTS chofer VARCHAR(100);`,
       );
     } catch (e) {}
 
@@ -165,10 +173,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 3. PEDIDOS CLIENTES (RESETEO Y CORRECCIÓN) ---
-    // Borramos la tabla vieja para que se cree con las columnas bien nombradas si es necesario reinicializar
-    // await client.query("DROP TABLE IF EXISTS pedidos_clientes CASCADE"); // Descomentar solo si es necesario resetear estructura
-
+    // --- 7. PEDIDOS CLIENTES (MODIFICADO PARA SEGURIDAD) ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS pedidos_clientes (
         id SERIAL PRIMARY KEY,
@@ -182,9 +187,50 @@ async function inicializarTablas() {
         cantidad VARCHAR(50),
         estado VARCHAR(50),
         programado VARCHAR(100),
-        created_at TIMESTAMP DEFAULT NOW()
+        created_at TIMESTAMP DEFAULT NOW(),
+        
+        -- CAMBIO CLAVE: Usamos VARCHAR para evitar errores con formatos de Excel ("11/2/26")
+        fecha_preparacion VARCHAR(50),
+        fecha_despacho VARCHAR(50),
+        usuario_despacho VARCHAR(100)
       );
     `);
+
+    // --- MIGRACIÓN DE URGENCIA PARA AGREGAR COLUMNAS FALTANTES ---
+    try {
+      console.log("--> Actualizando tabla pedidos_clientes...");
+
+      // 1. Aseguramos que existan las columnas (como VARCHAR para evitar errores de fecha)
+      await client.query(
+        `ALTER TABLE pedidos_clientes ADD COLUMN IF NOT EXISTS fecha_preparacion VARCHAR(50)`,
+      );
+      await client.query(
+        `ALTER TABLE pedidos_clientes ADD COLUMN IF NOT EXISTS fecha_despacho VARCHAR(50)`,
+      );
+      await client.query(
+        `ALTER TABLE pedidos_clientes ADD COLUMN IF NOT EXISTS usuario_despacho VARCHAR(100)`,
+      );
+
+      // 2. IMPORTANTE: ELIMINAR LA RESTRICCIÓN DE OP ÚNICA
+      // Esto estaba causando el error "duplicate key". Lo borramos para permitir OPs con múltiples ítems.
+      await client.query(
+        `ALTER TABLE pedidos_clientes DROP CONSTRAINT IF EXISTS pedidos_clientes_op_key`,
+      );
+      await client.query(
+        `ALTER TABLE pedidos_clientes DROP CONSTRAINT IF EXISTS unique_op`,
+      ); // Por si tiene otro nombre
+
+      // ¡¡¡ BORRA O COMENTA ESTAS LÍNEAS !!!
+      // await client.query(
+      //   `ALTER TABLE pedidos_clientes ADD CONSTRAINT pedidos_clientes_op_key UNIQUE (op)`,
+      // );
+
+      console.log(
+        "--> Tabla pedidos_clientes liberada de restricciones únicas.",
+      );
+    } catch (e) {
+      console.warn("Nota sobre pedidos_clientes:", e.message);
+    }
 
     // --- 8. COMPRAS ---
     await client.query(
@@ -207,19 +253,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 10. NOVEDADES DE TELEGRAM ---
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS novedades_pedidos (
-        id SERIAL PRIMARY KEY,
-        cliente VARCHAR(255),
-        razon_social VARCHAR(255),
-        fecha_nueva DATE,
-        mensaje_original TEXT,
-        fecha_registro TIMESTAMP DEFAULT NOW()
-      );
-    `);
-
-    // --- 11. COMPETENCIA TRACKING ---
+    // --- 10. COMPETENCIA TRACKING ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS competencia_tracking (
         id SERIAL PRIMARY KEY,
@@ -232,7 +266,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 12. PROGRAMACIÓN DE MÁQUINAS ---
+    // --- 11. PROGRAMACIÓN DE MÁQUINAS ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS programacion_maquinas (
         id SERIAL PRIMARY KEY,
@@ -247,23 +281,19 @@ async function inicializarTablas() {
         orden INTEGER DEFAULT 0
       );
     `);
-
-    // MIGRACIÓN
+    // Migraciones Maquinas
     try {
       await client.query(
-        "ALTER TABLE programacion_maquinas ADD COLUMN grupo_id INTEGER DEFAULT 1;",
+        "ALTER TABLE programacion_maquinas ADD COLUMN IF NOT EXISTS grupo_id INTEGER DEFAULT 1;",
+      );
+    } catch (e) {}
+    try {
+      await client.query(
+        "ALTER TABLE programacion_maquinas ADD COLUMN IF NOT EXISTS brazo VARCHAR(50) DEFAULT 'Estación 1';",
       );
     } catch (e) {}
 
-    try {
-      await client.query(
-        "ALTER TABLE programacion_maquinas ADD COLUMN brazo VARCHAR(50) DEFAULT 'Estación 1';",
-      );
-    } catch (e) {
-      // Ignoramos error 42701 (duplicate_column)
-    }
-
-    // --- 13. MANTENIMIENTO Y TICKETS ---
+    // --- 12. MANTENIMIENTO ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS tickets_mantenimiento (
         id SERIAL PRIMARY KEY,
@@ -282,14 +312,13 @@ async function inicializarTablas() {
         alerta_24h_enviada BOOLEAN DEFAULT FALSE
       );
     `);
-
     try {
       await client.query(
         "ALTER TABLE tickets_mantenimiento ADD COLUMN IF NOT EXISTS alerta_24h_enviada BOOLEAN DEFAULT FALSE;",
       );
     } catch (e) {}
 
-    // --- 14. SOLICITUDES LOGÍSTICA ---
+    // --- 13. SOLICITUDES LOGÍSTICA ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS solicitudes_logistica (
         id SERIAL PRIMARY KEY,
@@ -304,7 +333,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 15. SOLICITUDES LOGÍSTICA (HISTORIAL) ---
+    // --- 14. LOGÍSTICA HISTORIAL Y COMENTARIOS ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS historial_logistica (
       id SERIAL PRIMARY KEY,
@@ -315,8 +344,6 @@ async function inicializarTablas() {
       fecha TIMESTAMP DEFAULT NOW()
       );
     `);
-
-    // --- 16. SOLICITUDES LOGÍSTICA (COMENTARIOS) ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS comentarios_logistica (
       id SERIAL PRIMARY KEY,
@@ -327,7 +354,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 17. SUSCRIPTORES BOT ---
+    // --- 15. TELEGRAM SUSCRIPTORES ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS telegram_suscriptores (
       chat_id BIGINT PRIMARY KEY,
@@ -337,7 +364,7 @@ async function inicializarTablas() {
     );
     `);
 
-    // --- 18. FERIADOS (RRHH) ---
+    // --- 16. FERIADOS ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS feriados (
         fecha DATE PRIMARY KEY,
@@ -345,7 +372,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 19. RRHH CATEGORÍAS Y PERSONAL ---
+    // --- 17. RRHH ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS rrhh_categorias (
         id SERIAL PRIMARY KEY,
@@ -354,7 +381,6 @@ async function inicializarTablas() {
         activo BOOLEAN DEFAULT TRUE
       );
     `);
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS rrhh_personal (
         nombre VARCHAR(255) PRIMARY KEY,
@@ -362,8 +388,6 @@ async function inicializarTablas() {
         fecha_actualizacion TIMESTAMP DEFAULT NOW()
       );
     `);
-
-    // --- 20. RRHH HISTORIAL DE CIERRES ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS rrhh_cierres (
         id SERIAL PRIMARY KEY,
@@ -375,8 +399,7 @@ async function inicializarTablas() {
       );
     `);
 
-    // --- 21. HISTORIAL DE CAMBIOS DE PRODUCTO (CHANGELOG) ---
-    // Tabla para la hoja de vida del producto
+    // --- 18. CHANGELOG PRODUCTO ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS historial_cambios_producto (
         id SERIAL PRIMARY KEY,
@@ -387,25 +410,30 @@ async function inicializarTablas() {
         responsable VARCHAR(100),
         notificado_a TEXT,
         adjuntos_url TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
+        created_at TIMESTAMP DEFAULT NOW(),
+        lleva_reflectiva BOOLEAN DEFAULT FALSE,
+        tipo_reflectiva VARCHAR(50),
+        tipo_protector VARCHAR(50),
+        tipo_aplicacion VARCHAR(50)
       );
     `);
-
-    // Migración para columnas de Reflectivos (Si la tabla ya existía sin ellas)
+    // Migraciones Reflectivos
     try {
-      await client.query(`
-        ALTER TABLE historial_cambios_producto 
-        ADD COLUMN IF NOT EXISTS lleva_reflectiva BOOLEAN DEFAULT FALSE,
-        ADD COLUMN IF NOT EXISTS tipo_reflectiva VARCHAR(50),
-        ADD COLUMN IF NOT EXISTS tipo_protector VARCHAR(50),
-        ADD COLUMN IF NOT EXISTS tipo_aplicacion VARCHAR(50);
-      `);
-      console.log("✅ Columnas de reflectivos verificadas/agregadas.");
-    } catch (e) {
-      console.log("ℹ Las columnas de reflectivos ya existían.");
-    }
+      await client.query(
+        `ALTER TABLE historial_cambios_producto ADD COLUMN IF NOT EXISTS lleva_reflectiva BOOLEAN DEFAULT FALSE`,
+      );
+      await client.query(
+        `ALTER TABLE historial_cambios_producto ADD COLUMN IF NOT EXISTS tipo_reflectiva VARCHAR(50)`,
+      );
+      await client.query(
+        `ALTER TABLE historial_cambios_producto ADD COLUMN IF NOT EXISTS tipo_protector VARCHAR(50)`,
+      );
+      await client.query(
+        `ALTER TABLE historial_cambios_producto ADD COLUMN IF NOT EXISTS tipo_aplicacion VARCHAR(50)`,
+      );
+    } catch (e) {}
 
-    // --- 22. SUGERENCIAS DE COMPRA (TICKETS INTERNOS) ---
+    // --- 19. SUGERENCIAS COMPRA ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS sugerencias_compra (
         id SERIAL PRIMARY KEY,
@@ -413,23 +441,37 @@ async function inicializarTablas() {
         cantidad NUMERIC NOT NULL,
         solicitante VARCHAR(100),
         sector VARCHAR(100),
-        prioridad VARCHAR(20) DEFAULT 'NORMAL', -- 'NORMAL', 'URGENTE'
-        estado VARCHAR(20) DEFAULT 'PENDIENTE', -- 'PENDIENTE', 'APROBADO', 'RECHAZADO', 'COMPRADO'
+        prioridad VARCHAR(20) DEFAULT 'NORMAL',
+        estado VARCHAR(20) DEFAULT 'PENDIENTE',
         comentario TEXT,
         fecha_creacion TIMESTAMP DEFAULT NOW(),
         fecha_resolucion TIMESTAMP
       );
     `);
-
-    // --- 23. HISTORIAL SUGERENCIAS (AUDITORÍA) ---
     await client.query(`
       CREATE TABLE IF NOT EXISTS historial_sugerencias (
         id SERIAL PRIMARY KEY,
         sugerencia_id INTEGER REFERENCES sugerencias_compra(id) ON DELETE CASCADE,
-        accion VARCHAR(50), -- CREADO, APROBADO, RECHAZADO, SOLICITADO
+        accion VARCHAR(50),
         usuario VARCHAR(100),
         fecha TIMESTAMP DEFAULT NOW(),
         detalle TEXT
+      );
+    `);
+
+    // --- NUEVO: TABLA LOCAL DE PEDIDOS (Por si decides usarla aparte) ---
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS pedidos_produccion (
+          id SERIAL PRIMARY KEY,
+          id_externo VARCHAR(255) UNIQUE,
+          fecha DATE,
+          cliente VARCHAR(255),
+          modelo VARCHAR(255),
+          cantidad INTEGER,
+          estado VARCHAR(50) DEFAULT 'PENDIENTE',
+          fecha_despacho TIMESTAMP,
+          usuario_despacho VARCHAR(100),
+          created_at TIMESTAMP DEFAULT NOW()
       );
     `);
 

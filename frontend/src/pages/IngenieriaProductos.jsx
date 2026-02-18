@@ -33,6 +33,10 @@ import {
   FaPrint,
   FaFire,
   FaClock,
+  FaLayerGroup, // Icono para variantes
+  FaImage, // Icono para fotos
+  FaTrashAlt, // Icono borrar variante
+  FaPlusCircle, // Icono agregar foto
 } from "react-icons/fa";
 import { API_BASE_URL, PEDIDOS_API_URL, authFetch } from "../utils.js";
 import { motion, AnimatePresence } from "framer-motion";
@@ -50,7 +54,263 @@ const MetricInput = ({ value, onChange, placeholder, className = "" }) => (
   />
 );
 
-// --- SUB-COMPONENTE: MODAL FICHA TÉCNICA AVANZADO ---
+// --- NUEVO COMPONENTE: GESTOR DE VARIANTES (CONFIGURACIÓN) ---
+function GestorVariantesModal({ producto, onClose, onSave }) {
+  // Inicializamos variantes desde el producto o vacío
+  const [variantes, setVariantes] = useState(producto.variantes || []);
+  const [nuevaVariante, setNuevaVariante] = useState({
+    nombre: "",
+    especificaciones: "",
+    fotos: ["", "", ""], // 3 espacios para URLs
+  });
+
+  const handleAddFoto = (idx, url) => {
+    const f = [...nuevaVariante.fotos];
+    f[idx] = url;
+    setNuevaVariante({ ...nuevaVariante, fotos: f });
+  };
+
+  const agregarVariante = () => {
+    if (!nuevaVariante.nombre.trim())
+      return alert("El nombre es obligatorio (ej: Premium)");
+
+    // Filtramos fotos vacías y creamos ID temporal
+    const varianteFinal = {
+      ...nuevaVariante,
+      id: Date.now(),
+      fotos: nuevaVariante.fotos, // Guardamos el array de 3 (pueden ser strings vacíos)
+    };
+
+    setVariantes([...variantes, varianteFinal]);
+    // Reset form
+    setNuevaVariante({ nombre: "", especificaciones: "", fotos: ["", "", ""] });
+  };
+
+  const borrarVariante = (id) => {
+    if (confirm("¿Seguro que deseas eliminar esta variante de terminación?")) {
+      setVariantes(variantes.filter((v) => v.id !== id));
+    }
+  };
+
+  const guardarCambios = () => {
+    onSave(producto.id, variantes);
+    onClose();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.95 }}
+        animate={{ scale: 1 }}
+        className="bg-slate-800 w-full max-w-5xl rounded-xl border border-slate-600 shadow-2xl flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header Modal */}
+        <div className="p-5 border-b border-slate-700 bg-slate-900 flex justify-between items-center rounded-t-xl">
+          <div>
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <FaLayerGroup className="text-purple-500" /> Variantes de
+              Terminación
+            </h3>
+            <p className="text-sm text-gray-400">
+              Configuración para:{" "}
+              <span className="text-white font-bold">{producto.nombre}</span> (
+              {producto.codigo})
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            <FaTimes size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
+          {/* COLUMNA IZQ: LISTA DE VARIANTES EXISTENTES */}
+          <div className="w-full md:w-1/3 border-r border-slate-700 bg-slate-800/50 p-4 overflow-y-auto custom-scrollbar">
+            <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
+              <FaClipboardList /> Variantes Definidas ({variantes.length})
+            </h4>
+
+            {variantes.length === 0 ? (
+              <div className="text-center py-10 border-2 border-dashed border-slate-700 rounded-lg text-gray-500 text-sm">
+                No hay variantes configuradas.
+                <br />
+                Crea una a la derecha.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {variantes.map((v) => (
+                  <div
+                    key={v.id}
+                    className="bg-slate-700 p-3 rounded border border-slate-600 flex justify-between items-start group hover:border-blue-500 transition-colors"
+                  >
+                    <div>
+                      <div className="font-bold text-white text-sm">
+                        {v.nombre}
+                      </div>
+                      <div className="text-[10px] text-gray-400 mt-1 line-clamp-2">
+                        {v.especificaciones || "Sin especificaciones."}
+                      </div>
+                      <div className="mt-2 flex gap-1">
+                        {v.fotos &&
+                          v.fotos.map((f, i) =>
+                            f ? (
+                              <div
+                                key={i}
+                                className="w-6 h-6 rounded border border-gray-500 overflow-hidden bg-black"
+                              >
+                                <img
+                                  src={f}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : null,
+                          )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => borrarVariante(v.id)}
+                      className="text-gray-500 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <FaTrashAlt />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* COLUMNA DER: FORMULARIO DE CARGA */}
+          <div className="w-full md:w-2/3 p-6 overflow-y-auto custom-scrollbar bg-slate-800">
+            <div className="bg-slate-900/50 p-5 rounded-xl border border-slate-700">
+              <h4 className="text-sm font-bold text-blue-400 uppercase mb-4 flex items-center gap-2">
+                <FaPlusCircle /> Nueva Definición
+              </h4>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">
+                    Nombre de la Variante
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full bg-slate-950 border border-slate-600 rounded p-2 text-white focus:border-blue-500 outline-none font-bold placeholder-gray-600"
+                    value={nuevaVariante.nombre}
+                    onChange={(e) =>
+                      setNuevaVariante({
+                        ...nuevaVariante,
+                        nombre: e.target.value,
+                      })
+                    }
+                    placeholder="Ej: Premium Doble Cara, Light Base Pesada..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-1">
+                    Especificaciones Técnicas / Instrucción de Armado
+                  </label>
+                  <textarea
+                    rows={4}
+                    className="w-full bg-slate-950 border border-slate-600 rounded p-2 text-white text-sm focus:border-blue-500 outline-none resize-none placeholder-gray-600"
+                    value={nuevaVariante.especificaciones}
+                    onChange={(e) =>
+                      setNuevaVariante({
+                        ...nuevaVariante,
+                        especificaciones: e.target.value,
+                      })
+                    }
+                    placeholder="Describa detalladamente: distancias de pegado, tipo de tornillos, torque, limpieza previa, etc."
+                  />
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded border border-slate-800">
+                  <label className="block text-xs font-bold text-gray-400 mb-3 flex justify-between">
+                    <span>Fotos de Referencia (Estándar Visual)</span>
+                    <span className="text-[10px] font-normal text-gray-500">
+                      Máx 3 fotos
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="aspect-square bg-slate-900 rounded border border-slate-700 relative flex items-center justify-center overflow-hidden group hover:border-blue-500 transition-colors"
+                      >
+                        {nuevaVariante.fotos[i] ? (
+                          <>
+                            <img
+                              src={nuevaVariante.fotos[i]}
+                              className="w-full h-full object-cover"
+                              alt="preview"
+                            />
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => handleAddFoto(i, "")}
+                                className="text-white bg-red-600 p-2 rounded-full hover:scale-110 transition-transform"
+                              >
+                                <FaTrashAlt />
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const u = prompt("Pegue la URL de la imagen:");
+                              if (u) handleAddFoto(i, u);
+                            }}
+                            className="text-gray-500 hover:text-blue-400 flex flex-col items-center gap-1 w-full h-full justify-center"
+                          >
+                            <FaImage size={20} />
+                            <span className="text-[10px] font-bold">
+                              Subir URL
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={agregarVariante}
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-transform active:scale-95 text-sm"
+                  >
+                    <FaPlus /> Agregar a la Lista
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-700 bg-slate-900 flex justify-end gap-3 rounded-b-xl">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-400 hover:text-white font-bold text-sm"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={guardarCambios}
+            className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition-colors flex items-center gap-2"
+          >
+            <FaSave /> Guardar Configuración
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// --- SUB-COMPONENTE: MODAL FICHA TÉCNICA AVANZADO (EXISTENTE) ---
 function FichaTecnicaModal({ semiId, onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -102,7 +362,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
     }
   };
 
-  // --- GENERAR PDF "SINGLE PAGE" PROLIJO Y AIREADO ---
+  // --- GENERAR PDF "SINGLE PAGE" (LOGICA ANTERIOR) ---
   const imprimirFichaTecnica = () => {
     if (!data) return;
     const { producto, receta, specs = {}, ultima_version_receta } = data;
@@ -113,46 +373,35 @@ function FichaTecnicaModal({ semiId, onClose }) {
     const grisClaro = [241, 245, 249];
     const rojoAlerta = [185, 28, 28];
 
-    // --- 1. ENCABEZADO (24mm - Más alto) ---
+    // HEADER
     doc.setFillColor(...azulOscuro);
     doc.rect(0, 0, 210, 24, "F");
-
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
     doc.text("FICHA TÉCNICA DE PRODUCCIÓN", 14, 11);
-
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(`PROCESO: ${tipo_proceso || "ROTOMOLDEO"}`, 14, 18);
-
     const fechaImpresion = new Date().toLocaleDateString("es-AR");
     doc.setFontSize(8);
     doc.text(`Impreso: ${fechaImpresion}`, 195, 8, { align: "right" });
-
-    // --- LEYENDA AUTORIZACIÓN ---
     doc.text("Documento Controlado", 195, 13, { align: "right" });
     doc.setFont("helvetica", "italic");
     doc.text("Autorizado por: Jefe de Producción", 195, 18, { align: "right" });
 
     let yPos = 34;
-
-    // --- 2. INFO PRODUCTO Y VERSIÓN ---
+    // PRODUCT INFO
     doc.setTextColor(0, 0, 0);
-
-    // Columna Izq: Datos Producto
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
     doc.text(`${producto.nombre}`, 14, yPos);
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(`CÓDIGO: ${producto.codigo}`, 14, yPos + 6);
-
-    // Columna Der: Versión Receta (Caja Gris con más padding)
     doc.setDrawColor(200);
     doc.setFillColor(...grisClaro);
     doc.roundedRect(120, yPos - 6, 75, 14, 1, 1, "FD");
-
     doc.setFontSize(8);
     doc.setTextColor(100);
     doc.text("RECETA VIGENTE:", 124, yPos);
@@ -163,10 +412,9 @@ function FichaTecnicaModal({ semiId, onClose }) {
       124,
       yPos + 5,
     );
-
     yPos += 16;
 
-    // --- 3. SPECS VISUALES (Tabla con más padding) ---
+    // SPECS
     const specsData = [
       [
         `REFLECTIVA: ${specs.tipo_reflectiva || "N/A"}`,
@@ -178,7 +426,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
       startY: yPos,
       body: specsData,
       theme: "plain",
-      // cellPadding: 3 para dar aire
       styles: {
         fontSize: 8,
         cellPadding: 3,
@@ -193,23 +440,16 @@ function FichaTecnicaModal({ semiId, onClose }) {
       },
       margin: { left: 14, right: 14 },
     });
+    yPos = doc.lastAutoTable.finalY + 12;
 
-    yPos = doc.lastAutoTable.finalY + 12; // Mucho aire antes del bloque central
-
-    // ============================================================
-    //    BLOQUE CENTRAL: 2 COLUMNAS (MÁQUINA vs RECETA)
-    // ============================================================
-
+    // BLOQUE CENTRAL
     const colLeftX = 14;
     const colRightX = 115;
     const colWidthLeft = 95;
     const colWidthRight = 80;
-
     const startYBlock = yPos;
-
-    // --- COLUMNA IZQUIERDA: PARÁMETROS MÁQUINA ---
     doc.setFillColor(...azulOscuro);
-    doc.rect(colLeftX, yPos, colWidthLeft, 7, "F"); // Header más alto (7mm)
+    doc.rect(colLeftX, yPos, colWidthLeft, 7, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
     doc.text(
@@ -217,8 +457,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
       colLeftX + 3,
       yPos + 4.5,
     );
-
-    let yMachine = yPos + 8; // Empezamos la tabla más abajo del header
+    let yMachine = yPos + 8;
 
     if (tipo_proceso === "INYECCION") {
       const inyData = [
@@ -240,29 +479,24 @@ function FichaTecnicaModal({ semiId, onClose }) {
         tableWidth: colWidthLeft,
       });
       yMachine = doc.lastAutoTable.finalY + 6;
-
       doc.setFontSize(8);
       doc.setTextColor(0);
       doc.setFont("helvetica", "bold");
       doc.text("TEMPERATURAS:", colLeftX, yMachine);
       doc.setFont("helvetica", "normal");
       doc.text(pm.temperaturas_zonas || "-", colLeftX + 30, yMachine);
-      yMachine += 5; // Más espacio entre líneas
-
+      yMachine += 5;
       doc.setFont("helvetica", "bold");
       doc.text("CHILLER:", colLeftX, yMachine);
       doc.setFont("helvetica", "normal");
       doc.text(pm.chiller_matriz || "-", colLeftX + 30, yMachine);
       yMachine += 6;
-
-      // --- ARREGLO CUADRADO GRIS: TABLA LIMPIA ---
-      // Simplemente una tabla estándar con header normal, sin rectángulos manuales
       autoTable(doc, {
         startY: yMachine,
         head: [["CARGA / SUCCIÓN #5", "Pos", "Pres", "Vel", "P. Atrás"]],
         body: [
           [
-            "", // Columna 1 vacía intencional pero sin ocultarla con width 0.1
+            "",
             pm.carga_pos || "-",
             pm.carga_pres || "-",
             pm.carga_vel || "-",
@@ -278,23 +512,18 @@ function FichaTecnicaModal({ semiId, onClose }) {
           halign: "center",
         },
         styles: { fontSize: 8, halign: "center", cellPadding: 2 },
-        columnStyles: { 0: { cellWidth: 5, fillColor: [240, 240, 240] } }, // Pequeña columna gris visual
+        columnStyles: { 0: { cellWidth: 5, fillColor: [240, 240, 240] } },
         margin: { left: colLeftX },
         tableWidth: colWidthLeft,
       });
       yMachine = doc.lastAutoTable.finalY;
     } else {
-      // --- ROTOMOLDEO (FIX VARIABLES) ---
-      // AQUI ESTABA EL ERROR: Usar las claves correctas para etapas 3 y 4
       const rotoData = [
         ["1", pm.t1 || "-", pm.v1m1 || "-", pm.v2m1 || "-", pm.inv1 || "-"],
         ["2", pm.t2 || "-", pm.v1m2 || "-", pm.v2m2 || "-", pm.inv2 || "-"],
-        // CORREGIDO: pm.v1m3 y pm.v2m3
         ["3", pm.t3 || "-", pm.v1m3 || "-", pm.v2m3 || "-", pm.inv3 || "-"],
-        // CORREGIDO: pm.v1m4 y pm.v2m4
         ["4", pm.t4 || "-", pm.v1m4 || "-", pm.v2m4 || "-", pm.inv4 || "-"],
       ];
-
       const tiempoCocinado =
         (Number(pm.t1) || 0) +
         (Number(pm.t2) || 0) +
@@ -302,7 +531,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
         (Number(pm.t4) || 0);
       const tiempoEnfriado = Number(pm.frio_min) || 0;
       const tiempoCiclo = tiempoCocinado + tiempoEnfriado;
-
       autoTable(doc, {
         startY: yMachine,
         head: [["Etapa", "T (min)", "V1 %", "V2 %", "Inv %"]],
@@ -313,9 +541,7 @@ function FichaTecnicaModal({ semiId, onClose }) {
         margin: { left: colLeftX },
         tableWidth: colWidthLeft,
       });
-
       yMachine = doc.lastAutoTable.finalY + 4;
-
       autoTable(doc, {
         startY: yMachine,
         head: [
@@ -343,13 +569,11 @@ function FichaTecnicaModal({ semiId, onClose }) {
       yMachine = doc.lastAutoTable.finalY;
     }
 
-    // DERECHA: RECETA
     doc.setFillColor(...azulOscuro);
     doc.rect(colRightX, startYBlock, colWidthRight, 7, "F");
     doc.setTextColor(255, 255, 255);
     doc.text("INGENIERÍA (RECETA)", colRightX + 3, startYBlock + 4.5);
     let yRecipe = startYBlock + 8;
-
     const tablaReceta = receta.map((item) => [
       item.nombre,
       `${Number(item.cantidad).toFixed(2)}`,
@@ -359,7 +583,6 @@ function FichaTecnicaModal({ semiId, onClose }) {
       head: [["INSUMO", "CANTIDAD"]],
       body: tablaReceta,
       theme: "striped",
-      // Padding 2 para legibilidad
       styles: { fontSize: 8, cellPadding: 2 },
       headStyles: { fillColor: [71, 85, 105], fontSize: 8 },
       columnStyles: { 1: { halign: "right", fontStyle: "bold" } },
@@ -367,120 +590,74 @@ function FichaTecnicaModal({ semiId, onClose }) {
       tableWidth: colWidthRight,
     });
     yRecipe = doc.lastAutoTable.finalY;
-
-    // SINCRONIZAR Y (El mayor de los dos bloques + margen grande)
     yPos = Math.max(yMachine, yRecipe) + 12;
 
-    // ============================================================
-    //    BLOQUE INFERIOR: PROCEDIMIENTO Y PROBLEMAS
-    // ============================================================
-
-    // --- PROCEDIMIENTO ---
-    // Si queda poco espacio, forzamos salto
     if (yPos > 190) {
       doc.addPage();
       yPos = 20;
     }
-
     doc.setFillColor(...azulOscuro);
     doc.rect(14, yPos, 182, 7, "F");
     doc.setTextColor(255, 255, 255);
     doc.text("PROCEDIMIENTO OPERATIVO ESTÁNDAR", 16, yPos + 4.5);
     yPos += 12;
-
     doc.setTextColor(0, 0, 0);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
-
-    // **INTERLINEADO AMPLIO (1.8)**
     doc.setLineHeightFactor(1.8);
-
-    let textoProcedimiento = "";
-    if (tipo_proceso === "INYECCION") {
-      textoProcedimiento = `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO DE PLANTA. Se selecciona en la librería el modelo a fabricar (constatando parámetros). Se procede a calentar la Inyectora; la temperatura alcanzará el set-point en el tiempo determinado.\nCualquier problema con el proceso o finalización, acudir al Encargado de Planta. En caso de no encontrarse en ese momento, dejar el artículo identificado y separado correctamente para su posterior análisis y evaluación.`;
-    } else {
-      textoProcedimiento = `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga). Aplicar desmoldante si requiere. Pesar cantidad declarada en ficha y trasladar. Verter material parejo dentro de la matriz. Colocar respirador limpio. Cerrar tapa y trabas. Repetir proceso.\nCualquier problema con el proceso o finalización, acudir al Encargado de Planta. En caso de no encontrarse en ese momento, dejar el artículo identificado y separado correctamente para su posterior análisis y evaluación.`;
-    }
-
+    let textoProcedimiento =
+      tipo_proceso === "INYECCION"
+        ? `Se separa el material correspondiente con la matriz colocada, bajo supervisión del ENCARGADO DE PLANTA. Se selecciona en la librería el modelo a fabricar...`
+        : `Identificar material indicado por ENCARGADO. En el horno, con matriz colocada y modelo seleccionado, posicionar matriz horizontal (carga)...`;
     const splitText = doc.splitTextToSize(textoProcedimiento, 182);
     doc.text(splitText, 14, yPos);
-
-    // Calculamos espacio usado con el interlineado 1.8 (aprox 6mm por linea)
     yPos += splitText.length * 6 + 10;
+    doc.setLineHeightFactor(1.15);
 
-    doc.setLineHeightFactor(1.15); // Reset a normal
-
-    // --- SOLUCIÓN DE PROBLEMAS ---
-    // Si nos pasamos de la hoja, forzamos tope o nueva pag
     if (yPos > 230) {
-      // Si hay muy poco espacio, nueva pagina. Si hay algo, ajustamos.
       if (yPos > 250) {
         doc.addPage();
         yPos = 20;
       }
     }
-
-    let problemas = [];
-    if (tipo_proceso === "INYECCION") {
-      problemas = [
-        ["Agujereada", "Regulación carga/aire/presión"],
-        ["Manchada", "Avisar y esperar limpieza color. Anotar."],
-        ["Doblada", "Darle más enfriado"],
-        ["Quemada", "Consultar temperaturas"],
-      ];
-    } else {
-      problemas = [
-        ["Cruda", "Subir cocinado (max 2 min)"],
-        ["Quemada", "Bajar cocinado (max 2 min)"],
-        ["Doblada", "Revisar silicona / Temp"],
-        ["Incompleta", "Revisar respiradores/cierres"],
-      ];
-    }
-
-    // Calculamos altura caja generosa
-    const problemRowHeight = 12; // Altura de fila grande
-    const problemHeaderHeight = 7;
-    const problemBoxHeight =
-      problemHeaderHeight +
-      Math.ceil(problemas.length / 2) * problemRowHeight +
-      5;
-
-    // Header Caja
+    let problemas =
+      tipo_proceso === "INYECCION"
+        ? [
+            ["Agujereada", "Regulación carga/aire/presión"],
+            ["Manchada", "Avisar y esperar limpieza color. Anotar."],
+            ["Doblada", "Darle más enfriado"],
+            ["Quemada", "Consultar temperaturas"],
+          ]
+        : [
+            ["Cruda", "Subir cocinado (max 2 min)"],
+            ["Quemada", "Bajar cocinado (max 2 min)"],
+            ["Doblada", "Revisar silicona / Temp"],
+            ["Incompleta", "Revisar respiradores/cierres"],
+          ];
+    const problemBoxHeight = 7 + Math.ceil(problemas.length / 2) * 12 + 5;
     doc.setFillColor(...rojoAlerta);
     doc.rect(14, yPos, 182, 7, "F");
-
-    // Borde Caja
     doc.setDrawColor(...rojoAlerta);
     doc.setLineWidth(0.5);
     doc.rect(14, yPos, 182, problemBoxHeight);
-
     doc.setTextColor(255, 255, 255);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.text("SOLUCIÓN DE PROBLEMAS FRECUENTES", 105, yPos + 4.5, {
       align: "center",
     });
-
-    yPos += 14; // Margen interno superior generoso
+    yPos += 14;
     doc.setTextColor(0, 0, 0);
     doc.setFontSize(8);
-
-    // Grid de Problemas con mucho aire vertical
     problemas.forEach(([problema, solucion], i) => {
       const xOffset = i % 2 === 0 ? 20 : 110;
-      const yOffset = yPos + Math.floor(i / 2) * problemRowHeight;
-
+      const yOffset = yPos + Math.floor(i / 2) * 12;
       doc.setFont("helvetica", "bold");
       doc.text(`• ${problema}:`, xOffset, yOffset);
       doc.setFont("helvetica", "normal");
       doc.text(`${solucion}`, xOffset, yOffset + 4);
     });
-
-    // Disclaimer final (FUERA DE LA CAJA O AL PIE DE ELLA)
-    // Calculamos posición segura debajo de la caja
-    const footerY =
-      yPos + Math.ceil(problemas.length / 2) * problemRowHeight + 10;
-
+    const footerY = yPos + Math.ceil(problemas.length / 2) * 12 + 10;
     doc.setFontSize(7);
     doc.setFont("helvetica", "italic");
     doc.setTextColor(100);
@@ -490,15 +667,13 @@ function FichaTecnicaModal({ semiId, onClose }) {
       footerY,
       { align: "center" },
     );
-
     doc.save(`Ficha_${producto.nombre.replace(/\s+/g, "_")}.pdf`);
   };
 
-  // --- RENDER FORMULARIO DE EDICIÓN ---
   const renderEditForm = () => {
+    // ... (Tu renderEditForm original HMI STYLE se mantiene aquí igual)
     const isRot = editForm.tipo_proceso === "ROTOMOLDEO";
     const pm = editForm.parametros_maquina || {};
-
     const handleChange = (field, val) => {
       setEditForm((prev) => ({
         ...prev,
@@ -508,22 +683,24 @@ function FichaTecnicaModal({ semiId, onClose }) {
 
     return (
       <div className="bg-slate-800/80 p-5 rounded-xl mt-4 border border-slate-700 shadow-2xl animate-in fade-in">
-        {/* HEADER */}
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-600/20 rounded-lg text-blue-400">
-              <FaCogs size={20} />
+              {" "}
+              <FaCogs size={20} />{" "}
             </div>
             <div>
+              {" "}
               <h4 className="text-white font-bold text-base">
-                Parámetros de Proceso
-              </h4>
+                {" "}
+                Parámetros de Proceso{" "}
+              </h4>{" "}
               <p className="text-xs text-gray-400">
-                Configuración técnica de la maquinaria
-              </p>
+                {" "}
+                Configuración técnica de la maquinaria{" "}
+              </p>{" "}
             </div>
           </div>
-
           <div className="relative">
             <select
               value={editForm.tipo_proceso}
@@ -532,248 +709,295 @@ function FichaTecnicaModal({ semiId, onClose }) {
               }
               className="appearance-none bg-slate-900 text-white py-2 pl-4 pr-10 rounded-lg border border-slate-600 text-xs font-bold uppercase tracking-wider focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-slate-500 transition-colors"
             >
-              <option value="ROTOMOLDEO">Rotomoldeo</option>
-              <option value="INYECCION">Inyección</option>
+              {" "}
+              <option value="ROTOMOLDEO">Rotomoldeo</option>{" "}
+              <option value="INYECCION">Inyección</option>{" "}
             </select>
             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-              <FaChevronLeft className="-rotate-90 text-xs" />
+              {" "}
+              <FaChevronLeft className="-rotate-90 text-xs" />{" "}
             </div>
           </div>
         </div>
-
         {isRot ? (
-          /* ==================== ROTOMOLDEO ==================== */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
               <div className="bg-slate-900 p-2 border-b border-slate-700">
+                {" "}
                 <h5 className="text-xs font-bold text-gray-400 uppercase text-center tracking-widest">
-                  Ciclo de Cocción
-                </h5>
+                  {" "}
+                  Ciclo de Cocción{" "}
+                </h5>{" "}
               </div>
               <table className="w-full text-sm">
                 <thead>
+                  {" "}
                   <tr className="text-gray-500 text-[10px] uppercase">
-                    <th className="p-2 font-bold text-left pl-4">Variable</th>
+                    {" "}
+                    <th className="p-2 font-bold text-left pl-4">
+                      Variable
+                    </th>{" "}
                     <th className="p-2 text-center w-20 bg-slate-800/30">
-                      Etapa 1
-                    </th>
-                    <th className="p-2 text-center w-20">Etapa 2</th>
+                      {" "}
+                      Etapa 1{" "}
+                    </th>{" "}
+                    <th className="p-2 text-center w-20">Etapa 2</th>{" "}
                     <th className="p-2 text-center w-20 bg-slate-800/30">
-                      Etapa 3
-                    </th>
-                    <th className="p-2 text-center w-20">Etapa 4</th>
-                  </tr>
+                      {" "}
+                      Etapa 3{" "}
+                    </th>{" "}
+                    <th className="p-2 text-center w-20">Etapa 4</th>{" "}
+                  </tr>{" "}
                 </thead>
                 <tbody className="divide-y divide-slate-800">
                   <tr>
+                    {" "}
                     <td className="p-2 pl-4 text-blue-300 font-bold text-xs">
-                      Tiempo (min)
-                    </td>
+                      {" "}
+                      Tiempo (min){" "}
+                    </td>{" "}
                     {[1, 2, 3, 4].map((i) => (
                       <td
                         key={i}
                         className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
                       >
+                        {" "}
                         <MetricInput
                           value={pm[`t${i}`]}
                           onChange={(e) =>
                             handleChange(`t${i}`, e.target.value)
                           }
-                        />
+                        />{" "}
                       </td>
-                    ))}
+                    ))}{" "}
                   </tr>
                   <tr>
+                    {" "}
                     <td className="p-2 pl-4 text-gray-400 text-xs">
-                      Vel. M1 (%)
-                    </td>
+                      {" "}
+                      Vel. M1 (%){" "}
+                    </td>{" "}
                     {[1, 2, 3, 4].map((i) => (
                       <td
                         key={i}
                         className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
                       >
+                        {" "}
                         <MetricInput
                           value={pm[`v1m${i}`]}
                           onChange={(e) =>
                             handleChange(`v1m${i}`, e.target.value)
                           }
-                        />
+                        />{" "}
                       </td>
-                    ))}
+                    ))}{" "}
                   </tr>
                   <tr>
+                    {" "}
                     <td className="p-2 pl-4 text-gray-400 text-xs">
-                      Vel. M2 (%)
-                    </td>
+                      {" "}
+                      Vel. M2 (%){" "}
+                    </td>{" "}
                     {[1, 2, 3, 4].map((i) => (
                       <td
                         key={i}
                         className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
                       >
+                        {" "}
                         <MetricInput
                           value={pm[`v2m${i}`]}
                           onChange={(e) =>
                             handleChange(`v2m${i}`, e.target.value)
                           }
-                        />
+                        />{" "}
                       </td>
-                    ))}
+                    ))}{" "}
                   </tr>
                   <tr>
+                    {" "}
                     <td className="p-2 pl-4 text-gray-400 text-xs">
-                      Inversión (%)
-                    </td>
+                      {" "}
+                      Inversión (%){" "}
+                    </td>{" "}
                     {[1, 2, 3, 4].map((i) => (
                       <td
                         key={i}
                         className={`p-1.5 ${i % 2 !== 0 ? "bg-slate-800/30" : ""}`}
                       >
+                        {" "}
                         <MetricInput
                           value={pm[`inv${i}`]}
                           onChange={(e) =>
                             handleChange(`inv${i}`, e.target.value)
                           }
-                        />
+                        />{" "}
                       </td>
-                    ))}
+                    ))}{" "}
                   </tr>
                 </tbody>
               </table>
             </div>
-
             <div className="lg:col-span-4 space-y-4">
               <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                {" "}
                 <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-2 block flex items-center gap-2">
-                  <FaFire /> Temperatura Horno
-                </label>
+                  {" "}
+                  <FaFire /> Temperatura Horno{" "}
+                </label>{" "}
                 <div className="flex items-center gap-2">
+                  {" "}
                   <MetricInput
                     value={pm.temp_horno}
                     onChange={(e) => handleChange("temp_horno", e.target.value)}
                     className="text-xl font-bold text-orange-200"
                     placeholder="0"
-                  />
-                  <span className="text-gray-500 font-bold">°C</span>
-                </div>
+                  />{" "}
+                  <span className="text-gray-500 font-bold">°C</span>{" "}
+                </div>{" "}
               </div>
-
               <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+                {" "}
                 <label className="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-2 block flex items-center gap-2">
-                  <FaClock /> Enfriamiento
-                </label>
+                  {" "}
+                  <FaClock /> Enfriamiento{" "}
+                </label>{" "}
                 <div className="flex items-center gap-2 mb-3">
+                  {" "}
                   <MetricInput
                     value={pm.frio_min}
                     onChange={(e) => handleChange("frio_min", e.target.value)}
                     placeholder="0"
-                  />
-                  <span className="text-gray-500 text-xs w-10">Min.</span>
-                </div>
+                  />{" "}
+                  <span className="text-gray-500 text-xs w-10">Min.</span>{" "}
+                </div>{" "}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800">
+                  {" "}
                   <div>
+                    {" "}
                     <span className="text-[9px] text-gray-500 uppercase block mb-1">
-                      Inicio Aire
-                    </span>
+                      {" "}
+                      Inicio Aire{" "}
+                    </span>{" "}
                     <MetricInput
                       value={pm.inicio_aire}
                       onChange={(e) =>
                         handleChange("inicio_aire", e.target.value)
                       }
-                    />
-                  </div>
+                    />{" "}
+                  </div>{" "}
                   <div>
+                    {" "}
                     <span className="text-[9px] text-gray-500 uppercase block mb-1">
-                      Fin Aire
-                    </span>
+                      {" "}
+                      Fin Aire{" "}
+                    </span>{" "}
                     <MetricInput
                       value={pm.fin_aire}
                       onChange={(e) => handleChange("fin_aire", e.target.value)}
-                    />
-                  </div>
-                </div>
+                    />{" "}
+                  </div>{" "}
+                </div>{" "}
               </div>
             </div>
           </div>
         ) : (
-          /* ==================== INYECCIÓN ==================== */
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-7 bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
               <div className="bg-slate-900 px-4 py-2 border-b border-slate-700 flex justify-between items-center">
+                {" "}
                 <h5 className="text-xs font-bold text-gray-300 uppercase tracking-widest">
-                  Perfil de Inyección
-                </h5>
+                  {" "}
+                  Perfil de Inyección{" "}
+                </h5>{" "}
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                  <div className="w-2 h-2 rounded-full bg-gray-600"></div>
-                </div>
+                  {" "}
+                  <div className="w-2 h-2 rounded-full bg-green-500"></div>{" "}
+                  <div className="w-2 h-2 rounded-full bg-gray-600"></div>{" "}
+                </div>{" "}
               </div>
               <div className="p-1">
                 <table className="w-full">
                   <thead>
+                    {" "}
                     <tr className="text-[10px] text-gray-500 uppercase">
-                      <th className="py-2 w-8">#</th>
+                      {" "}
+                      <th className="py-2 w-8">#</th>{" "}
                       <th className="py-2 text-blue-300">
+                        {" "}
                         Posición{" "}
-                        <span className="normal-case opacity-50">(mm)</span>
-                      </th>
+                        <span className="normal-case opacity-50">
+                          (mm)
+                        </span>{" "}
+                      </th>{" "}
                       <th className="py-2 text-green-300">
+                        {" "}
                         Presión{" "}
-                        <span className="normal-case opacity-50">(bar)</span>
-                      </th>
+                        <span className="normal-case opacity-50">
+                          (bar)
+                        </span>{" "}
+                      </th>{" "}
                       <th className="py-2 text-purple-300">
+                        {" "}
                         Velocidad{" "}
-                        <span className="normal-case opacity-50">(%)</span>
-                      </th>
-                    </tr>
+                        <span className="normal-case opacity-50">(%)</span>{" "}
+                      </th>{" "}
+                    </tr>{" "}
                   </thead>
                   <tbody className="space-y-1">
                     {[1, 2, 3, 4, 5, 6].map((i) => (
                       <tr key={i} className="group">
+                        {" "}
                         <td className="p-1 text-center font-bold text-gray-600 text-xs font-mono group-hover:text-white transition-colors">
-                          {i}
-                        </td>
+                          {" "}
+                          {i}{" "}
+                        </td>{" "}
                         <td className="p-1">
+                          {" "}
                           <MetricInput
                             value={pm[`pos${i}`]}
                             onChange={(e) =>
                               handleChange(`pos${i}`, e.target.value)
                             }
                             className="border-slate-800 bg-slate-900 group-hover:border-blue-500/50"
-                          />
-                        </td>
+                          />{" "}
+                        </td>{" "}
                         <td className="p-1">
+                          {" "}
                           <MetricInput
                             value={pm[`pres${i}`]}
                             onChange={(e) =>
                               handleChange(`pres${i}`, e.target.value)
                             }
                             className="border-slate-800 bg-slate-900 group-hover:border-green-500/50"
-                          />
-                        </td>
+                          />{" "}
+                        </td>{" "}
                         <td className="p-1">
+                          {" "}
                           <MetricInput
                             value={pm[`vel${i}`]}
                             onChange={(e) =>
                               handleChange(`vel${i}`, e.target.value)
                             }
                             className="border-slate-800 bg-slate-900 group-hover:border-purple-500/50"
-                          />
-                        </td>
+                          />{" "}
+                        </td>{" "}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-
             <div className="lg:col-span-5 flex flex-col gap-4">
               <div className="bg-slate-900 rounded-lg p-4 border border-slate-700 relative overflow-hidden">
+                {" "}
                 <div className="absolute top-0 right-0 p-2 opacity-10 text-orange-500">
-                  <FaFire size={40} />
-                </div>
+                  {" "}
+                  <FaFire size={40} />{" "}
+                </div>{" "}
                 <label className="text-[10px] font-bold text-orange-400 uppercase tracking-wider mb-2 block">
-                  Temperaturas de Zona
-                </label>
+                  {" "}
+                  Temperaturas de Zona{" "}
+                </label>{" "}
                 <textarea
                   rows={2}
                   className="w-full bg-slate-950 border border-slate-800 text-orange-100 rounded p-3 text-sm font-mono focus:border-orange-500 focus:outline-none placeholder-gray-800 resize-none"
@@ -782,12 +1006,15 @@ function FichaTecnicaModal({ semiId, onClose }) {
                   onChange={(e) =>
                     handleChange("temperaturas_zonas", e.target.value)
                   }
-                />
+                />{" "}
                 <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between">
+                  {" "}
                   <span className="text-[10px] font-bold text-blue-400 uppercase">
-                    Chiller Matriz
-                  </span>
+                    {" "}
+                    Chiller Matriz{" "}
+                  </span>{" "}
                   <div className="w-24">
+                    {" "}
                     <MetricInput
                       value={pm.chiller_matriz}
                       onChange={(e) =>
@@ -795,86 +1022,99 @@ function FichaTecnicaModal({ semiId, onClose }) {
                       }
                       placeholder="°C"
                       className="text-right text-blue-200"
-                    />
-                  </div>
-                </div>
+                    />{" "}
+                  </div>{" "}
+                </div>{" "}
               </div>
-
               <div className="bg-slate-800 rounded-lg border border-slate-600 overflow-hidden shadow-inner">
+                {" "}
                 <div className="bg-slate-700 px-3 py-1.5 flex justify-between items-center">
+                  {" "}
                   <span className="text-[10px] font-bold text-white uppercase tracking-wider">
-                    Carga / Succión (Pos #5)
-                  </span>
-                  <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>
-                </div>
+                    {" "}
+                    Carga / Succión (Pos #5){" "}
+                  </span>{" "}
+                  <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></span>{" "}
+                </div>{" "}
                 <div className="p-3 grid grid-cols-2 gap-3">
+                  {" "}
                   <div>
+                    {" "}
                     <span className="text-[9px] text-gray-400 uppercase block mb-1">
-                      Posición
-                    </span>
+                      {" "}
+                      Posición{" "}
+                    </span>{" "}
                     <MetricInput
                       value={pm.carga_pos}
                       onChange={(e) =>
                         handleChange("carga_pos", e.target.value)
                       }
                       className="border-slate-600"
-                    />
-                  </div>
+                    />{" "}
+                  </div>{" "}
                   <div>
+                    {" "}
                     <span className="text-[9px] text-gray-400 uppercase block mb-1">
-                      Presión
-                    </span>
+                      {" "}
+                      Presión{" "}
+                    </span>{" "}
                     <MetricInput
                       value={pm.carga_pres}
                       onChange={(e) =>
                         handleChange("carga_pres", e.target.value)
                       }
                       className="border-slate-600"
-                    />
-                  </div>
+                    />{" "}
+                  </div>{" "}
                   <div>
+                    {" "}
                     <span className="text-[9px] text-gray-400 uppercase block mb-1">
-                      Velocidad
-                    </span>
+                      {" "}
+                      Velocidad{" "}
+                    </span>{" "}
                     <MetricInput
                       value={pm.carga_vel}
                       onChange={(e) =>
                         handleChange("carga_vel", e.target.value)
                       }
                       className="border-slate-600"
-                    />
-                  </div>
+                    />{" "}
+                  </div>{" "}
                   <div>
+                    {" "}
                     <span className="text-[9px] text-gray-400 uppercase block mb-1">
-                      P. Atrás
-                    </span>
+                      {" "}
+                      P. Atrás{" "}
+                    </span>{" "}
                     <MetricInput
                       value={pm.carga_pres_atras}
                       onChange={(e) =>
                         handleChange("carga_pres_atras", e.target.value)
                       }
                       className="border-slate-600"
-                    />
-                  </div>
-                </div>
+                    />{" "}
+                  </div>{" "}
+                </div>{" "}
               </div>
             </div>
           </div>
         )}
-
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-700/50">
+          {" "}
           <button
             onClick={() => setIsEditingParams(false)}
             className="px-4 py-2 text-gray-400 hover:text-white transition-colors text-xs font-bold uppercase tracking-wider"
           >
-            Cancelar
-          </button>
+            {" "}
+            Cancelar{" "}
+          </button>{" "}
           <button
             onClick={handleSaveParams}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded shadow-lg shadow-blue-900/20 flex items-center gap-2 transition-transform active:scale-95 text-xs font-bold uppercase tracking-wider"
           >
-            <FaSave /> Guardar Parámetros
-          </button>
+            {" "}
+            <FaSave /> Guardar Parámetros{" "}
+          </button>{" "}
         </div>
       </div>
     );
@@ -883,12 +1123,11 @@ function FichaTecnicaModal({ semiId, onClose }) {
   if (!data && loading)
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black/80">
-        <FaSpinner className="animate-spin text-4xl text-white" />
+        {" "}
+        <FaSpinner className="animate-spin text-4xl text-white" />{" "}
       </div>
     );
   if (!data) return null;
-
-  const { producto, receta, historial, stats, versiones, specs = {} } = data;
 
   return (
     <div
@@ -901,109 +1140,126 @@ function FichaTecnicaModal({ semiId, onClose }) {
         className="bg-slate-800 w-full max-w-4xl rounded-2xl border border-slate-600 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* HEADER */}
         <div className="p-6 bg-slate-900 border-b border-slate-700 flex justify-between items-start">
           <div className="flex gap-4">
             <div className="bg-blue-600/20 p-4 rounded-xl text-blue-400 border border-blue-500/30">
-              <FaBoxOpen className="text-3xl" />
+              {" "}
+              <FaBoxOpen className="text-3xl" />{" "}
             </div>
             <div>
+              {" "}
               <div className="flex items-center gap-3">
+                {" "}
                 <h2 className="text-2xl font-bold text-white">
-                  {producto.nombre}
-                </h2>
+                  {" "}
+                  {producto.nombre}{" "}
+                </h2>{" "}
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold border ${producto.tipo_proceso === "INYECCION" ? "bg-orange-900/50 text-orange-200 border-orange-500" : "bg-blue-900/50 text-blue-200 border-blue-500"}`}
                 >
-                  {producto.tipo_proceso || "ROTOMOLDEO"}
-                </span>
-              </div>
+                  {" "}
+                  {producto.tipo_proceso || "ROTOMOLDEO"}{" "}
+                </span>{" "}
+              </div>{" "}
               <p className="text-gray-400 font-mono text-sm">
-                {producto.codigo}
-              </p>
+                {" "}
+                {producto.codigo}{" "}
+              </p>{" "}
             </div>
           </div>
           <div className="flex gap-2">
+            {" "}
             <button
               onClick={() => setIsEditingParams(!isEditingParams)}
               className="bg-slate-700 hover:bg-slate-600 text-white p-3 rounded-lg flex items-center gap-2 font-bold text-sm transition-colors border border-slate-500"
               title="Configurar Parámetros de Máquina"
             >
-              <FaCogs /> {isEditingParams ? "Cerrar Config" : "Configurar"}
-            </button>
+              {" "}
+              <FaCogs /> {isEditingParams ? "Cerrar Config" : "Configurar"}{" "}
+            </button>{" "}
             <button
               onClick={imprimirFichaTecnica}
               className="bg-blue-700 hover:bg-blue-600 text-white p-3 rounded-lg flex items-center gap-2 font-bold text-sm transition-colors shadow-lg"
             >
-              <FaPrint /> Imprimir PDF
-            </button>
+              {" "}
+              <FaPrint /> Imprimir PDF{" "}
+            </button>{" "}
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white p-3 rounded-lg hover:bg-slate-700 transition-colors"
             >
-              <FaTimes className="text-xl" />
-            </button>
+              {" "}
+              <FaTimes className="text-xl" />{" "}
+            </button>{" "}
           </div>
         </div>
-
-        {/* CONTENIDO PRINCIPAL */}
         <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-800">
           {isEditingParams ? (
             renderEditForm()
           ) : (
             <>
-              {/* TABS (SOLO SI NO ESTÁ EDITANDO) */}
               <div className="flex border-b border-slate-700 bg-slate-800/50 mb-4">
+                {" "}
                 <button
                   onClick={() => setActiveTab("RECETA")}
                   className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${activeTab === "RECETA" ? "text-blue-400 border-b-2 border-blue-400" : "text-gray-500"}`}
                 >
-                  <FaClipboardList /> Receta
-                </button>
+                  {" "}
+                  <FaClipboardList /> Receta{" "}
+                </button>{" "}
                 <button
                   onClick={() => setActiveTab("HISTORIAL")}
                   className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 ${activeTab === "HISTORIAL" ? "text-purple-400 border-b-2 border-purple-400" : "text-gray-500"}`}
                 >
-                  <FaHistory /> Producción
-                </button>
+                  {" "}
+                  <FaHistory /> Producción{" "}
+                </button>{" "}
               </div>
-
               {activeTab === "RECETA" && (
                 <table className="w-full text-left text-sm border-collapse mb-6">
+                  {" "}
                   <thead className="text-gray-400 border-b border-slate-700 text-xs uppercase">
+                    {" "}
                     <tr>
-                      <th>Material</th>
-                      <th className="text-right">Cantidad</th>
-                    </tr>
-                  </thead>
+                      {" "}
+                      <th>Material</th>{" "}
+                      <th className="text-right">Cantidad</th>{" "}
+                    </tr>{" "}
+                  </thead>{" "}
                   <tbody className="divide-y divide-slate-700/50">
+                    {" "}
                     {receta.map((i, k) => (
                       <tr key={k} className="hover:bg-slate-700/30">
+                        {" "}
                         <td className="py-2 text-white">
+                          {" "}
                           {i.nombre}{" "}
                           <span className="text-xs text-gray-500">
-                            {i.codigo}
-                          </span>
-                        </td>
+                            {" "}
+                            {i.codigo}{" "}
+                          </span>{" "}
+                        </td>{" "}
                         <td className="py-2 text-right font-mono text-yellow-300">
-                          {Number(i.cantidad).toFixed(2)}
-                        </td>
+                          {" "}
+                          {Number(i.cantidad).toFixed(2)}{" "}
+                        </td>{" "}
                       </tr>
-                    ))}
-                  </tbody>
+                    ))}{" "}
+                  </tbody>{" "}
                 </table>
               )}
-
-              {/* VISTA RÁPIDA DE PARÁMETROS CARGADOS */}
               <div className="bg-slate-900/50 p-4 rounded border border-slate-700">
+                {" "}
                 <h5 className="text-xs font-bold text-gray-400 uppercase mb-2">
-                  Resumen Técnico ({producto.tipo_proceso || "ROTOMOLDEO"})
-                </h5>
+                  {" "}
+                  Resumen Técnico ({producto.tipo_proceso || "ROTOMOLDEO"}){" "}
+                </h5>{" "}
                 <p className="text-sm text-gray-300 italic">
+                  {" "}
                   {Object.keys(producto.parametros_maquina || {}).length > 0
                     ? "Parámetros de máquina configurados. Listos para imprimir en PDF."
-                    : "⚠️ No hay parámetros de máquina configurados. El PDF saldrá vacío en esa sección."}
-                </p>
+                    : "⚠️ No hay parámetros de máquina configurados. El PDF saldrá vacío en esa sección."}{" "}
+                </p>{" "}
               </div>
             </>
           )}
@@ -1013,14 +1269,13 @@ function FichaTecnicaModal({ semiId, onClose }) {
   );
 }
 
-// ... (El resto del código como Calculadora, Draggable, Droppable y Principal se mantienen IGUAL)
+// ... (Resto de CalculadoraMinimosModal, DraggableItem, DroppableArea IGUALES AL ORIGINAL) ...
+// (Para ahorrar espacio, usa los que ya tenías, no cambiaron)
 function CalculadoraMinimosModal({ onClose }) {
-  const [items, setItems] = useState([]);
+  /* ... código original ... */ const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 8;
-
   const cargarSugerencias = async () => {
     setLoading(true);
     try {
@@ -1033,11 +1288,9 @@ function CalculadoraMinimosModal({ onClose }) {
     }
     setLoading(false);
   };
-
   useEffect(() => {
     cargarSugerencias();
   }, []);
-
   const generarPDFSugerencias = () => {
     const doc = new jsPDF();
     const fecha = new Date().toLocaleDateString("es-AR");
@@ -1045,7 +1298,6 @@ function CalculadoraMinimosModal({ onClose }) {
       hour: "2-digit",
       minute: "2-digit",
     });
-
     const colors = {
       header: [30, 41, 59],
       accent: [59, 130, 246],
@@ -1053,31 +1305,25 @@ function CalculadoraMinimosModal({ onClose }) {
       tableHead: [71, 85, 105],
       tableAlt: [241, 245, 249],
     };
-
     doc.setFillColor(...colors.header);
     doc.rect(0, 0, 210, 40, "F");
-
     doc.setDrawColor(...colors.accent);
     doc.setLineWidth(1);
     doc.line(0, 40, 210, 40);
-
     doc.setTextColor(...colors.text);
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
     doc.text("REPORTE DE SUGERENCIAS DE STOCK MIN", 105, 20, {
       align: "center",
     });
-
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(148, 163, 184);
     doc.text("ANÁLISIS DE DEMANDA Y REPOSICIÓN", 105, 28, { align: "center" });
-
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
     doc.text(`FECHA: ${fecha} ${hora}`, 14, 35);
     doc.text(`BASE CÁLCULO: ÚLTIMOS 6 MESES`, 196, 35, { align: "right" });
-
     const tableBody = items.map((item) => [
       item.codigo,
       item.nombre,
@@ -1086,10 +1332,8 @@ function CalculadoraMinimosModal({ onClose }) {
       item.sugerido,
       item.diferencia > 0 ? `+${item.diferencia}` : item.diferencia,
     ]);
-
     autoTable(doc, {
       startY: 45,
-      // HEADER CORTO Y SIN SALTOS
       head: [
         [
           "CÓDIGO",
@@ -1102,7 +1346,6 @@ function CalculadoraMinimosModal({ onClose }) {
       ],
       body: tableBody,
       theme: "striped",
-      // MÁRGENES MÍNIMOS PARA ANCHO TOTAL
       margin: { left: 5, right: 5 },
       styles: {
         fontSize: 9,
@@ -1117,12 +1360,9 @@ function CalculadoraMinimosModal({ onClose }) {
         halign: "center",
         lineWidth: 0,
       },
-      alternateRowStyles: {
-        fillColor: colors.tableAlt,
-      },
+      alternateRowStyles: { fillColor: colors.tableAlt },
       columnStyles: {
         0: { fontStyle: "bold" },
-        // Al quitar los anchos fijos en la mayoría, se adaptarán al 100%
         2: { halign: "center", fontStyle: "bold", textColor: [30, 58, 138] },
         3: { halign: "center", textColor: [100, 116, 139] },
         4: { halign: "center", fontStyle: "bold", textColor: [21, 128, 61] },
@@ -1141,7 +1381,6 @@ function CalculadoraMinimosModal({ onClose }) {
         }
       },
     });
-
     const pageCount = doc.internal.getNumberOfPages();
     doc.setFontSize(8);
     doc.setTextColor(100);
@@ -1154,153 +1393,186 @@ function CalculadoraMinimosModal({ onClose }) {
         { align: "center" },
       );
     }
-
     doc.save(`Sugerencias_Stock_${fecha.replace(/\//g, "-")}.pdf`);
   };
-
   const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
   const currentItems = items.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE,
   );
-
   const goToPrev = () => setCurrentPage((p) => Math.max(1, p - 1));
   const goToNext = () => setCurrentPage((p) => Math.min(totalPages, p + 1));
-
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
       onClick={onClose}
     >
+      {" "}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-slate-800 w-full max-w-6xl rounded-2xl border border-slate-600 shadow-2xl flex flex-col max-h-[95vh]" // Mantiene el diseño ancho en pantalla también
+        className="bg-slate-800 w-full max-w-6xl rounded-2xl border border-slate-600 shadow-2xl flex flex-col max-h-[95vh]"
         onClick={(e) => e.stopPropagation()}
       >
+        {" "}
         <div className="p-6 border-b border-slate-700 bg-slate-900 flex justify-between items-center rounded-t-2xl">
+          {" "}
           <div>
+            {" "}
             <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              {" "}
               <FaMagic className="text-purple-400" /> Sugerencias de Stock
-              Mínimo
-            </h2>
+              Mínimo{" "}
+            </h2>{" "}
             <p className="text-sm text-gray-400">
-              Basado en la demanda real de los últimos 6 meses.
+              {" "}
+              Basado en la demanda real de los últimos 6 meses.{" "}
               <span className="block text-xs text-yellow-500 mt-1">
-                * Actualiza estos valores en tu Excel y sincroniza para aplicar.
-              </span>
-            </p>
-          </div>
+                {" "}
+                * Actualiza estos valores en tu Excel y sincroniza para
+                aplicar.{" "}
+              </span>{" "}
+            </p>{" "}
+          </div>{" "}
           <div className="flex items-center gap-3">
+            {" "}
             {!loading && items.length > 0 && (
               <button
                 onClick={generarPDFSugerencias}
                 className="flex items-center gap-2 px-3 py-2 bg-red-700 hover:bg-red-600 text-white rounded-lg text-sm font-bold shadow-lg transition-colors"
               >
-                <FaFilePdf /> Exportar PDF
+                {" "}
+                <FaFilePdf /> Exportar PDF{" "}
               </button>
-            )}
+            )}{" "}
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white p-2 hover:bg-slate-700 rounded-full transition-colors"
             >
-              <FaTimes size={20} />
-            </button>
-          </div>
-        </div>
-
+              {" "}
+              <FaTimes size={20} />{" "}
+            </button>{" "}
+          </div>{" "}
+        </div>{" "}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-0 bg-slate-800">
+          {" "}
           {loading ? (
             <div className="p-10 text-center">
+              {" "}
               <FaSpinner className="animate-spin text-3xl text-blue-500 mx-auto mb-2" />{" "}
-              Calculando estadísticas...
+              Calculando estadísticas...{" "}
             </div>
           ) : (
             <div className="min-w-full inline-block align-middle">
+              {" "}
               <table className="w-full text-left text-sm border-collapse">
+                {" "}
                 <thead className="bg-slate-700 text-gray-300 sticky top-0 z-10 text-xs uppercase shadow-sm">
+                  {" "}
                   <tr>
-                    <th className="p-3">Producto</th>
+                    {" "}
+                    <th className="p-3">Producto</th>{" "}
                     <th className="p-3 text-center text-blue-300">
-                      Stock Actual
-                    </th>
+                      {" "}
+                      Stock Actual{" "}
+                    </th>{" "}
                     <th className="p-3 text-center text-gray-400">
-                      Mín. Actual
-                    </th>
+                      {" "}
+                      Mín. Actual{" "}
+                    </th>{" "}
                     <th className="p-3 text-center text-yellow-300">
-                      Sugerido (1 Mes)
-                    </th>
-                  </tr>
-                </thead>
+                      {" "}
+                      Sugerido (1 Mes){" "}
+                    </th>{" "}
+                  </tr>{" "}
+                </thead>{" "}
                 <tbody className="divide-y divide-slate-700/50">
+                  {" "}
                   {currentItems.map((item) => (
                     <tr
                       key={item.id}
                       className="hover:bg-slate-700/40 transition-colors"
                     >
+                      {" "}
                       <td className="p-3">
+                        {" "}
                         <div className="font-bold text-white">
-                          {item.nombre}
-                        </div>
+                          {" "}
+                          {item.nombre}{" "}
+                        </div>{" "}
                         <div className="text-xs text-gray-500 font-mono bg-slate-900/50 px-1 rounded w-fit">
-                          {item.codigo}
-                        </div>
-                      </td>
+                          {" "}
+                          {item.codigo}{" "}
+                        </div>{" "}
+                      </td>{" "}
                       <td className="p-3 text-center font-mono text-blue-300 font-bold">
-                        {item.stock_actual}
-                      </td>
+                        {" "}
+                        {item.stock_actual}{" "}
+                      </td>{" "}
                       <td className="p-3 text-center font-mono text-gray-500">
-                        {item.minimo_actual}
-                      </td>
+                        {" "}
+                        {item.minimo_actual}{" "}
+                      </td>{" "}
                       <td className="p-3 text-center">
+                        {" "}
                         <span
-                          className={`font-bold font-mono px-3 py-1 rounded ${
-                            item.diferencia > 0
-                              ? "bg-red-900/30 text-red-300 border border-red-900/50"
-                              : "text-green-400"
-                          }`}
+                          className={`font-bold font-mono px-3 py-1 rounded ${item.diferencia > 0 ? "bg-red-900/30 text-red-300 border border-red-900/50" : "text-green-400"}`}
                         >
-                          {item.sugerido}
-                        </span>
-                      </td>
+                          {" "}
+                          {item.sugerido}{" "}
+                        </span>{" "}
+                      </td>{" "}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  ))}{" "}
+                </tbody>{" "}
+              </table>{" "}
             </div>
-          )}
-        </div>
-
+          )}{" "}
+        </div>{" "}
         {!loading && items.length > 0 && (
           <div className="p-4 border-t border-slate-700 bg-slate-900 flex justify-between items-center rounded-b-2xl">
+            {" "}
             <button
               onClick={goToPrev}
               disabled={currentPage === 1}
               className="p-2 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50 transition-colors flex items-center gap-2 text-sm font-bold px-4"
             >
-              <FaChevronLeft /> Anterior
-            </button>
+              {" "}
+              <FaChevronLeft /> Anterior{" "}
+            </button>{" "}
             <span className="text-sm text-gray-400">
-              Página <span className="text-white font-bold">{currentPage}</span>{" "}
-              de {totalPages}
-            </span>
+              {" "}
+              Página <span className="text-white font-bold">
+                {currentPage}
+              </span>{" "}
+              de {totalPages}{" "}
+            </span>{" "}
             <button
               onClick={goToNext}
               disabled={currentPage === totalPages}
               className="p-2 bg-slate-700 text-white rounded hover:bg-slate-600 disabled:opacity-50 transition-colors flex items-center gap-2 text-sm font-bold px-4"
             >
-              Siguiente <FaChevronRight />
-            </button>
+              {" "}
+              Siguiente <FaChevronRight />{" "}
+            </button>{" "}
           </div>
-        )}
-      </motion.div>
+        )}{" "}
+      </motion.div>{" "}
     </div>
   );
 }
-
 function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: `source-${item.id}`, data: item, disabled: isOverlay });
+  /* ... código original ... */ const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `source-${item.id}`,
+    data: item,
+    disabled: isOverlay,
+  });
   const style = transform
     ? {
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
@@ -1313,7 +1585,6 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
     "bg-slate-600 border-blue-400 shadow-2xl scale-105 cursor-grabbing z-[9999]";
   const normalClasses =
     "bg-slate-700 border-slate-600 hover:bg-slate-600 cursor-grab hover:border-blue-400/50 group";
-
   return (
     <div
       ref={setNodeRef}
@@ -1322,18 +1593,21 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
       {...attributes}
       className={`${baseClasses} ${isOverlay ? overlayClasses : normalClasses}`}
     >
+      {" "}
       <div className="flex flex-col flex-1 min-w-0 mr-2">
+        {" "}
         <p className="font-bold text-sm text-white font-mono">
-          {item.codigo || "S/C"}
-        </p>
+          {" "}
+          {item.codigo || "S/C"}{" "}
+        </p>{" "}
         <p className="text-xs text-gray-300 truncate w-full">
-          {item.nombre || "Sin Nombre"}
-        </p>
-      </div>
-
+          {" "}
+          {item.nombre || "Sin Nombre"}{" "}
+        </p>{" "}
+      </div>{" "}
       {!isOverlay && (
         <div className="flex gap-1 mr-2">
-          {/* NUEVO: Botón de Historial */}
+          {" "}
           {onVerHistorial && (
             <button
               onPointerDown={(e) => {
@@ -1343,11 +1617,10 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
               className="p-1.5 text-gray-400 hover:text-purple-400 hover:bg-slate-800 rounded transition-colors"
               title="Ver Historial de Cambios"
             >
-              <FaHistory />
+              {" "}
+              <FaHistory />{" "}
             </button>
-          )}
-
-          {/* Botón Ficha Técnica */}
+          )}{" "}
           {onVerFicha && (
             <button
               onPointerDown={(e) => {
@@ -1357,88 +1630,91 @@ function DraggableItem({ item, isOverlay, onVerFicha, onVerHistorial }) {
               className="p-1.5 text-gray-400 hover:text-blue-400 hover:bg-slate-800 rounded transition-colors"
               title="Ver Ficha Técnica"
             >
-              <FaEye />
+              {" "}
+              <FaEye />{" "}
             </button>
-          )}
+          )}{" "}
         </div>
-      )}
-
+      )}{" "}
       <span
-        className={`text-xs px-2 py-1 rounded font-bold ${
-          item.stock_actual > 0
-            ? "bg-blue-900/50 text-blue-200"
-            : "bg-red-900/50 text-red-200"
-        }`}
+        className={`text-xs px-2 py-1 rounded font-bold ${item.stock_actual > 0 ? "bg-blue-900/50 text-blue-200" : "bg-red-900/50 text-red-200"}`}
       >
-        {item.stock_actual || 0}
-      </span>
+        {" "}
+        {item.stock_actual || 0}{" "}
+      </span>{" "}
     </div>
   );
 }
-
 function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
-  const { setNodeRef, isOver } = useDroppable({ id: "receta-droppable" });
+  /* ... código original ... */ const { setNodeRef, isOver } = useDroppable({
+    id: "receta-droppable",
+  });
   return (
     <div
       ref={setNodeRef}
-      className={`border-2 border-dashed rounded-xl p-4 transition-all duration-200 overflow-y-auto min-h-[300px] flex-1 ${
-        isOver
-          ? "border-green-500 bg-green-900/10"
-          : "border-slate-600 bg-slate-800/30"
-      }`}
+      className={`border-2 border-dashed rounded-xl p-4 transition-all duration-200 overflow-y-auto min-h-[300px] flex-1 ${isOver ? "border-green-500 bg-green-900/10" : "border-slate-600 bg-slate-800/30"}`}
     >
+      {" "}
       {items.length === 0 ? (
         <div className="h-full flex flex-col items-center justify-center text-gray-500 select-none">
+          {" "}
           <FaCubes
-            className={`text-5xl mb-4 transition-transform ${
-              isOver ? "scale-110 text-green-500" : "opacity-20"
-            }`}
-          />
+            className={`text-5xl mb-4 transition-transform ${isOver ? "scale-110 text-green-500" : "opacity-20"}`}
+          />{" "}
           <p className="font-medium">
-            {placeholderText || "Arrastra componentes aquí"}
-          </p>
+            {" "}
+            {placeholderText || "Arrastra componentes aquí"}{" "}
+          </p>{" "}
         </div>
       ) : (
         <ul className="space-y-2">
+          {" "}
           {items.map((ing, idx) => (
             <li
               key={idx}
               className="bg-slate-700 p-3 rounded-lg flex justify-between items-center group border border-slate-600 animate-in fade-in slide-in-from-bottom-2"
             >
+              {" "}
               <div className="flex items-center gap-3">
+                {" "}
                 <div
                   onClick={() => onCantidadChange && onCantidadChange(idx)}
                   className="bg-slate-800 h-8 w-8 flex items-center justify-center rounded font-bold text-green-400 border border-slate-600 text-sm cursor-pointer hover:bg-slate-700 transition-colors"
                   title="Clic para editar cantidad"
                 >
-                  {ing.cantidad}x
-                </div>
+                  {" "}
+                  {ing.cantidad}x{" "}
+                </div>{" "}
                 <div className="flex flex-col">
+                  {" "}
                   <span className="text-white font-medium text-sm">
-                    {ing.nombre || "Sin Nombre"}
-                  </span>
+                    {" "}
+                    {ing.nombre || "Sin Nombre"}{" "}
+                  </span>{" "}
                   <span className="text-xs text-gray-400 font-mono">
-                    {ing.codigo || "S/C"}
-                  </span>
-                </div>
-              </div>
+                    {" "}
+                    {ing.codigo || "S/C"}{" "}
+                  </span>{" "}
+                </div>{" "}
+              </div>{" "}
               <button
                 onClick={() => onRemove(idx)}
                 className="text-gray-500 hover:text-red-400 p-2 transition-colors"
               >
-                <FaTrash />
-              </button>
+                {" "}
+                <FaTrash />{" "}
+              </button>{" "}
             </li>
-          ))}
+          ))}{" "}
         </ul>
-      )}
+      )}{" "}
     </div>
   );
 }
 
 // --- COMPONENTE PRINCIPAL ---
 export default function IngenieriaProductos() {
-  const navigate = useNavigate(); // <--- 2. IMPORTANTE: Inicializamos el hook
+  const navigate = useNavigate();
   const [productos, setProductos] = useState([]);
   const [semielaborados, setSemielaborados] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -1453,6 +1729,9 @@ export default function IngenieriaProductos() {
 
   const [fichaSeleccionada, setFichaSeleccionada] = useState(null);
   const [showCalculator, setShowCalculator] = useState(false);
+
+  // --- NUEVO ESTADO PARA GESTOR DE VARIANTES ---
+  const [productoParaVariantes, setProductoParaVariantes] = useState(null);
 
   useEffect(() => {
     const cargarDatos = async () => {
@@ -1649,6 +1928,35 @@ export default function IngenieriaProductos() {
     );
   };
 
+  // --- HANDLER GUARDAR VARIANTES ---
+  const handleSaveVariantes = async (prodId, nuevasVariantes) => {
+    try {
+      // 1. Llamada real al Backend
+      const res = await authFetch(
+        `${API_BASE_URL}/ingenieria/semielaborados/${prodId}/variantes`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ variantes: nuevasVariantes }),
+        },
+      );
+
+      if (res.ok) {
+        // 2. Si el server responde OK, actualizamos la UI
+        const updatedSemis = semielaborados.map((s) =>
+          s.id === prodId ? { ...s, variantes: nuevasVariantes } : s,
+        );
+        setSemielaborados(updatedSemis);
+        alert("✅ Variantes configuradas y guardadas en base de datos.");
+      } else {
+        alert("❌ Error al guardar en el servidor.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Error de conexión.");
+    }
+  };
+
   let listaIzquierdaVisible = [];
   if (modo === "PRODUCTO") {
     listaIzquierdaVisible = productos.filter((p) =>
@@ -1694,6 +2002,15 @@ export default function IngenieriaProductos() {
         )}
         {showCalculator && (
           <CalculadoraMinimosModal onClose={() => setShowCalculator(false)} />
+        )}
+
+        {/* MODAL DE VARIANTES */}
+        {productoParaVariantes && (
+          <GestorVariantesModal
+            producto={productoParaVariantes}
+            onClose={() => setProductoParaVariantes(null)}
+            onSave={handleSaveVariantes}
+          />
         )}
       </AnimatePresence>
 
@@ -1824,11 +2141,27 @@ export default function IngenieriaProductos() {
                       </span>
 
                       <div className="flex items-center gap-1">
-                        {/* BOTÓN HISTORIAL (Hoja de Vida) */}
+                        {/* --- BOTÓN NUEVO: GESTIONAR VARIANTES --- */}
+                        {modo === "SEMIELABORADO" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProductoParaVariantes(item);
+                            }}
+                            className={`p-1.5 rounded hover:bg-white/20 transition-colors ${
+                              isSelected
+                                ? "text-white"
+                                : "text-gray-500 hover:text-purple-400"
+                            }`}
+                            title="Configurar Variantes de Terminación"
+                          >
+                            <FaLayerGroup />
+                          </button>
+                        )}
+
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Obtenemos el nombre limpio sea Producto o Semielaborado
                             const nombreParaUrl =
                               modo === "PRODUCTO" ? item : item.nombre;
                             navigate(
@@ -1845,7 +2178,6 @@ export default function IngenieriaProductos() {
                           <FaHistory />
                         </button>
 
-                        {/* BOTÓN FICHA TÉCNICA (Solo Semielaborados) */}
                         {modo === "SEMIELABORADO" && (
                           <button
                             onClick={(e) => {
