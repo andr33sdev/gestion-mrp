@@ -16,10 +16,13 @@ const BackgroundGeolocation = registerPlugin("BackgroundGeolocation");
 const socketURL = API_BASE_URL.replace("/api", "");
 const socket = io(socketURL, {
   transports: ["websocket"],
+  upgrade: false, // Forzamos websocket desde el inicio
+  rememberUpgrade: true,
   secure: true,
-  reconnection: true, // Forzar reconexión automática
+  reconnection: true,
   reconnectionAttempts: Infinity,
-  reconnectionDelay: 1000, // Reintentar cada 1 segundo si se corta
+  reconnectionDelay: 500, // Reintento súper rápido
+  timeout: 20000,
 });
 
 export default function TransmisorUbicacion() {

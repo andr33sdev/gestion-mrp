@@ -1,4 +1,3 @@
-// backend/index.js
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
@@ -52,49 +51,76 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// 2. CREACIÓN DEL SERVIDOR Y RADAR (NUEVO)
+// 2. CREACIÓN DEL SERVIDOR Y RADAR (MODIFICADO)
 // ==========================================
-// Envolvemos Express en un servidor HTTP nativo
 const server = http.createServer(app);
 
-// Inicializamos Socket.io permitiendo conexiones cruzadas (CORS)
 const io = new Server(server, {
   cors: {
-    origin: "*", // Permite que tu frontend se conecte sin bloqueos
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
   },
 });
 
-// Escuchamos la actividad en tiempo real del GPS
+// MEMORIA PERSISTENTE PARA EVITAR "VEHÍCULOS 0"
+const flotaActiva = {};
+const timersDesconexion = {};
+
 io.on("connection", (socket) => {
   console.log("🟢 Dispositivo conectado al radar satelital:", socket.id);
 
-  // Cuando un celular transmite su ubicación
+  // Enviamos los vehículos que ya están en memoria apenas alguien abre el mapa
+  socket.emit("estadoInicialFlota", flotaActiva);
+
   socket.on("enviarUbicacion", (data) => {
-    // Reenviamos esa data a TODOS los demás (los que miran el mapa)
-    socket.broadcast.emit("recibirUbicacion", {
-      idSocket: socket.id,
+    // Usamos el nombre como ID único para que no dependa del ID de socket
+    const idUnico = data.nombre || socket.id;
+
+    // Si el usuario volvió, cancelamos su borrado programado
+    if (timersDesconexion[idUnico]) {
+      clearTimeout(timersDesconexion[idUnico]);
+      delete timersDesconexion[idUnico];
+    }
+
+    // Guardamos/Actualizamos en la memoria del servidor
+    flotaActiva[idUnico] = {
       ...data,
-    });
+      idSocket: socket.id,
+      ultimaConexion: new Date(),
+    };
+
+    // Reenviamos a los mapas
+    socket.broadcast.emit("recibirUbicacion", flotaActiva[idUnico]);
   });
 
-  // Cuando el celular pierde conexión o cierra la app
   socket.on("disconnect", () => {
-    console.log("🔴 Dispositivo desconectado del radar:", socket.id);
-    io.emit("repartidorDesconectado", socket.id);
+    // Buscamos a quién le pertenecía este socket
+    const idUnico = Object.keys(flotaActiva).find(
+      (key) => flotaActiva[key].idSocket === socket.id,
+    );
+
+    if (idUnico) {
+      console.log(`🟡 Corte de señal para ${idUnico}. Esperando 60s...`);
+
+      // No lo borramos del mapa inmediatamente, le damos 1 minuto de gracia
+      timersDesconexion[idUnico] = setTimeout(() => {
+        console.log(`🔴 Desconexión definitiva: ${idUnico}`);
+        delete flotaActiva[idUnico];
+        io.emit("repartidorDesconectado", idUnico);
+        delete timersDesconexion[idUnico];
+      }, 60000);
+    }
   });
 });
 
 // ==========================================
 // 1. RUTA PÚBLICA (SIN CANDADO)
 // ==========================================
-// A esta ruta puede entrar cualquiera para registrarse o iniciar sesión
 app.use("/api/auth", authRoutes);
 
 // ==========================================
 // 2. RUTAS PRIVADAS (CON "protect")
 // ==========================================
-// Si alguien intenta entrar acá sin la llave (Token JWT), rebota automáticamente
 app.use("/api", protect, generalRoutes);
 app.use("/api/compras", protect, comprasRoutes);
 app.use("/api/produccion", protect, produccionRoutes);
