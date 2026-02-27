@@ -3,6 +3,10 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
+// --- 1. IMPORTAMOS HTTP Y SOCKET.IO (NUEVO) ---
+const http = require("http");
+const { Server } = require("socket.io");
+
 // --- SERVICIOS Y UTILIDADES ---
 const { setupAuth } = require("./google-drive");
 const { inicializarTablas } = require("./services/dbInit");
@@ -48,6 +52,40 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
+// 2. CREACIÓN DEL SERVIDOR Y RADAR (NUEVO)
+// ==========================================
+// Envolvemos Express en un servidor HTTP nativo
+const server = http.createServer(app);
+
+// Inicializamos Socket.io permitiendo conexiones cruzadas (CORS)
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Permite que tu frontend se conecte sin bloqueos
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  },
+});
+
+// Escuchamos la actividad en tiempo real del GPS
+io.on("connection", (socket) => {
+  console.log("🟢 Dispositivo conectado al radar satelital:", socket.id);
+
+  // Cuando un celular transmite su ubicación
+  socket.on("enviarUbicacion", (data) => {
+    // Reenviamos esa data a TODOS los demás (los que miran el mapa)
+    socket.broadcast.emit("recibirUbicacion", {
+      idSocket: socket.id,
+      ...data,
+    });
+  });
+
+  // Cuando el celular pierde conexión o cierra la app
+  socket.on("disconnect", () => {
+    console.log("🔴 Dispositivo desconectado del radar:", socket.id);
+    io.emit("repartidorDesconectado", socket.id);
+  });
+});
+
+// ==========================================
 // 1. RUTA PÚBLICA (SIN CANDADO)
 // ==========================================
 // A esta ruta puede entrar cualquiera para registrarse o iniciar sesión
@@ -78,7 +116,10 @@ async function iniciarServidor() {
     await setupAuth();
     await inicializarTablas();
 
-    app.listen(PORT, () => console.log(`🚀 Servidor en puerto ${PORT}`));
+    // --- 3. CAMBIO CLAVE: Usamos server.listen en lugar de app.listen ---
+    server.listen(PORT, () =>
+      console.log(`🚀 Servidor y Radar corriendo en puerto ${PORT}`),
+    );
 
     console.log("⏰ Iniciando servicios...");
 

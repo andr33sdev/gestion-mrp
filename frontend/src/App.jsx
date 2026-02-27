@@ -29,6 +29,8 @@ import {
   FaChartBar,
   FaUserShield,
   FaUserLock,
+  FaMapMarkedAlt,
+  FaLocationArrow,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
@@ -54,6 +56,8 @@ import DepositoPage from "./pages/DepositoPage.jsx";
 import DepositoDespacho from "./pages/DepositoDespacho.jsx";
 import SugerenciasPage from "./pages/SugerenciasPage.jsx";
 import GestorUsuarios from "./pages/GestorUsuarios.jsx";
+import TransmisorUbicacion from "./pages/TransmisorUbicacion";
+import MapaRastreo from "./pages/MapaRastreo";
 
 import { getAuthData, logout } from "./auth/authHelper";
 
@@ -133,6 +137,18 @@ const NAV_LINKS = [
     label: "Accesos",
     icon: <FaUserShield />,
     moduloReq: "ACCESOS_ADMIN",
+  },
+  {
+    path: "/mapa",
+    label: "Mapa Flota",
+    icon: <FaMapMarkedAlt />,
+    moduloReq: "LOGISTICA",
+  },
+  {
+    path: "/transmitir",
+    label: "Mi Radar",
+    icon: <FaLocationArrow />,
+    moduloReq: "HOJA_RUTA",
   },
 ];
 
@@ -663,6 +679,26 @@ export default function App() {
             <ProtectedRoute requiredModule="ACCESOS_ADMIN">
               <Layout>
                 <GestorUsuarios />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mapa"
+          element={
+            <ProtectedRoute requiredModule="LOGISTICA">
+              <Layout>
+                <MapaRastreo />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/transmitir"
+          element={
+            <ProtectedRoute requiredModule="HOJA_RUTA">
+              <Layout>
+                <TransmisorUbicacion />
               </Layout>
             </ProtectedRoute>
           }
