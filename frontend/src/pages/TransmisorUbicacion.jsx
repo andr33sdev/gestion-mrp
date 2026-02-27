@@ -17,6 +17,9 @@ const socketURL = API_BASE_URL.replace("/api", "");
 const socket = io(socketURL, {
   transports: ["websocket"],
   secure: true,
+  reconnection: true, // Forzar reconexión automática
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000, // Reintentar cada 1 segundo si se corta
 });
 
 export default function TransmisorUbicacion() {
