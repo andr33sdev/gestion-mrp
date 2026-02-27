@@ -26,7 +26,7 @@ const socket = io(socketURL, {
 
 // --- CONFIGURACIÓN DEL ÍCONO DEL CAMIÓN ---
 const camionIcon = new L.Icon({
-  iconUrl: "/camion.png", // Apunta a la imagen en tu carpeta public
+  iconUrl: "../camion.png", // Apunta a la imagen en tu carpeta public
   iconSize: [72, 72], // Tamaño en píxeles (ajustalo si se ve muy grande/chico)
   iconAnchor: [36, 36], // El punto de la imagen que toca la coordenada exacta (la mitad)
   popupAnchor: [0, -20], // Donde aparece el cartelito con el nombre

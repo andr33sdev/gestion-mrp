@@ -6,9 +6,12 @@ import {
   FaLightbulb,
 } from "react-icons/fa";
 import io from "socket.io-client";
-import { Geolocation } from "@capacitor/geolocation"; // <-- IMPORTANTE: El GPS Nativo
+import { registerPlugin } from "@capacitor/core";
 import { API_BASE_URL } from "../utils";
 import { getAuthData } from "../auth/authHelper";
+
+// Importamos el plugin de segundo plano
+const BackgroundGeolocation = registerPlugin("BackgroundGeolocation");
 
 const socketURL = API_BASE_URL.replace("/api", "");
 const socket = io(socketURL, {
@@ -46,38 +49,28 @@ export default function TransmisorUbicacion() {
     try {
       setError(null);
       setTranstransmitiendo(true);
-      setPrecisionMetros("Pidiendo permisos...");
+      setPrecisionMetros("Iniciando Radar...");
 
-      // 1. Pedimos permiso NATIVO a Android (Hace saltar el cartelito)
-      const permissions = await Geolocation.checkPermissions();
-      if (permissions.location !== "granted") {
-        const request = await Geolocation.requestPermissions();
-        if (request.location !== "granted") {
-          throw new Error("Permiso de GPS denegado por el usuario.");
-        }
-      }
-
-      setPrecisionMetros("Buscando satélites...");
       await requestWakeLock();
 
-      // 2. Iniciamos el GPS NATIVO de Capacitor
-      const id = await Geolocation.watchPosition(
+      // Iniciamos el rastreo de fondo con notificación persistente
+      const watcherId = await BackgroundGeolocation.addWatcher(
         {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 20000,
+          backgroundMessage: "Transmitiendo ubicación en tiempo real...",
+          backgroundTitle: "Rastreo Logística Activo",
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 2, // Se activa cada 2 metros de movimiento
         },
-        (position, err) => {
+        (location, err) => {
           if (err) {
-            setError("Error de señal: " + err.message);
+            setError("Error de GPS: " + err.message);
             return;
           }
 
-          if (position) {
-            const { latitude, longitude, speed, accuracy } = position.coords;
+          if (location) {
+            const { latitude, longitude, speed, accuracy } = location;
             setPrecisionMetros(Math.round(accuracy));
-
-            //if (accuracy > 50) return; // Filtramos señal mala
 
             socket.emit("enviarUbicacion", {
               nombre: user?.nombre || "Repartidor",
@@ -90,7 +83,7 @@ export default function TransmisorUbicacion() {
         },
       );
 
-      watchIdRef.current = id;
+      watchIdRef.current = watcherId;
     } catch (error) {
       setError(error.message);
       setTranstransmitiendo(false);
@@ -100,7 +93,8 @@ export default function TransmisorUbicacion() {
 
   const detenerViaje = async () => {
     if (watchIdRef.current) {
-      await Geolocation.clearWatch({ id: watchIdRef.current });
+      // Removemos el watcher de fondo
+      await BackgroundGeolocation.removeWatcher({ id: watchIdRef.current });
       watchIdRef.current = null;
     }
 
@@ -109,7 +103,6 @@ export default function TransmisorUbicacion() {
     releaseWakeLock();
   };
 
-  // Recuperar WakeLock si se minimiza
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (transmitiendo && document.visibilityState === "visible") {
@@ -120,8 +113,9 @@ export default function TransmisorUbicacion() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      if (watchIdRef.current)
-        Geolocation.clearWatch({ id: watchIdRef.current });
+      if (watchIdRef.current) {
+        BackgroundGeolocation.removeWatcher({ id: watchIdRef.current });
+      }
       releaseWakeLock();
     };
   }, [transmitiendo]);
@@ -144,7 +138,7 @@ export default function TransmisorUbicacion() {
                 <FaSignal /> Transmitiendo
               </span>
               <span
-                className={`text-[10px] font-medium ${precisionMetros > 50 ? "text-rose-500" : "text-emerald-500"}`}
+                className={`text-[10px] font-medium ${precisionMetros > 100 ? "text-rose-500" : "text-emerald-500"}`}
               >
                 Margen de error:{" "}
                 {typeof precisionMetros === "number"
@@ -154,7 +148,7 @@ export default function TransmisorUbicacion() {
             </div>
           ) : (
             <span className="text-sm text-stone-500">
-              Dejá esta pantalla abierta en el viaje.
+              Podés bloquear el celular al iniciar.
             </span>
           )}
         </div>
@@ -175,8 +169,7 @@ export default function TransmisorUbicacion() {
         ) : (
           <div className="space-y-3">
             <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-amber-600 bg-amber-50 py-2 px-3 rounded-lg">
-              <FaLightbulb size={12} /> La pantalla no se apagará
-              automáticamente.
+              <FaLightbulb size={12} /> Rastreo en segundo plano activo.
             </div>
             <button
               onClick={detenerViaje}
