@@ -1,4 +1,3 @@
-// backend/services/syncService.js
 const db = require("../db");
 const {
   leerArchivoHorno,
@@ -41,14 +40,12 @@ function parsearFechaExcel(valor) {
   return null;
 }
 
-// --- HELPER FORMATO ISO (LA SOLUCIÓN) ---
-// Convierte la fecha a "YYYY-MM-DDTHH:mm:ss" para que el frontend no la invierta.
+// --- HELPER FORMATO ISO ---
 function formatearParaDB(fechaObj) {
   if (!fechaObj) return null;
   const y = fechaObj.getFullYear();
   const m = String(fechaObj.getMonth() + 1).padStart(2, "0");
   const d = String(fechaObj.getDate()).padStart(2, "0");
-  // Forzamos mediodía para evitar problemas de timezone (-3hs) que cambien el día
   return `${y}-${m}-${d}T12:00:00`;
 }
 
@@ -61,19 +58,29 @@ function normalizarEncabezado(txt) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 }
+
 function limpiarCodigo(cod) {
   if (!cod) return null;
   return cod.toString().trim().toUpperCase();
 }
+
+// --- HELPER NUMÉRICO MEJORADO (SOPORTA MONEDAS $ Y ESPACIOS) ---
 function limpiarNumero(val) {
   if (val === undefined || val === null || val === "") return 0;
   if (typeof val === "number") return val;
-  let limpio = val.toString().trim();
+
+  // Limpiamos signo $, letras y espacios ("$ 10.000,50" -> "10.000,50")
+  let limpio = val
+    .toString()
+    .trim()
+    .replace(/[$A-Za-z\s]/g, "");
+
   if (limpio.includes(",") && limpio.includes(".")) {
     limpio = limpio.replace(/\./g, "").replace(",", ".");
   } else if (limpio.includes(",")) {
     limpio = limpio.replace(",", ".");
   }
+
   const numero = parseFloat(limpio);
   return isNaN(numero) ? 0 : numero;
 }
@@ -179,7 +186,7 @@ async function sincronizarBaseDeDatos() {
 }
 
 // =====================================================
-// 2. SINCRONIZAR PEDIDOS (CORREGIDO)
+// 2. SINCRONIZAR PEDIDOS
 // =====================================================
 async function sincronizarPedidos() {
   console.log("↻ Iniciando sincronización de Pedidos...");
@@ -196,38 +203,28 @@ async function sincronizarPedidos() {
     try {
       await client.query("BEGIN");
 
-      // 1. LIMPIAR LA TABLA (TRUNCATE es perfecto para sincronizar estados borrados)
       await client.query("TRUNCATE TABLE pedidos_clientes RESTART IDENTITY");
 
-      // 2. PREPARAR DATOS
       const valoresTotales = [];
 
       for (const fila of datos) {
-        // Validación básica: Sin OP (Col C/Indice 2) no procesamos
         if (!fila[2]) continue;
 
-        // MAPEO DE COLUMNAS (A=0, B=1 ... G=6)
         const p_fecha = fila[0] ? fila[0].toString() : null;
         const p_periodo = fila[1] ? fila[1].toString() : "";
         const p_op = fila[2] ? fila[2].toString() : "";
-
-        // --- CORRECCIÓN CRÍTICA AQUÍ ---
-        // Antes tenías "rawCliente" que no existía. Es fila[3] (Columna D)
         const p_cliente = fila[3]
           ? fila[3].toString().trim()
           : "Cliente Desconocido";
-
         const p_modelo = fila[4] ? fila[4].toString() : "";
         const p_detalles = fila[5] ? fila[5].toString() : "";
 
-        // Verificamos que OC no sea undefined
         const rawOC = fila[6];
         const p_oc_cliente =
           rawOC !== undefined && rawOC !== null && rawOC !== ""
             ? rawOC.toString().trim()
             : "-";
 
-        // Limpiamos puntos de mil en la cantidad (ej: "1.000" -> "1000")
         const rawCant = fila[7] ? fila[7].toString() : "0";
         const p_cantidad = rawCant.replace(/\./g, "");
 
@@ -235,6 +232,7 @@ async function sincronizarPedidos() {
           ? fila[8].toString().toUpperCase()
           : "PENDIENTE";
         const p_programado = fila[9] ? fila[9].toString() : "";
+        const p_punisiva = fila[19] ? limpiarNumero(fila[19]) : 0;
 
         valoresTotales.push([
           p_fecha,
@@ -247,16 +245,16 @@ async function sincronizarPedidos() {
           p_cantidad,
           p_estado,
           p_programado,
+          p_punisiva,
         ]);
       }
 
-      // Batch Insert
       if (valoresTotales.length > 0) {
         const TAMAÑO_LOTE = 2000;
         for (let i = 0; i < valoresTotales.length; i += TAMAÑO_LOTE) {
           const lote = valoresTotales.slice(i, i + TAMAÑO_LOTE);
           const query = format(
-            `INSERT INTO pedidos_clientes (fecha, periodo, op, cliente, modelo, detalles, oc_cliente, cantidad, estado, programado)
+            `INSERT INTO pedidos_clientes (fecha, periodo, op, cliente, modelo, detalles, oc_cliente, cantidad, estado, programado, punisiva)
              VALUES %L`,
             lote,
           );
@@ -275,7 +273,6 @@ async function sincronizarPedidos() {
       client.release();
     }
   } catch (error) {
-    // Manejo de errores de conexión
     if (error.code === "ETIMEDOUT" || error.code === "ECONNRESET") {
       console.warn("⚠️ Timeout en Sync Pedidos (se reintentará).");
     } else {
@@ -412,7 +409,7 @@ async function sincronizarStockSemielaborados() {
 }
 
 // =====================================================
-// 4. SYNC MATERIAS PRIMAS
+// 4. SYNC MATERIAS PRIMAS (NUEVO: CON PRECIO)
 // =====================================================
 async function sincronizarMateriasPrimas() {
   const client = await db.connect();
@@ -421,6 +418,7 @@ async function sincronizarMateriasPrimas() {
     const buffer = await leerMateriasPrimas();
     const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
     const rawMatrix = XLSX.utils.sheet_to_json(sheet, { header: 1 });
     let hIdx = 0;
     for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
@@ -432,42 +430,68 @@ async function sincronizarMateriasPrimas() {
         break;
       }
     }
+
     const data = XLSX.utils.sheet_to_json(sheet, { range: hIdx });
     const mapaMP = new Map();
+
     for (const row of data) {
       let codigo = null,
         nombre = null,
         stock = 0,
-        minimo = 0;
+        minimo = 0,
+        precio = 0; // NUEVA VARIABLE PARA EL PRECIO
+
       for (const key of Object.keys(row)) {
         const kSin = normalizarEncabezado(key).replace(/\s+/g, "");
-        if (kSin.includes("CODIGO") || kSin === "ID")
+
+        if (kSin.includes("CODIGO") || kSin === "ID") {
           codigo = limpiarCodigo(row[key]);
-        else if (kSin.includes("ARTICULO") || kSin.includes("MATERIAL"))
+        } else if (kSin.includes("ARTICULO") || kSin.includes("MATERIAL")) {
           nombre = row[key];
-        else if (
+        } else if (
           kSin === "STOCK" ||
           kSin === "CANTIDAD" ||
           kSin === "EXISTENCIA"
-        )
+        ) {
           stock = limpiarNumero(row[key]);
-        else if (kSin.includes("STOCKMIN") || kSin.includes("MINIMO"))
+        } else if (kSin.includes("STOCKMIN") || kSin.includes("MINIMO")) {
           minimo = limpiarNumero(row[key]);
+        } else if (
+          kSin.includes("PUNI") ||
+          kSin.includes("PRECIO") ||
+          kSin.includes("VALOR")
+        ) {
+          // CAPTURAMOS EL PRECIO DE LA COLUMNA
+          precio = limpiarNumero(row[key]);
+        }
       }
-      if (codigo && nombre && nombre.trim() !== "" && codigo.length < 30)
-        mapaMP.set(codigo, [codigo, nombre, stock, minimo, new Date()]);
+
+      if (codigo && nombre && nombre.trim() !== "" && codigo.length < 30) {
+        // AGREGAMOS PRECIO AL ARRAY DE VALORES
+        mapaMP.set(codigo, [codigo, nombre, stock, minimo, precio, new Date()]);
+      }
     }
+
     const vals = Array.from(mapaMP.values());
     if (vals.length > 0) {
       await client.query("BEGIN");
+
+      // ACTUALIZAMOS EL INSERT PARA INCLUIR "PRECIO"
       await client.query(
         format(
-          `INSERT INTO materias_primas (codigo, nombre, stock_actual, stock_minimo, ultima_actualizacion) VALUES %L ON CONFLICT (codigo) DO UPDATE SET stock_actual=EXCLUDED.stock_actual, stock_minimo=EXCLUDED.stock_minimo, nombre=COALESCE(EXCLUDED.nombre, materias_primas.nombre), ultima_actualizacion=NOW()`,
+          `INSERT INTO materias_primas (codigo, nombre, stock_actual, stock_minimo, precio, ultima_actualizacion) 
+           VALUES %L 
+           ON CONFLICT (codigo) DO UPDATE SET 
+             stock_actual=EXCLUDED.stock_actual, 
+             stock_minimo=EXCLUDED.stock_minimo, 
+             precio=EXCLUDED.precio,
+             nombre=COALESCE(EXCLUDED.nombre, materias_primas.nombre), 
+             ultima_actualizacion=NOW()`,
           vals,
         ),
       );
       await client.query("COMMIT");
-      console.log(`✅ [SYNC MP] ${vals.length} MPs actualizadas.`);
+      console.log(`✅ [SYNC MP] ${vals.length} MPs actualizadas (Con precio).`);
     }
     return { success: true };
   } catch (err) {

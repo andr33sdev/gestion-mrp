@@ -1,222 +1,219 @@
-import { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  FaKey,
   FaLock,
+  FaEnvelope,
+  FaUser,
+  FaSignInAlt,
+  FaUserPlus,
+  FaExclamationTriangle,
+  FaCheckCircle,
   FaSpinner,
-  FaUserTie,
-  FaHardHat,
-  FaWarehouse,
-  FaTools,
-  FaArrowLeft,
 } from "react-icons/fa";
-import { motion } from "framer-motion";
-import { API_BASE_URL } from "../utils";
+import { API_BASE_URL } from "../utils.js"; // Asegurate de que la ruta sea correcta
 
 export default function LoginPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // Estado para saber qué rol eligió el usuario (null = ninguno)
-  const [selectedRole, setSelectedRole] = useState(null);
-
-  const [input, setInput] = useState("");
-  const [error, setError] = useState("");
+  const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false); // Estado para "Recordarme"
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
 
-  // Mapa de configuración para cada rol
-  const rolesConfig = {
-    GERENCIA: {
-      title: "Gerencia",
-      icon: <FaUserTie />,
-      color:
-        "border-purple-500 text-purple-400 hover:bg-purple-600 hover:text-white",
-    },
-    PANEL: {
-      title: "Operario",
-      icon: <FaHardHat />,
-      color: "border-blue-500 text-blue-400 hover:bg-blue-600 hover:text-white",
-    },
-    DEPOSITO: {
-      title: "Depósito",
-      icon: <FaWarehouse />,
-      color:
-        "border-orange-500 text-orange-400 hover:bg-orange-600 hover:text-white",
-    },
-    MANTENIMIENTO: {
-      title: "Técnico",
-      icon: <FaTools />,
-      color: "border-red-500 text-red-400 hover:bg-red-600 hover:text-white",
-    },
+  const [formData, setFormData] = useState({
+    nombre: "",
+    email: "",
+    password: "",
+  });
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setErrorMsg(null); // Limpiamos errores al escribir
   };
 
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
     setLoading(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    const endpoint = isLogin ? "/auth/login" : "/auth/register";
 
     try {
-      // 1. Intentamos conectar al backend con la contraseña
-      const res = await fetch(`${API_BASE_URL}/`, {
-        headers: { "x-api-key": input },
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const data = await response.json();
 
-        // 2. Verificamos si el rol devuelto coincide con el seleccionado
-        if (data.role === selectedRole) {
-          // --- PERSISTENCIA DE SESIÓN ---
-          // Si marcó "Recordarme", usamos localStorage (persistente).
-          // Si no, sessionStorage (se borra al cerrar pestaña).
-          const storage = rememberMe ? localStorage : sessionStorage;
-
-          storage.setItem("api_key", input);
-          storage.setItem("role", data.role);
-
-          // --- REDIRECCIÓN INTELIGENTE ---
-          // Leemos el parámetro 'returnTo' de la URL (inyectado por ProtectedRoute)
-          const searchParams = new URLSearchParams(location.search);
-          const returnTo = searchParams.get("returnTo");
-
-          let destino = "/";
-
-          if (returnTo && returnTo !== "/" && returnTo !== "null") {
-            // Si venía de un link específico (ej: /producto/X), volvemos ahí
-            destino = decodeURIComponent(returnTo);
-          } else {
-            // Si entró directo al login, vamos al home de su rol
-            if (data.role === "DEPOSITO") destino = "/logistica";
-            else if (data.role === "MANTENIMIENTO") destino = "/mantenimiento";
-            else destino = "/";
-          }
-
-          // Usamos replace para limpiar el historial y forzar la carga correcta del router
-          window.location.replace(destino);
-        } else {
-          setError(
-            `Esta contraseña no es de ${rolesConfig[selectedRole].title}`,
-          );
-          setLoading(false);
-        }
-      } else {
-        setError("Contraseña incorrecta");
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error(data.msg || "Ocurrió un error inesperado.");
       }
-    } catch (err) {
-      console.error(err);
-      setError("Error de conexión con el servidor");
+
+      if (isLogin) {
+        // --- LOGIN EXITOSO ---
+        // Guardamos el token y los datos del usuario en el navegador
+        localStorage.setItem("mrp_token", data.token);
+        localStorage.setItem("mrp_user", JSON.stringify(data.usuario));
+
+        // Recargamos la página para que la App lea el token y lo deje pasar
+        window.location.href = "/";
+      } else {
+        // --- REGISTRO EXITOSO ---
+        setSuccessMsg(data.msg);
+        setIsLogin(true); // Lo pasamos a la pantalla de login
+        setFormData({ nombre: "", email: "", password: "" }); // Limpiamos formulario
+      }
+    } catch (error) {
+      setErrorMsg(error.message);
+    } finally {
       setLoading(false);
     }
   };
 
-  // VISTA 1: SELECCIÓN DE ROL
-  if (!selectedRole) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 p-4 animate-in fade-in zoom-in duration-300">
-        <h2 className="text-3xl md:text-4xl font-bold text-white mb-8 drop-shadow-lg text-center">
-          Bienvenido al Sistema
-        </h2>
-        <p className="text-gray-400 mb-8 text-center">
-          Seleccione su perfil para ingresar
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 w-full max-w-5xl">
-          {Object.entries(rolesConfig).map(([key, config]) => (
-            <button
-              key={key}
-              onClick={() => setSelectedRole(key)}
-              className={`group bg-slate-800 border-2 p-8 rounded-3xl transition-all shadow-2xl flex flex-col items-center gap-4 w-full transform hover:-translate-y-2 ${config.color}`}
-            >
-              <div className="text-6xl transition-colors">{config.icon}</div>
-              <span className="text-xl font-bold">{config.title}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // VISTA 2: FORMULARIO DE PASSWORD
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 pt-10 px-4">
-      <div className="relative w-full max-w-md">
-        <button
-          onClick={() => {
-            setSelectedRole(null);
-            setError("");
-            setInput("");
-          }}
-          className="absolute -top-12 left-0 text-gray-400 hover:text-white flex items-center gap-2 transition-colors"
-        >
-          <FaArrowLeft /> Volver
-        </button>
-
-        <div className="bg-slate-800 rounded-xl shadow-2xl p-8 w-full border border-slate-700 animate-in slide-in-from-right-10 duration-300">
-          <h2 className="text-3xl font-bold text-white mb-2 text-center flex justify-center gap-2 items-center">
-            <FaLock className="text-blue-500" />{" "}
-            {rolesConfig[selectedRole].title}
-          </h2>
-          <p className="text-gray-400 text-center text-sm mb-6">
-            Ingrese su clave de seguridad
+    <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 selection:bg-blue-200">
+      <div className="w-full max-w-md">
+        {/* LOGO O TÍTULO */}
+        <div className="text-center mb-8">
+          <div className="bg-blue-600 text-white w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
+            <FaLock size={28} />
+          </div>
+          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">
+            Gestión MRP
+          </h1>
+          <p className="text-slate-500 font-medium mt-2 uppercase tracking-wider text-xs">
+            Acceso Restringido
           </p>
+        </div>
 
-          <form onSubmit={handleLogin}>
-            <div className="relative mb-4">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">
-                <FaKey />
-              </span>
-              <input
-                type="password"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                className="w-full p-3 pl-10 bg-slate-900 text-white rounded-lg border border-slate-600 focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder-gray-600"
-                placeholder="********"
-                autoFocus
-                disabled={loading}
-              />
-            </div>
-
-            {/* Checkbox "Recordarme" */}
-            <div className="flex items-center mb-6">
-              <input
-                id="remember-me"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="w-4 h-4 text-blue-600 bg-slate-900 border-gray-600 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer"
-              />
-              <label
-                htmlFor="remember-me"
-                className="ml-2 text-sm font-medium text-gray-400 cursor-pointer select-none hover:text-gray-300 transition-colors"
-              >
-                Mantener sesión iniciada
-              </label>
-            </div>
-
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-red-400 text-center text-sm mb-4 bg-red-900/20 p-3 rounded border border-red-900/50 flex items-center justify-center gap-2"
-              >
-                <FaLock /> {error}
-              </motion.div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || !input}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        {/* TARJETA PRINCIPAL */}
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200 p-8 relative overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={isLogin ? "login" : "register"}
+              initial={{ opacity: 0, x: isLogin ? -20 : 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: isLogin ? 20 : -20 }}
+              transition={{ duration: 0.2 }}
             >
-              {loading ? (
-                <FaSpinner className="animate-spin" />
-              ) : (
-                "Entrar al Sistema"
+              <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                {isLogin ? (
+                  <>
+                    <FaSignInAlt className="text-blue-500" /> Iniciar Sesión
+                  </>
+                ) : (
+                  <>
+                    <FaUserPlus className="text-emerald-500" /> Nuevo Registro
+                  </>
+                )}
+              </h2>
+
+              {errorMsg && (
+                <div className="mb-6 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-xs font-bold flex items-start gap-3 shadow-sm animate-in fade-in zoom-in-95">
+                  <FaExclamationTriangle className="mt-0.5 shrink-0 text-rose-500 text-base" />
+                  {errorMsg}
+                </div>
               )}
+
+              {successMsg && (
+                <div className="mb-6 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-xl text-xs font-bold flex items-start gap-3 shadow-sm animate-in fade-in zoom-in-95">
+                  <FaCheckCircle className="mt-0.5 shrink-0 text-emerald-500 text-base" />
+                  {successMsg}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-5">
+                {!isLogin && (
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">
+                      Nombre Completo
+                    </label>
+                    <div className="relative">
+                      <FaUser className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        name="nombre"
+                        required
+                        value={formData.nombre}
+                        onChange={handleChange}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all placeholder-slate-400"
+                        placeholder="Ej: Juan Pérez"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">
+                    Correo Electrónico
+                  </label>
+                  <div className="relative">
+                    <FaEnvelope className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="email"
+                      name="email"
+                      required
+                      value={formData.email}
+                      onChange={handleChange}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all placeholder-slate-400"
+                      placeholder="usuario@empresa.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block mb-2">
+                    Contraseña
+                  </label>
+                  <div className="relative">
+                    <FaLock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="password"
+                      name="password"
+                      required
+                      value={formData.password}
+                      onChange={handleChange}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 pl-11 pr-4 text-sm font-medium text-slate-800 outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 transition-all placeholder-slate-400"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className={`w-full py-3.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98] ${isLogin ? "bg-blue-600 hover:bg-blue-700 shadow-blue-200" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200"} ${loading ? "opacity-70 cursor-not-allowed" : ""}`}
+                >
+                  {loading ? (
+                    <FaSpinner className="animate-spin text-lg" />
+                  ) : isLogin ? (
+                    "Ingresar al Sistema"
+                  ) : (
+                    "Crear Cuenta"
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+
+        {/* PIE DE PÁGINA (TOGGLE) */}
+        <div className="text-center mt-6">
+          <p className="text-sm text-slate-500 font-medium">
+            {isLogin ? "¿No tenés una cuenta?" : "¿Ya estás registrado?"}
+            <button
+              type="button"
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setErrorMsg(null);
+                setSuccessMsg(null);
+              }}
+              className="ml-2 font-bold text-blue-600 hover:text-blue-800 transition-colors focus:outline-none"
+            >
+              {isLogin ? "Solicitar acceso" : "Iniciá sesión aquí"}
             </button>
-          </form>
+          </p>
         </div>
       </div>
     </div>

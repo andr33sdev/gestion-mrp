@@ -1,78 +1,59 @@
 @import "tailwindcss";
 
-/* AGREGA ESTO SI NO LO TIENES */
 html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Esto bloquea el scroll en toda la app, solo permitimos interno */
+  background-color: #F9FAFB; /* Gris muy claro, típico SaaS */
+  color: #111827; /* Gris muy oscuro, casi negro */
+  font-family: 'Inter', system-ui, sans-serif; /* Asegúrate de que se vea limpio */
 }
 
-/* --- ESTILOS PARA LA IMPRESIÓN DEL REPORTE (PDF) --- */
+/* Scrollbar moderna y delgada */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB; /* Gris claro */
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* Clases de utilidad para "Estilo Lebane" */
+.card-clean {
+    @apply bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-300;
+}
+
+.input-clean {
+    @apply w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all;
+}
+
+.btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-xl shadow-sm transition-transform active:scale-95 text-sm;
+}
+
+.badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+/* Ajustes para impresión */
 @media print {
-    /* Oculta todo el contenido de la aplicación */
-    body > div {
-        display: none !important;
-    }
-    
-    /* Muestra solo el contenedor del reporte y lo ajusta */
-    #reporte-imprimir {
-        display: block !important;
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        margin: 0;
-        padding: 0;
-        color: #000; /* Asegura texto negro */
-        font-family: sans-serif;
-    }
-    
-    /* Evita que se impriman los links y estilos de fondo */
-    h1, h2, h3 { color: #1e3a8a !important; }
-    table { page-break-inside: auto; width: 100%; }
-    tr    { page-break-inside: avoid; page-break-after: auto; }
-    thead { display: table-header-group; }
-}
-/* --- FIN DE ESTILOS PDF --- */
-
-/* Override para Calendario Dark Mode */
-.rbc-calendar {
-    color: #cbd5e1; /* Texto claro */
-}
-.rbc-off-range-bg {
-    background: #0f172a !important; /* Slate 900 */
-}
-.rbc-today {
-    background-color: #1e293b !important; /* Slate 800 */
-}
-.rbc-header {
-    border-bottom: 1px solid #334155 !important;
-}
-.rbc-month-view, .rbc-month-row, .rbc-day-bg {
-    border-color: #334155 !important;
-}
-.rbc-day-bg + .rbc-day-bg {
-    border-left: 1px solid #334155 !important;
-}
-.rbc-toolbar button {
-    color: white;
-    border-color: #475569 !important;
-}
-.rbc-toolbar button:hover, .rbc-toolbar button.rbc-active {
-    background-color: #3b82f6 !important;
-    border-color: #3b82f6 !important;
+    body > div { display: none !important; }
+    #reporte-imprimir { display: block !important; }
 }
 
-/* frontend/src/index.css */
-
-/* Ocultar scrollbar para Chrome, Safari y Opera */
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
-/* Ocultar scrollbar para IE, Edge y Firefox */
-.no-scrollbar {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+.animate-shimmer {
+  animation: shimmer 2s infinite;
 }

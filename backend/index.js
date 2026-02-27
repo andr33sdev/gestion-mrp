@@ -14,14 +14,14 @@ const {
   sincronizarMateriasPrimas,
 } = require("./services/syncService");
 
-// IMPORTANTE: Traemos el check de mantenimiento
 const {
   iniciarBotReceptor,
   getBot,
-  checkAlertasMantenimiento, // <--- NUEVO IMPORT
+  checkAlertasMantenimiento,
 } = require("./services/telegramBotListener");
 
 const { vigilarCompetencia } = require("./services/competenciaService");
+const { protect } = require("./middleware/auth"); // <-- ACÁ ESTÁ EL PATOVICA
 
 // --- IMPORTAR RUTAS ---
 const generalRoutes = require("./routes/general");
@@ -39,6 +39,7 @@ const rrhhRoutes = require("./routes/rrhh");
 const changelogRoutes = require("./routes/changelog");
 const sugerenciasRoutes = require("./routes/sugerencias");
 const depositoRoutes = require("./routes/deposito");
+const authRoutes = require("./routes/auth");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -46,21 +47,31 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-app.use("/api", generalRoutes);
-app.use("/api/compras", comprasRoutes);
-app.use("/api/produccion", produccionRoutes);
-app.use("/api/ingenieria", ingenieriaRoutes);
-app.use("/api/planificacion", planificacionRoutes);
-app.use("/api/operarios", operariosRoutes);
-app.use("/api/logistica", logisticaRoutes);
-app.use("/api/analisis", analisisRoutes);
-app.use("/api/ia", iaRoutes);
-app.use("/api/mantenimiento", mantenimientoRoutes);
-app.use("/api/feriados", feriadosRoutes);
-app.use("/api/rrhh", rrhhRoutes);
-app.use("/api/changelog", changelogRoutes);
-app.use("/api/sugerencias", sugerenciasRoutes);
-app.use("/api/deposito", depositoRoutes);
+// ==========================================
+// 1. RUTA PÚBLICA (SIN CANDADO)
+// ==========================================
+// A esta ruta puede entrar cualquiera para registrarse o iniciar sesión
+app.use("/api/auth", authRoutes);
+
+// ==========================================
+// 2. RUTAS PRIVADAS (CON "protect")
+// ==========================================
+// Si alguien intenta entrar acá sin la llave (Token JWT), rebota automáticamente
+app.use("/api", protect, generalRoutes);
+app.use("/api/compras", protect, comprasRoutes);
+app.use("/api/produccion", protect, produccionRoutes);
+app.use("/api/ingenieria", protect, ingenieriaRoutes);
+app.use("/api/planificacion", protect, planificacionRoutes);
+app.use("/api/operarios", protect, operariosRoutes);
+app.use("/api/logistica", protect, logisticaRoutes);
+app.use("/api/analisis", protect, analisisRoutes);
+app.use("/api/ia", protect, iaRoutes);
+app.use("/api/mantenimiento", protect, mantenimientoRoutes);
+app.use("/api/feriados", protect, feriadosRoutes);
+app.use("/api/rrhh", protect, rrhhRoutes);
+app.use("/api/changelog", protect, changelogRoutes);
+app.use("/api/sugerencias", protect, sugerenciasRoutes);
+app.use("/api/deposito", protect, depositoRoutes);
 
 async function iniciarServidor() {
   try {
@@ -91,8 +102,7 @@ async function iniciarServidor() {
       30 * 60 * 1000,
     );
 
-    // --- NUEVO: VIGILANCIA MANTENIMIENTO ---
-    // Revisar tickets viejos cada 1 hora
+    // --- VIGILANCIA MANTENIMIENTO ---
     setInterval(
       () => {
         console.log("🔧 Chequeando alertas mantenimiento 24h...");

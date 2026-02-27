@@ -204,9 +204,6 @@ export default function Dashboard({ onNavigate }) {
         <FaFire className="text-6xl text-orange-500 mb-4 animate-pulse" />
         <h1 className="text-3xl font-bold text-white mb-2">Bienvenido a Gestión MRP</h1>
         <p className="text-gray-400 mb-8 max-w-md">Sistema de monitoreo en tiempo real.</p>
-        <button onClick={() => onNavigate("/login")} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-500 transition-all hover:scale-105">
-          Ingresar al Sistema
-        </button>
       </div>
     );
   }

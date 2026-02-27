@@ -14,7 +14,6 @@ import {
   FaLightbulb,
   FaFireAlt,
   FaClipboardList,
-  FaExclamationCircle,
   FaArrowUp,
   FaArrowDown,
   FaMinus,
@@ -28,8 +27,6 @@ import {
 } from "react-icons/fa";
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -37,15 +34,14 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
   AreaChart,
   Area,
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A28DFF"];
+const COLORS = ["#2563EB", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
 
-// --- HELPERS (Copiados de DetailModal para que funcione autónomo) ---
+// --- HELPERS ---
 const parseDateStr = (str) => {
   if (!str) return null;
   const parts = str.split("/");
@@ -88,16 +84,14 @@ const PortalTooltip = ({ coords, children }) => {
   );
 };
 
-// --- BADGE ---
+// --- BADGE (Estilo Lebane) ---
 function DaysLeftBadge({ days, val }) {
   const baseClass =
-    "px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-2 w-fit mx-auto shadow-sm";
+    "px-3 py-1 rounded-md text-[10px] font-bold border flex items-center gap-1.5 w-fit mx-auto";
 
   if (val > 365 || days === "∞") {
     return (
-      <span
-        className={`${baseClass} bg-blue-900/40 text-blue-200 border-blue-700`}
-      >
+      <span className={`${baseClass} bg-blue-50 text-blue-600 border-blue-200`}>
         +1 Año
       </span>
     );
@@ -105,7 +99,7 @@ function DaysLeftBadge({ days, val }) {
   if (val > 30) {
     return (
       <span
-        className={`${baseClass} bg-green-900/40 text-green-200 border-green-700`}
+        className={`${baseClass} bg-green-50 text-green-600 border-green-200`}
       >
         <FaCheckCircle /> {days} días
       </span>
@@ -114,7 +108,7 @@ function DaysLeftBadge({ days, val }) {
   if (val > 7) {
     return (
       <span
-        className={`${baseClass} bg-yellow-900/40 text-yellow-200 border-yellow-700`}
+        className={`${baseClass} bg-yellow-50 text-yellow-700 border-yellow-200`}
       >
         <FaHourglassHalf /> {days} días
       </span>
@@ -122,82 +116,61 @@ function DaysLeftBadge({ days, val }) {
   }
   return (
     <span
-      className={`${baseClass} bg-red-900/40 text-red-200 border-red-700 animate-pulse`}
+      className={`${baseClass} bg-red-50 text-red-600 border-red-200 animate-pulse`}
     >
       <FaExclamationTriangle /> {days} días
     </span>
   );
 }
 
-// --- WIDGET TENDENCIA ---
+// --- WIDGET TENDENCIA CON TEXTO ---
 const TrendIcon = ({ trend }) => {
-  const [tooltipCoords, setTooltipCoords] = useState(null);
-
-  const handleMouseEnter = (e) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setTooltipCoords({ left: rect.left + rect.width / 2, top: rect.top });
-  };
-
   return (
     <div className="flex items-center gap-1 justify-center">
-      {trend === "up" && <FaArrowUp className="text-green-400 text-xs" />}
-      {trend === "down" && <FaArrowDown className="text-red-400 text-xs" />}
-      {trend === "neutral" && <FaMinus className="text-gray-600 text-[10px]" />}
-
       <div
-        className="cursor-help ml-1"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => setTooltipCoords(null)}
+        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+          trend === "up"
+            ? "bg-green-50 text-green-700 border-green-200"
+            : trend === "down"
+              ? "bg-red-50 text-red-700 border-red-200"
+              : "bg-gray-50 text-gray-500 border-gray-200"
+        }`}
       >
-        <FaQuestionCircle className="text-slate-600 text-[10px] hover:text-slate-400 transition-colors" />
-      </div>
+        {trend === "up" && <FaArrowUp size={8} />}
+        {trend === "down" && <FaArrowDown size={8} />}
+        {trend === "neutral" && <FaMinus size={8} />}
 
-      <PortalTooltip coords={tooltipCoords}>
-        <div className="w-40 p-2 bg-black/95 text-white text-[10px] rounded-lg text-center border border-slate-700 shadow-xl animate-in fade-in zoom-in-95 duration-150">
-          <p className="font-bold mb-1 text-gray-300">Momentum (2 meses):</p>
-          {trend === "up" && (
-            <span className="text-green-400 font-bold block">
-              Acelerando (+10%)
-            </span>
-          )}
-          {trend === "down" && (
-            <span className="text-red-400 font-bold block">
-              Frenando (-10%)
-            </span>
-          )}
-          {trend === "neutral" && (
-            <span className="text-gray-400 block">Estable</span>
-          )}
-          <p className="mt-1 text-[9px] text-gray-500 border-t border-gray-800 pt-1">
-            Vs. promedio 6 meses
-          </p>
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-[1px] border-4 border-transparent border-t-slate-700"></div>
-        </div>
-      </PortalTooltip>
+        <span>
+          {trend === "up" ? "Sube" : trend === "down" ? "Baja" : "Estable"}
+        </span>
+      </div>
     </div>
   );
 };
 
+// --- MODALES ---
 function MissingRecipesModal({ items, onClose }) {
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[120] p-4"
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-[120] p-4 animate-in fade-in"
       onClick={onClose}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-600 flex flex-col overflow-hidden max-h-[80vh]"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200 flex flex-col overflow-hidden max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
-          <h3 className="text-lg font-bold text-white flex items-center gap-2">
-            <FaBug className="text-red-400" /> Productos sin Receta
+        <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <div className="p-2 bg-red-100 rounded-lg text-red-600">
+              <FaBug />
+            </div>
+            Productos sin Receta
           </h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-slate-800"
+            className="text-gray-400 hover:text-gray-600"
           >
             <FaTimes />
           </button>
@@ -206,13 +179,15 @@ function MissingRecipesModal({ items, onClose }) {
           {items.map((item, idx) => (
             <div
               key={idx}
-              className="p-3 rounded-xl hover:bg-slate-700/50 border border-transparent hover:border-slate-600 mb-1 flex justify-between items-center"
+              className="p-3 rounded-xl hover:bg-gray-50 border-b border-gray-50 last:border-0 flex justify-between items-center"
             >
               <div>
-                <p className="font-bold text-white text-sm">{item.name}</p>
-                <p className="text-xs text-red-300">{item.reason}</p>
+                <p className="font-bold text-gray-800 text-sm">{item.name}</p>
+                <p className="text-xs text-red-500 font-medium">
+                  {item.reason}
+                </p>
               </div>
-              <span className="text-xs font-mono font-bold text-gray-500 bg-slate-900 px-2 py-1 rounded">
+              <span className="text-xs font-mono font-bold text-gray-600 bg-gray-100 px-2 py-1 rounded border border-gray-200">
                 {item.count} ventas
               </span>
             </div>
@@ -226,29 +201,30 @@ function MissingRecipesModal({ items, onClose }) {
 function SuggestionsModal({ items, onClose, onSelect }) {
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-[120] p-4"
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-[120] p-4 animate-in fade-in"
       onClick={onClose}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-600 flex flex-col overflow-hidden max-h-[80vh]"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-gray-200 flex flex-col overflow-hidden max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
-          <div>
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <FaLightbulb className="text-yellow-400" /> Sugerencias de
-              Reposición
-            </h3>
-            <p className="text-xs text-gray-400">
-              Basado en consumo reciente y stock bajo
-            </p>
+        <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-yellow-100 rounded-lg text-yellow-600">
+              <FaLightbulb />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Sugerencias</h3>
+              <p className="text-xs text-gray-500">
+                Reposición crítica detectada
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors"
+            className="text-gray-400 hover:text-gray-600"
           >
             <FaTimes />
           </button>
@@ -256,8 +232,8 @@ function SuggestionsModal({ items, onClose, onSelect }) {
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
           {items.length === 0 ? (
-            <div className="p-8 text-center text-gray-500 text-sm">
-              No hay sugerencias críticas por el momento.
+            <div className="p-8 text-center text-gray-400 text-sm italic">
+              Todo bajo control.
             </div>
           ) : (
             items.map((item, idx) => (
@@ -267,27 +243,27 @@ function SuggestionsModal({ items, onClose, onSelect }) {
                   onSelect(item);
                   onClose();
                 }}
-                className="group p-3 rounded-xl hover:bg-slate-700/50 cursor-pointer transition-all border border-transparent hover:border-slate-600 mb-1"
+                className="group p-3 rounded-xl hover:bg-blue-50 cursor-pointer transition-all border border-transparent hover:border-blue-100 mb-1"
               >
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="font-bold text-white text-sm group-hover:text-blue-300 transition-colors">
+                    <p className="font-bold text-gray-800 text-sm group-hover:text-blue-700 transition-colors">
                       {item.name}
                     </p>
                     <div className="flex gap-2 mt-1">
-                      <span className="text-[10px] bg-red-900/30 text-red-300 px-1.5 py-0.5 rounded border border-red-800/50">
+                      <span className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded border border-red-100 font-bold">
                         Stock: {item.stock}
                       </span>
-                      <span className="text-[10px] bg-blue-900/30 text-blue-300 px-1.5 py-0.5 rounded border border-blue-800/50">
-                        Consumo: ~{item.monthly}/mes
+                      <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 font-bold">
+                        ~{item.monthly}/mes
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs font-bold text-yellow-400 block">
+                    <span className="text-xs font-bold text-red-500 block">
                       {item.daysLeft} días
                     </span>
-                    <span className="text-[9px] text-gray-500 uppercase">
+                    <span className="text-[9px] text-gray-400 uppercase font-bold">
                       Cobertura
                     </span>
                   </div>
@@ -301,7 +277,6 @@ function SuggestionsModal({ items, onClose, onSelect }) {
   );
 }
 
-// --- MODAL DETALLE AVANZADO (SEMIELABORADOS) ---
 function SemiDetailModal({ item, onClose }) {
   const [resolution, setResolution] = useState("MENSUAL");
   const [showCurrentMonth, setShowCurrentMonth] = useState(false);
@@ -318,24 +293,19 @@ function SemiDetailModal({ item, onClose }) {
 
   if (!item) return null;
 
-  // --- LÓGICA DE DATOS (Igual a DetailModal) ---
   const chartData = useMemo(() => {
     if (!item.history || !dateRange.start || !dateRange.end) return [];
-
     const startObj = new Date(dateRange.start);
     startObj.setHours(0, 0, 0, 0);
     const endObj = new Date(dateRange.end);
     endObj.setHours(23, 59, 59, 999);
-
     const buckets = {};
     const sourceData = item.history;
-
     let current = new Date(startObj);
     while (current <= endObj) {
-      let key = "";
-      let label = "";
-      let sortKey = current.getTime();
-
+      let key = "",
+        label = "",
+        sortKey = current.getTime();
       if (resolution === "DIARIA") {
         key = current.toISOString().split("T")[0];
         label = current.toLocaleDateString("es-AR", {
@@ -355,7 +325,6 @@ function SemiDetailModal({ item, onClose }) {
       }
       if (!buckets[key]) buckets[key] = { label, value: 0, sortKey };
     }
-
     sourceData.forEach((h) => {
       const d = parseDateStr(h.fecha);
       if (d && d >= startObj && d <= endObj) {
@@ -363,14 +332,11 @@ function SemiDetailModal({ item, onClose }) {
         if (resolution === "DIARIA") key = d.toISOString().split("T")[0];
         else if (resolution === "SEMANAL") key = getWeekNumber(d);
         else key = `${d.getFullYear()}-${d.getMonth()}`;
-
         if (buckets[key]) buckets[key].value += h.cant;
       }
     });
-
     let result = Object.values(buckets).sort((a, b) => a.sortKey - b.sortKey);
-    result = result.map((it) => ({ mes: it.label, consumo: it.value })); // Usamos 'consumo' key
-
+    result = result.map((it) => ({ mes: it.label, consumo: it.value }));
     if (resolution === "MENSUAL" && !showCurrentMonth) {
       const now = new Date();
       const currentLabel = now.toLocaleDateString("es-AR", { month: "short" });
@@ -387,182 +353,81 @@ function SemiDetailModal({ item, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-md flex justify-center items-center z-[110] p-4"
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex justify-center items-center z-[110] p-4 animate-in fade-in"
       onClick={onClose}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-slate-800 rounded-2xl shadow-2xl w-full max-w-[90vw] border border-slate-600 flex flex-col overflow-hidden max-h-[90vh]"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-[90vw] border border-gray-200 flex flex-col overflow-hidden max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 border-b border-slate-700 flex justify-between items-center bg-slate-800">
+        <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
           <div>
-            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-              <FaBoxOpen className="text-blue-400" /> {item.name}
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+              <FaBoxOpen className="text-blue-600" /> {item.name}
             </h2>
-            <p className="text-sm text-gray-400 font-mono mt-1">
+            <p className="text-xs text-gray-500 font-medium mt-0.5">
               Análisis detallado de consumo
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-slate-700 text-gray-400 hover:text-white transition-colors"
+            className="p-2 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600"
           >
-            <FaTimes size={20} />
+            <FaTimes size={18} />
           </button>
         </div>
 
-        <div className="p-6 grid grid-cols-1 lg:grid-cols-4 gap-6 overflow-y-auto custom-scrollbar">
-          {/* KPI CARDS IZQUIERDA */}
+        <div className="p-6 grid grid-cols-1 lg:grid-cols-4 gap-6 overflow-y-auto custom-scrollbar bg-white">
           <div className="lg:col-span-1 space-y-4">
-            <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-600/50 text-center">
-              <p className="text-xs text-gray-400 uppercase font-bold tracking-wide mb-1">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+              <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide mb-1">
                 Stock Actual
               </p>
-              <p className="text-3xl font-extrabold text-blue-400">
+              <p className="text-3xl font-extrabold text-blue-600">
                 {item.stock}
               </p>
             </div>
-            <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-600/50 text-center">
-              <p className="text-xs text-gray-400 uppercase font-bold tracking-wide mb-1">
-                Consumo Total (Rango)
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center">
+              <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide mb-1">
+                Consumo Total
               </p>
-              <p className="text-3xl font-extrabold text-white">
+              <p className="text-3xl font-extrabold text-gray-800">
                 {chartData.reduce((a, b) => a + b.consumo, 0)}
               </p>
             </div>
-            <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-600/50 text-center flex flex-col justify-center items-center">
-              <p className="text-xs text-gray-400 uppercase font-bold tracking-wide mb-2">
+            <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm text-center flex flex-col justify-center items-center">
+              <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide mb-2">
                 Cobertura
               </p>
               <DaysLeftBadge days={item.daysLeft} val={item.daysLeftVal} />
             </div>
-
-            {/* TOP PRODUCTOS (TORTA) */}
-            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 shadow-inner">
-              <h3 className="text-gray-200 font-bold mb-2 text-xs uppercase text-center tracking-wider">
-                Top Productos
-              </h3>
-              <div className="h-40 w-full">
-                {item.usedInChart.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={item.usedInChart}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={40}
-                        outerRadius={60}
-                        dataKey="value"
-                        paddingAngle={4}
-                        stroke="none"
-                      >
-                        {item.usedInChart.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={COLORS[index % COLORS.length]}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "#1e293b",
-                          borderRadius: "8px",
-                          border: "1px solid #334155",
-                          fontSize: "10px",
-                        }}
-                        itemStyle={{ color: "#fff" }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-gray-500 text-xs italic">
-                    Sin datos
-                  </div>
-                )}
-              </div>
-            </div>
           </div>
 
-          {/* GRAFICO PRINCIPAL DERECHA */}
-          <div className="lg:col-span-3 bg-slate-900/50 p-5 rounded-xl border border-slate-700 shadow-inner">
+          <div className="lg:col-span-3 bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
             <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-3">
-              <h3 className="text-gray-200 font-bold mb-6 text-sm uppercase flex items-center gap-2 tracking-wider">
-                <FaChartArea className="text-blue-500" /> Evolución de Consumo
+              <h3 className="text-gray-800 font-bold text-sm uppercase flex items-center gap-2 tracking-wider">
+                <FaChartArea className="text-blue-500" /> Evolución
               </h3>
-              <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-600/50">
-                <button
-                  onClick={() => setResolution("DIARIA")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    resolution === "DIARIA"
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  <FaCalendarDay />
-                </button>
-                <button
-                  onClick={() => setResolution("SEMANAL")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    resolution === "SEMANAL"
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  <FaCalendarWeek />
-                </button>
-                <button
-                  onClick={() => setResolution("MENSUAL")}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                    resolution === "MENSUAL"
-                      ? "bg-blue-600 text-white"
-                      : "text-gray-400 hover:text-white"
-                  }`}
-                >
-                  <FaCalendarAlt />
-                </button>
+              <div className="flex bg-gray-100 p-1 rounded-lg">
+                {["DIARIA", "SEMANAL", "MENSUAL"].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setResolution(t)}
+                    className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${resolution === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"}`}
+                  >
+                    {t === "DIARIA" ? (
+                      <FaCalendarDay />
+                    ) : t === "SEMANAL" ? (
+                      <FaCalendarWeek />
+                    ) : (
+                      <FaCalendarAlt />
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-800/40 p-3 rounded-lg border border-slate-700/50 mb-4">
-              <div className="flex items-center gap-3 text-sm text-gray-400">
-                <div className="flex items-center gap-2">
-                  <FaCalendar className="text-slate-500" />
-                  <span className="text-xs font-bold uppercase">Desde:</span>
-                  <input
-                    type="date"
-                    value={dateRange.start}
-                    onChange={(e) => handleDateChange("start", e.target.value)}
-                    className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase">Hasta:</span>
-                  <input
-                    type="date"
-                    value={dateRange.end}
-                    onChange={(e) => handleDateChange("end", e.target.value)}
-                    className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                </div>
-              </div>
-              {resolution === "MENSUAL" && (
-                <button
-                  onClick={() => setShowCurrentMonth(!showCurrentMonth)}
-                  className={`flex items-center gap-2 px-3 py-1 rounded text-[10px] font-bold transition-all border ${
-                    showCurrentMonth
-                      ? "bg-blue-600/20 text-blue-300 border-blue-500/50"
-                      : "bg-slate-800 text-gray-500 border-slate-600"
-                  }`}
-                >
-                  {showCurrentMonth ? <FaEye /> : <FaEyeSlash />}{" "}
-                  {showCurrentMonth ? "Mes Actual: ON" : "Mes Actual: OFF"}
-                </button>
-              )}
-            </div>
-
             <div className="h-80 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
@@ -574,8 +439,8 @@ function SemiDetailModal({ item, onClose }) {
                       x2="0"
                       y2="1"
                     >
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#2563EB" stopOpacity={0.1} />
+                      <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid
@@ -585,49 +450,33 @@ function SemiDetailModal({ item, onClose }) {
                   />
                   <XAxis
                     dataKey="mes"
-                    stroke="#94a3b8"
-                    interval={resolution === "DIARIA" ? "preserveStartEnd" : 0}
-                    tick={{ fontSize: 10 }}
+                    stroke="#9CA3AF"
+                    fontSize={11}
+                    tickMargin={10}
                     axisLine={false}
                     tickLine={false}
-                    minTickGap={20}
                   />
                   <YAxis
-                    stroke="#94a3b8"
-                    allowDecimals={false}
-                    tick={{ fontSize: 10 }}
+                    stroke="#9CA3AF"
+                    fontSize={11}
                     axisLine={false}
                     tickLine={false}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: "#1e293b",
-                      borderColor: "#334155",
+                      backgroundColor: "#fff",
                       borderRadius: "8px",
+                      border: "1px solid #e5e7eb",
                       boxShadow: "0 4px 6px -1px rgba(0,0,0,0.1)",
                     }}
-                    itemStyle={{ color: "#60a5fa" }}
                   />
                   <Area
                     type="monotone"
                     dataKey="consumo"
-                    name="Unidades"
-                    stroke="#3b82f6"
+                    stroke="#2563EB"
                     strokeWidth={2}
                     fillOpacity={1}
                     fill="url(#colorConsumo)"
-                    dot={
-                      resolution === "DIARIA"
-                        ? false
-                        : {
-                            r: 3,
-                            fill: "#1e293b",
-                            stroke: "#3b82f6",
-                            strokeWidth: 2,
-                          }
-                    }
-                    activeDot={{ r: 6 }}
-                    animationDuration={500}
                   />
                 </AreaChart>
               </ResponsiveContainer>
@@ -639,6 +488,7 @@ function SemiDetailModal({ item, onClose }) {
   );
 }
 
+// --- COMPONENTE PRINCIPAL ---
 export default function ConsumptionView({ analysisData }) {
   if (!analysisData) return null;
   const { consumo, missingRecipes, daysAnalyzed } = analysisData;
@@ -674,8 +524,14 @@ export default function ConsumptionView({ analysisData }) {
     return consumo.filter((item) => selectedItems.has(item.name));
   }, [consumo, selectedItems]);
 
+  const criticalCount = consumo.filter((i) => i.daysLeftVal <= 7).length;
+  const warningCount = consumo.filter(
+    (i) => i.daysLeftVal > 7 && i.daysLeftVal <= 30,
+  ).length;
+  const safeCount = consumo.filter((i) => i.daysLeftVal > 30).length;
+
   return (
-    <div className="animate-in fade-in duration-500 pb-24 relative">
+    <div className="flex flex-col h-full overflow-hidden pb-0 pr-2">
       <AnimatePresence>
         {selectedDetailItem && (
           <SemiDetailModal
@@ -701,197 +557,181 @@ export default function ConsumptionView({ analysisData }) {
         )}
       </AnimatePresence>
 
-      <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-4xl font-bold text-white mb-2">
-            Planificación de Stock
-          </h1>
-          <p className="text-base text-gray-400">
-            Cálculo basado en los últimos <strong>{daysAnalyzed} días</strong>.{" "}
-            <span className="ml-3 text-sm italic text-blue-400 opacity-80">
-              * Haz clic en una fila para ver el detalle gráfico.
-            </span>
-          </p>
+      {/* 1. KPIs ROW */}
+      <div className="flex gap-4 shrink-0 mb-4">
+        <div className="flex-1 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-red-50 rounded-lg text-red-600">
+            <FaExclamationTriangle size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 font-bold uppercase">
+              Críticos (&lt;7d)
+            </p>
+            <p className="text-2xl font-extrabold text-gray-900">
+              {criticalCount}
+            </p>
+          </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex-1 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-yellow-50 rounded-lg text-yellow-600">
+            <FaHourglassHalf size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 font-bold uppercase">
+              Alerta (7-30d)
+            </p>
+            <p className="text-2xl font-extrabold text-gray-900">
+              {warningCount}
+            </p>
+          </div>
+        </div>
+        <div className="flex-1 bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-green-50 rounded-lg text-green-600">
+            <FaCheckCircle size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] text-gray-500 font-bold uppercase">
+              Saludable
+            </p>
+            <p className="text-2xl font-extrabold text-gray-900">{safeCount}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. TOOLBAR */}
+      <div className="flex justify-between items-center mb-4 shrink-0 gap-4">
+        <div className="relative flex-1 max-w-lg">
+          <FaSearch className="absolute left-3 top-3 text-gray-400 text-xs" />
+          <input
+            type="text"
+            placeholder="Buscar insumo para analizar..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-white border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-blue-500 shadow-sm placeholder-gray-400"
+          />
+          {searchTerm && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl z-50 border border-gray-100 overflow-hidden">
+              {suggestions.map((item, i) => (
+                <div
+                  key={i}
+                  onClick={() => {
+                    toggleSelection(item.name);
+                    setSearchTerm("");
+                  }}
+                  className="px-4 py-3 hover:bg-gray-50 cursor-pointer text-gray-700 border-b border-gray-50 last:border-0 text-sm flex justify-between"
+                >
+                  <span className="font-bold">{item.name}</span>
+                  <span className="text-xs text-gray-400">
+                    Stock: {item.stock}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
           <button
             onClick={() => setShowMissingModal(true)}
-            className={`group relative px-5 py-3 font-bold rounded-xl shadow-lg transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-2 border ${
-              missingRecipes.length > 0
-                ? "bg-slate-800 border-red-500 text-red-400 hover:bg-red-900/20"
-                : "bg-slate-800 border-slate-600 text-gray-400 opacity-50 cursor-not-allowed"
-            }`}
             disabled={missingRecipes.length === 0}
+            className="px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-lg font-bold text-xs flex items-center gap-2 shadow-sm transition-all"
           >
-            <FaClipboardList
-              className={missingRecipes.length > 0 ? "text-lg" : ""}
-            />
-            <span>Sin Receta</span>
+            <FaBug className="text-red-500" /> Sin Receta
             {missingRecipes.length > 0 && (
-              <span className="ml-1 bg-red-500 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
+              <span className="bg-red-500 text-white px-1.5 py-0.5 rounded-full text-[9px]">
                 {missingRecipes.length}
               </span>
             )}
           </button>
           <button
             onClick={() => setShowSuggestions(true)}
-            className="group relative px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-purple-900/30 transition-all transform hover:-translate-y-0.5 active:scale-95 flex items-center gap-3 border border-white/10"
+            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg font-bold text-xs flex items-center gap-2 shadow-md transition-all active:scale-95"
           >
-            <FaLightbulb className="text-yellow-300 text-lg animate-pulse" />
-            <span>Sugerencias</span>
-            {suggestedItems.length > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full border-2 border-gray-900 shadow-sm">
-                {suggestedItems.length}
-              </span>
-            )}
+            <FaLightbulb className="text-yellow-300" /> Sugerencias IA
           </button>
         </div>
       </div>
 
-      <div className="relative mb-8 max-w-2xl">
-        <div className="relative group">
-          <FaSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-blue-400 transition-colors text-lg" />
-          <input
-            type="text"
-            placeholder="Buscar semielaborado para analizar..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-600 rounded-xl py-3.5 pl-12 pr-10 text-base text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent shadow-lg transition-all placeholder-gray-500"
-          />
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
-            >
-              <FaTimes size={16} />
-            </button>
-          )}
+      {/* 3. TABLA PRINCIPAL (Flex-1 para llenar espacio) */}
+      <div className="flex-1 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-0">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center shrink-0">
+          <h3 className="font-bold text-gray-800 text-sm flex items-center gap-2">
+            <FaListUl className="text-blue-500" /> Lista de Seguimiento
+          </h3>
+          <button
+            onClick={() => setSelectedItems(new Set())}
+            className="text-xs text-red-500 hover:text-red-700 font-bold flex items-center gap-1"
+          >
+            <FaTrashAlt /> Limpiar
+          </button>
         </div>
-        {searchTerm && (
-          <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border border-slate-600 rounded-xl shadow-2xl z-50 max-h-72 overflow-y-auto custom-scrollbar">
-            {suggestions.length === 0 ? (
-              <div className="p-4 text-gray-500 text-center text-sm italic">
-                No se encontraron insumos.
+
+        <div className="flex-1 overflow-hidden relative">
+          <div className="absolute inset-0 overflow-y-auto custom-scrollbar">
+            {tableRows.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
+                <FaClipboardList className="text-6xl mb-4 text-gray-300" />
+                <p className="text-sm font-medium">Lista vacía.</p>
+                <p className="text-xs">
+                  Usa el buscador o las sugerencias para agregar ítems.
+                </p>
               </div>
             ) : (
-              suggestions.map((item) => {
-                const isSelected = selectedItems.has(item.name);
-                return (
-                  <div
-                    key={item.name}
-                    onClick={() => toggleSelection(item.name)}
-                    className={`px-4 py-3 flex items-center gap-4 cursor-pointer border-b border-slate-700/50 last:border-0 hover:bg-slate-700 transition-colors ${
-                      isSelected ? "bg-blue-900/20" : ""
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      readOnly
-                      className="w-5 h-5 rounded border-gray-500 text-blue-600 focus:ring-blue-500 bg-gray-700 cursor-pointer"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className={`text-base ${
-                          isSelected
-                            ? "text-blue-300 font-bold"
-                            : "text-white font-medium"
-                        }`}
-                      >
-                        {item.name}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Stock actual:{" "}
-                        <span className="text-gray-300">{item.stock}</span>
-                      </p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 overflow-hidden min-h-[300px] flex flex-col">
-        {tableRows.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 p-12 opacity-60">
-            <FaListUl className="text-5xl mb-4" />
-            <p className="text-lg font-medium">Lista de seguimiento vacía</p>
-            <p className="text-sm mt-1">
-              Usa el buscador o el botón de{" "}
-              <span className="text-blue-400 font-bold">Sugerencias IA</span>.
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="flex justify-between items-center px-6 py-4 bg-slate-700/30 border-b border-slate-700">
-              <h3 className="text-white font-bold flex items-center gap-3 text-base">
-                <FaListUl className="text-blue-400" /> Insumos Seleccionados{" "}
-                <span className="bg-slate-600 text-white text-xs px-2 py-1 rounded-full">
-                  {tableRows.length}
-                </span>
-              </h3>
-              <button
-                onClick={() => setSelectedItems(new Set())}
-                className="text-xs flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 px-4 py-2 rounded-lg transition-all font-medium"
-              >
-                <FaTrashAlt /> Limpiar Todo
-              </button>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-gray-300">
-                <thead className="bg-slate-700/50 text-gray-400 uppercase text-xs font-bold tracking-wider">
+              <table className="w-full text-left text-sm text-gray-600 table-fixed">
+                <thead className="bg-white text-gray-500 uppercase text-xs font-bold tracking-wider sticky top-0 z-10 border-b border-gray-100 shadow-sm">
                   <tr>
-                    <th className="px-6 py-4 w-12 text-center">#</th>
-                    <th className="px-6 py-4">Semielaborado</th>
-                    <th className="px-6 py-4 text-right">Stock</th>
-                    <th className="px-6 py-4 text-right">Consumo '25</th>
-                    <th className="px-6 py-4 text-right bg-slate-600/10">
-                      Mensual (6M)
+                    <th className="px-3 py-3 w-[5%] text-center bg-white">#</th>
+                    <th className="px-3 py-3 w-[40%] bg-white">Insumo</th>
+                    <th className="px-3 py-3 w-[15%] text-right bg-white">
+                      Stock
                     </th>
-                    <th className="px-6 py-4 text-center">Trend</th>
-                    <th className="px-6 py-4 text-center">Cobertura</th>
+                    <th className="px-3 py-3 w-[15%] text-right bg-white">
+                      Consumo (Mes)
+                    </th>
+                    <th className="px-3 py-3 w-[12%] text-center bg-white">
+                      Tendencia
+                    </th>
+                    <th className="px-3 py-3 w-[13%] text-center bg-white">
+                      Cobertura
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-700/50 text-sm">
+                <tbody className="divide-y divide-gray-50">
                   {tableRows.map((item, index) => (
                     <tr
                       key={index}
                       onClick={() => setSelectedDetailItem(item)}
-                      className="hover:bg-slate-700/40 transition-colors group cursor-pointer"
+                      className="hover:bg-blue-50/30 transition-colors cursor-pointer group"
                     >
                       <td
-                        className="px-6 py-4 text-center"
-                        onClick={(e) => e.stopPropagation()}
+                        className="px-3 py-4 text-center text-gray-400"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelection(item.name);
+                        }}
                       >
                         <input
                           type="checkbox"
                           checked={true}
-                          onChange={() => toggleSelection(item.name)}
-                          className="w-4 h-4 rounded border-gray-500 text-blue-600 bg-gray-700 cursor-pointer opacity-50 group-hover:opacity-100 transition-opacity"
-                          title="Quitar de la lista"
+                          readOnly
+                          className="cursor-pointer accent-blue-600"
                         />
                       </td>
-                      <td className="px-6 py-4 font-medium text-white group-hover:text-blue-300 transition-colors">
+                      <td
+                        className="px-3 py-4 font-bold text-gray-800 group-hover:text-blue-600 truncate"
+                        title={item.name}
+                      >
                         {item.name}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-blue-300 font-bold">
+                      <td className="px-3 py-4 text-right font-mono font-bold text-gray-700">
                         {item.stock}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-gray-400">
-                        {item.value}
+                      <td className="px-3 py-4 text-right font-mono text-gray-500">
+                        ~{item.monthly}
                       </td>
-                      <td className="px-6 py-4 text-right font-mono text-yellow-100/90 bg-slate-600/5 font-bold">
-                        {item.monthly}{" "}
-                        <span className="text-[10px] font-normal text-gray-500 ml-1">
-                          u/m
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-3 py-4 text-center">
                         <TrendIcon trend={item.trend} />
                       </td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-3 py-4 text-center">
                         <DaysLeftBadge
                           days={item.daysLeft}
                           val={item.daysLeftVal}
@@ -901,24 +741,10 @@ export default function ConsumptionView({ analysisData }) {
                   ))}
                 </tbody>
               </table>
-            </div>
-          </>
-        )}
-      </div>
-      {missingRecipes.length > 0 && (
-        <div className="mt-8 bg-slate-900/40 border border-slate-700/50 rounded-xl p-4 flex justify-between items-center max-w-3xl mx-auto">
-          <div className="flex items-center gap-3 text-yellow-600/90 text-sm">
-            <FaBug className="text-lg" />
-            <span className="font-medium">
-              Diagnóstico del sistema: Se detectaron{" "}
-              <span className="font-bold text-yellow-500">
-                {missingRecipes.length}
-              </span>{" "}
-              productos vendidos sin receta configurada.
-            </span>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

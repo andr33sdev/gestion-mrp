@@ -2,9 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import {
   FaTruck,
   FaPlus,
-  FaCheckCircle,
   FaClock,
-  FaBoxOpen,
   FaUser,
   FaTrash,
   FaHistory,
@@ -13,13 +11,23 @@ import {
   FaCheckDouble,
   FaPaperPlane,
   FaComments,
+  FaTimes,
+  FaBoxOpen,
+  FaCheckCircle,
+  FaChevronLeft,
+  FaChevronRight,
+  FaSearch,
+  FaEllipsisV,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import { API_BASE_URL, authFetch } from "../utils";
 import Loader from "../components/Loader";
 import { getAuthData } from "../auth/authHelper";
 
-// --- HELPER DE FECHAS UTC-3 ---
+import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
+
+// --- HELPER DE FECHAS ---
 const formatearFechaHora = (fechaIso) => {
   if (!fechaIso) return "-";
   try {
@@ -40,47 +48,253 @@ const formatearFechaHora = (fechaIso) => {
   }
 };
 
-// --- COMPONENTES VISUALES ---
-const PriorityBadge = ({ priority }) => {
-  const colors = {
-    ALTA: "bg-red-500 text-white animate-pulse",
-    MEDIA: "bg-amber-500 text-black",
-    BAJA: "bg-blue-500 text-white",
+// --- COMPONENTE: FILA DE LOGÍSTICA CON MENÚ DE 3 PUNTITOS ---
+const LogisticaRow = ({
+  req,
+  isBoss,
+  onOpenDetail,
+  onStatusChange,
+  onDelete,
+  openMenuId,
+  setOpenMenuId,
+}) => {
+  const priorityStyles = {
+    ALTA: { bg: "bg-[#ffebee]", text: "text-[#ef5350]" },
+    MEDIA: { bg: "bg-[#fff8e1]", text: "text-[#fbc02d]" },
+    BAJA: { bg: "bg-[#e3f2fd]", text: "text-[#42a5f5]" },
   };
-  return (
-    <span
-      className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-        colors[priority] || colors.MEDIA
-      }`}
-    >
-      {priority}
-    </span>
-  );
-};
 
-const StatusBadge = ({ status }) => {
-  const styles = {
-    PENDIENTE: "bg-gray-700 text-gray-300 border-gray-600",
-    APROBADO: "bg-blue-900/30 text-blue-400 border-blue-600",
-    PREPARADO: "bg-purple-900/30 text-purple-400 border-purple-600",
-    FINALIZADO: "bg-green-900/30 text-green-400 border-green-600",
-    RECHAZADO: "bg-red-900/30 text-red-400 border-red-600",
-    ELIMINADO: "bg-slate-800 text-gray-600 border-gray-700 line-through",
+  const statusStyles = {
+    PENDIENTE: {
+      bg: "bg-stone-100",
+      text: "text-stone-500",
+      border: "border-stone-200",
+    },
+    APROBADO: {
+      bg: "bg-[#e3f2fd]",
+      text: "text-[#2196f3]",
+      border: "border-[#bbdefb]",
+    },
+    PREPARADO: {
+      bg: "bg-indigo-50",
+      text: "text-indigo-500",
+      border: "border-indigo-100",
+    },
   };
+
+  const pStyle = priorityStyles[req.prioridad] || priorityStyles.MEDIA;
+  const sStyle = statusStyles[req.estado] || statusStyles.PENDIENTE;
+
+  const leftBorderColor =
+    req.estado === "PENDIENTE" && req.prioridad === "ALTA"
+      ? "bg-red-400"
+      : req.estado === "PENDIENTE"
+        ? "bg-stone-300"
+        : req.estado === "APROBADO"
+          ? "bg-[#42a5f5]"
+          : "bg-indigo-400";
+
+  const isOpen = openMenuId === req.id;
+
+  const toggleMenu = (e) => {
+    e.stopPropagation();
+    setOpenMenuId(isOpen ? null : req.id);
+  };
+
   return (
-    <span
-      className={`px-2 py-0.5 rounded border text-[10px] font-bold ${
-        styles[status] || styles.PENDIENTE
-      }`}
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      onClick={() => onOpenDetail(req, "CHAT")}
+      className="relative bg-white rounded-2xl md:rounded-xl p-5 md:py-4 md:px-6 border border-stone-100 shadow-sm hover:shadow-[0_4px_15px_-3px_rgba(0,0,0,0.05)] hover:border-stone-200 transition-all duration-300 group flex flex-col md:flex-row md:items-center gap-4 cursor-pointer w-full"
     >
-      {status}
-    </span>
+      {/* Tira de color lateral ultra fina */}
+      <div
+        className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl md:rounded-l-xl transition-colors duration-500 ${leftBorderColor}`}
+      />
+
+      {/* 1. Fecha y Prioridad */}
+      <div className="w-full md:w-36 shrink-0 flex flex-row md:flex-col justify-between md:justify-center items-center md:items-start pl-2 md:pl-0 pr-6 md:pr-0">
+        <div className="flex flex-col md:gap-1.5">
+          <span
+            className={`px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-widest w-fit ${pStyle.bg} ${pStyle.text}`}
+          >
+            {req.prioridad}
+          </span>
+        </div>
+        <span className="text-[10px] font-medium text-stone-400 flex items-center gap-1.5 md:mt-1.5">
+          <FaClock size={10} className="text-stone-300" />
+          {formatearFechaHora(req.fecha_creacion).split(" ")[0]}{" "}
+          <span className="hidden md:inline">
+            {formatearFechaHora(req.fecha_creacion).split(" ")[1]}
+          </span>
+        </span>
+      </div>
+
+      {/* 2. Producto y Solicitante */}
+      <div className="flex-1 min-w-0 pl-2 md:pl-0 flex flex-col justify-center border-t border-stone-50 md:border-0 pt-3 md:pt-0">
+        <h3 className="text-[14px] font-bold text-slate-800 leading-snug truncate group-hover:text-[#2196f3] transition-colors">
+          {req.producto}
+        </h3>
+        <span className="text-[10px] font-medium text-stone-400 flex items-center gap-1.5 mt-1">
+          <FaUser size={10} className="text-stone-300 shrink-0" />{" "}
+          {req.solicitante}
+        </span>
+      </div>
+
+      {/* 3. Cantidad */}
+      <div className="w-full md:w-28 shrink-0 flex justify-between md:justify-end items-center pl-2 md:pl-0 md:pr-4">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-stone-400 md:hidden">
+          Cantidad
+        </span>
+        <div className="flex items-baseline gap-1">
+          <span className="text-2xl font-bold text-slate-700 leading-none">
+            {req.cantidad}
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-0.5">
+            u.
+          </span>
+        </div>
+      </div>
+
+      {/* 4. Estado */}
+      <div className="w-full md:w-36 shrink-0 flex justify-between md:justify-start items-center pl-2 md:pl-4 mt-2 md:mt-0 pt-3 md:pt-0 border-t border-stone-50 md:border-0">
+        <span className="text-[9px] font-bold uppercase tracking-widest text-stone-400 md:hidden">
+          Estado Actual
+        </span>
+        <span
+          className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${sStyle.bg} ${sStyle.text} ${sStyle.border}`}
+        >
+          {req.estado}
+        </span>
+      </div>
+
+      {/* 5. Acciones (Menú 3 Puntos) */}
+      <div
+        className="absolute right-4 top-4 md:relative md:right-0 md:top-0 md:w-16 shrink-0 flex items-center justify-end"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={toggleMenu}
+          className={`p-2.5 rounded-xl transition-colors ${isOpen ? "bg-stone-100 text-slate-800" : "text-stone-400 hover:text-stone-600 bg-stone-50 md:bg-transparent hover:bg-stone-100"}`}
+        >
+          <FaEllipsisV size={14} />
+        </button>
+
+        <AnimatePresence>
+          {isOpen && (
+            <>
+              {/* Fondo invisible para cerrar al hacer clic afuera */}
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setOpenMenuId(null)}
+              />
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                transition={{ duration: 0.15 }}
+                className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] border border-stone-100 z-50 py-2 overflow-hidden"
+              >
+                <div className="px-4 py-2 border-b border-stone-50 mb-1">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-stone-400">
+                    Acciones Disponibles
+                  </span>
+                </div>
+
+                {isBoss ? (
+                  <>
+                    {/* Botones si es Jefe/Gerente */}
+                    {req.estado === "PENDIENTE" && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            onStatusChange(e, req.id, "APROBADO");
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-3 text-xs font-bold text-[#2196f3] hover:bg-[#e3f2fd] flex items-center gap-3 transition-colors"
+                        >
+                          <FaCheckCircle size={14} /> Aprobar Solicitud
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            onStatusChange(e, req.id, "RECHAZADO");
+                            setOpenMenuId(null);
+                          }}
+                          className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                        >
+                          <FaTimes size={14} /> Rechazar Solicitud
+                        </button>
+                      </>
+                    )}
+
+                    {req.estado === "APROBADO" && (
+                      <button
+                        onClick={(e) => {
+                          onStatusChange(e, req.id, "PREPARADO");
+                          setOpenMenuId(null);
+                        }}
+                        className="w-full text-left px-4 py-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-3 transition-colors"
+                      >
+                        <FaBoxOpen size={14} /> Marcar como Preparado
+                      </button>
+                    )}
+
+                    {req.estado === "PREPARADO" && (
+                      <button
+                        onClick={(e) => {
+                          onStatusChange(e, req.id, "ENTREGADO");
+                          setOpenMenuId(null);
+                        }}
+                        className="w-full text-left px-4 py-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
+                      >
+                        <FaCheckDouble size={14} /> Marcar como Entregado
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="px-4 py-3 text-xs text-stone-400 font-medium italic">
+                    Sin permisos de edición.
+                  </div>
+                )}
+
+                <div className="h-px bg-stone-100 my-1 mx-2" />
+
+                <button
+                  onClick={(e) => {
+                    onDelete(e, req.id);
+                    setOpenMenuId(null);
+                  }}
+                  className="w-full text-left px-4 py-3 text-xs font-bold text-stone-500 hover:text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                >
+                  <FaTrash size={12} /> Eliminar Registro
+                </button>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
   );
 };
 
 export default function LogisticaPage() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // --- PAGINACIÓN ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 8;
+
+  // --- BUSCADOR PREDICTIVO ---
+  const [allSemis, setAllSemis] = useState([]);
+  const [resetKey, setResetKey] = useState(0);
+
+  // --- ESTADO PARA MENÚ DE 3 PUNTITOS ---
+  const [openMenuId, setOpenMenuId] = useState(null);
 
   // Modales
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -95,35 +309,40 @@ export default function LogisticaPage() {
   const [loadingData, setLoadingData] = useState(false);
 
   const chatEndRef = useRef(null);
-  const { role, username } = getAuthData();
 
-  // --- PERSONALIZACIÓN DE NOMBRES ---
-  let currentUser = username;
-  const rolNormalizado = role ? role.toUpperCase() : "";
+  // --- EXTRACCIÓN Y VALIDACIÓN DE PERMISOS ---
+  const { user } = getAuthData();
+  const rolUsuario = user?.rol || "";
+  const nombreUsuario = user?.nombre || "Anónimo";
 
+  let currentUser = nombreUsuario;
+  // Limpiamos el rol: mayúsculas, sin tildes y sin espacios extra para evitar fallos
+  const rolNormalizado = rolUsuario
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  // Opcional: Alias visuales hardcodeados
   if (rolNormalizado === "GERENCIA") {
     currentUser = "Andrés";
   } else if (rolNormalizado === "OPERARIO" || rolNormalizado === "PANEL") {
     currentUser = "Leonel";
-  } else if (rolNormalizado === "DEPOSITO" || rolNormalizado === "DEPÓSITO") {
+  } else if (rolNormalizado === "DEPOSITO") {
     currentUser = "Mauro";
-  } else {
-    currentUser = currentUser || role || "Anónimo";
   }
-  // -----------------------------------
 
-  // --- PERMISOS ---
+  // Lista de roles autorizados (¡Asegura incluir al jefe!)
   const isBoss = [
     "GERENCIA",
     "PLANIFICACION",
     "EXPEDICION",
     "DEPOSITO",
-    "DEPÓSITO",
     "OPERARIO",
     "PANEL",
+    "JEFE PRODUCCION",
   ].includes(rolNormalizado);
 
-  // Mantenemos "notas" en el estado pero ya no lo mostramos en el form
   const [form, setForm] = useState({
     producto: "",
     cantidad: "",
@@ -141,6 +360,25 @@ export default function LogisticaPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadRequests();
+
+    const loadSemis = async () => {
+      try {
+        const res = await authFetch(
+          `${API_BASE_URL}/ingenieria/semielaborados`,
+        );
+        if (res.ok) setAllSemis(await res.json());
+      } catch (e) {
+        console.error("Error cargando productos", e);
+      }
+    };
+    loadSemis();
+
+    const interval = setInterval(loadRequests, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const openDetailModal = (req, tab = "TIMELINE") => {
     setSelectedRequest(req);
@@ -174,10 +412,9 @@ export default function LogisticaPage() {
       const logsFiltrados = logs.filter((l) => l.accion !== "CREADO");
       setHistoryTimeline(
         [eventoCreacion, ...logsFiltrados].sort(
-          (a, b) => new Date(a.fecha) - new Date(b.fecha)
-        )
+          (a, b) => new Date(a.fecha) - new Date(b.fecha),
+        ),
       );
-
       setComments(comms);
     } catch (e) {
       console.error(e);
@@ -187,56 +424,61 @@ export default function LogisticaPage() {
   };
 
   useEffect(() => {
-    loadRequests();
-    const interval = setInterval(loadRequests, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [comments, activeTab]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.producto || !form.cantidad) return alert("Faltan datos");
-    setLoading(true);
+    if (!form.producto || !form.cantidad)
+      return toast.error("Completa el producto y la cantidad.");
 
-    await authFetch(`${API_BASE_URL}/logistica`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, solicitante: currentUser }),
-    });
-    setForm({ producto: "", cantidad: "", prioridad: "MEDIA", notas: "" });
-    setIsNewModalOpen(false);
-    loadRequests();
+    const toastId = toast.loading("Enviando solicitud...");
+    try {
+      await authFetch(`${API_BASE_URL}/logistica`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, solicitante: currentUser }),
+      });
+
+      setForm({ producto: "", cantidad: "", prioridad: "MEDIA", notas: "" });
+      setResetKey((prev) => prev + 1);
+      setIsNewModalOpen(false);
+      loadRequests();
+      setCurrentPage(1);
+      toast.success("Solicitud creada", { id: toastId });
+    } catch (e) {
+      toast.error("Error al crear solicitud", { id: toastId });
+    }
   };
 
   const handleStatusChange = async (e, id, newStatus) => {
-    e.stopPropagation();
-    if (!confirm(`¿Cambiar estado a ${newStatus}?`)) return;
+    if (e) e.stopPropagation();
 
     await authFetch(`${API_BASE_URL}/logistica/${id}/estado`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ estado: newStatus, usuario: currentUser }),
     });
+    toast.success(`Estado actualizado a ${newStatus}`);
     loadRequests();
+
     if (selectedRequest && selectedRequest.id === id) {
       setTimeout(
         () => loadRequestDetails({ ...selectedRequest, estado: newStatus }),
-        500
+        500,
       );
     }
   };
 
   const handleDelete = async (e, id) => {
-    e.stopPropagation();
-    if (!confirm("¿Eliminar solicitud?")) return;
+    if (e) e.stopPropagation();
+    if (!confirm("¿Eliminar solicitud definitivamente?")) return;
     await authFetch(`${API_BASE_URL}/logistica/${id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ usuario: currentUser }),
     });
+    toast.success("Solicitud eliminada");
     loadRequests();
   };
 
@@ -263,16 +505,26 @@ export default function LogisticaPage() {
           usuario: currentUser,
           mensaje: optimisticComment.mensaje,
         }),
-      }
+      },
     );
     loadRequestDetails(selectedRequest);
   };
 
+  // --- LÓGICA DE FILTRADO Y PAGINACIÓN ---
+  const closedStatuses = ["ENTREGADO", "FINALIZADO", "RECHAZADO", "ELIMINADO"];
   const activeRequests = requests.filter(
-    (r) =>
-      r.estado !== "ENTREGADO" &&
-      r.estado !== "RECHAZADO" &&
-      r.estado !== "ELIMINADO"
+    (r) => !closedStatuses.includes(r.estado),
+  );
+
+  const totalPages = Math.ceil(activeRequests.length / itemsPerPage) || 1;
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+
+  const currentItems = activeRequests.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage,
   );
 
   const getIcon = (acc) => {
@@ -284,385 +536,473 @@ export default function LogisticaPage() {
     return <FaInfoCircle size={10} />;
   };
 
-  if (loading && requests.length === 0) return <Loader />;
+  const getStatusColorTable = (estado) => {
+    const s = {
+      PENDIENTE: "text-stone-500 bg-stone-100 border-stone-200",
+      APROBADO: "text-[#2196f3] bg-[#e3f2fd] border-[#bbdefb]",
+      PREPARADO: "text-indigo-600 bg-indigo-50 border-indigo-200",
+      ENTREGADO: "text-[#43a047] bg-[#e8f5e9] border-[#c8e6c9]",
+      FINALIZADO: "text-[#43a047] bg-[#e8f5e9] border-[#c8e6c9]",
+      RECHAZADO: "text-red-500 bg-red-50 border-red-200",
+    };
+    return s[estado] || s.PENDIENTE;
+  };
+
+  if (loading && requests.length === 0) {
+    return (
+      <div className="min-h-full bg-[#fcfbf9] flex flex-col font-sans animate-in fade-in">
+        {/* Simulación del Header para que la pantalla no salte */}
+        <header className="bg-white border-b border-stone-100 px-6 py-5 md:px-10 md:py-6 shrink-0 z-20">
+          <div className="max-w-[1200px] mx-auto flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-stone-100 animate-pulse" />
+              <div className="space-y-2">
+                <div className="w-32 h-6 bg-stone-100 rounded-lg animate-pulse" />
+                <div className="w-24 h-3 bg-stone-50 rounded-lg animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 w-full max-w-[1200px] mx-auto p-4 md:p-8 mt-2 space-y-4">
+          {/* Generamos 5 filas de "fantasma" (Skeletons) */}
+          {[...Array(5)].map((_, i) => (
+            <div
+              key={i}
+              className="w-full h-20 bg-white rounded-2xl border border-stone-100 flex items-center px-6 gap-6 overflow-hidden relative"
+            >
+              {/* Efecto de brillo barriendo la tarjeta */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
+
+              <div className="w-24 h-4 bg-stone-100 rounded animate-pulse" />
+              <div className="flex-1 h-4 bg-stone-100 rounded animate-pulse" />
+              <div className="w-16 h-8 bg-stone-50 rounded-xl animate-pulse" />
+              <div className="w-24 h-8 bg-stone-100 rounded-xl animate-pulse" />
+            </div>
+          ))}
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <div className="animate-in fade-in pb-24">
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg mb-6 sticky top-0 z-10">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <FaTruck className="text-orange-500" /> Logística Interna
-          </h1>
-        </div>
-        <div className="flex gap-2 w-full md:w-auto">
-          <button
-            onClick={() => {
-              setIsDetailModalOpen(true);
-              setSelectedRequest(null);
-            }}
-            className="bg-slate-700 hover:bg-slate-600 text-gray-300 px-4 py-3 rounded-lg font-bold flex items-center gap-2 shadow-lg flex-1 md:flex-none justify-center"
-          >
-            <FaHistory /> <span className="hidden md:inline">HISTORIAL</span>
-          </button>
-          <button
-            onClick={() => setIsNewModalOpen(true)}
-            className="bg-orange-600 hover:bg-orange-500 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 shadow-lg active:scale-95 flex-1 md:flex-none justify-center"
-          >
-            <FaPlus /> NUEVA
-          </button>
-        </div>
-      </div>
+    <div
+      className="min-h-full bg-[#fcfbf9] flex flex-col font-sans pb-12 animate-in fade-in"
+      onClick={() => setOpenMenuId(null)}
+    >
+      {/* HEADER TRANSLÚCIDO ESTILO LEBANE */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-stone-100 px-6 py-5 md:px-10 md:py-6 shrink-0 z-20 sticky top-0">
+        <div className="max-w-[1200px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-[#e3f2fd] border border-[#bbdefb] flex items-center justify-center text-[#2196f3] shadow-sm shrink-0">
+              <FaTruck size={20} />
+            </div>
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight leading-none mb-1.5">
+                Logística Interna
+              </h1>
+              <p className="text-[11px] font-semibold text-stone-400 tracking-wider uppercase">
+                Panel de Movimientos Activos
+              </p>
+            </div>
+          </div>
 
-      {/* GRID ACTIVO */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {activeRequests.map((req) => (
-          <motion.div
-            layout
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            key={req.id}
-            onClick={() => openDetailModal(req, "CHAT")}
-            className={`bg-slate-800 rounded-xl p-4 border-l-4 shadow-md flex flex-col gap-2 relative group cursor-pointer hover:bg-slate-750 transition-colors
-            ${
-              req.estado === "PENDIENTE"
-                ? req.prioridad === "ALTA"
-                  ? "border-red-500"
-                  : "border-blue-500"
-                : req.estado === "PREPARADO"
-                ? "border-purple-500"
-                : "border-green-500"
-            }`}
-          >
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <PriorityBadge priority={req.prioridad} />
-                  <span className="text-[10px] text-gray-500 flex items-center gap-1">
-                    <FaClock size={10} />{" "}
-                    {formatearFechaHora(req.fecha_creacion).split(" ")[0]}
-                  </span>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button
+              onClick={() => {
+                setIsDetailModalOpen(true);
+                setSelectedRequest(null);
+              }}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2.5 bg-white hover:bg-stone-50 text-stone-600 border border-stone-200 font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
+            >
+              <FaHistory size={12} className="text-stone-400" /> HISTORIAL
+            </button>
+            <button
+              onClick={() => setIsNewModalOpen(true)}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2.5 bg-[#2196f3] hover:bg-blue-600 text-white font-bold text-xs px-6 py-2.5 rounded-xl shadow-[0_8px_20px_-6px_rgba(33,150,243,0.4)] transition-all active:scale-95"
+            >
+              <FaPlus size={10} /> CREAR SOLICITUD
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* CONTENEDOR PRINCIPAL */}
+      <main className="flex-1 w-full max-w-[1200px] mx-auto p-4 md:p-8 mt-2">
+        {activeRequests.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 bg-white/50 border border-dashed border-stone-200/60 rounded-[2rem]">
+            <div className="w-16 h-16 bg-stone-50 text-stone-300 rounded-full flex items-center justify-center mb-4 border border-stone-100">
+              <FaCheckCircle size={24} />
+            </div>
+            <h3 className="text-base font-bold text-slate-700 mb-1">
+              Bandeja Limpia
+            </h3>
+            <p className="text-xs font-medium text-stone-400 text-center max-w-xs">
+              No hay solicitudes pendientes en curso. Las solicitudes cerradas
+              se encuentran en el Historial.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col">
+            {/* Encabezado de Tabla (Solo Desktop) - Alineado a los anchos del LogisticaRow */}
+            <div className="hidden md:flex items-center gap-4 px-6 py-3 text-[9px] font-bold uppercase tracking-widest text-stone-400 mb-2">
+              <div className="w-36 pl-1">Prioridad / Fecha</div>
+              <div className="flex-1">Producto y Solicitante</div>
+              <div className="w-28 text-right pr-6">Cantidad</div>
+              <div className="w-36 pl-4">Estado</div>
+              <div className="w-16 text-center"></div>{" "}
+              {/* Espacio para los 3 puntos */}
+            </div>
+
+            {/* Listado de Filas (Row Cards) */}
+            <div className="flex flex-col gap-3 md:gap-2.5 pb-8">
+              <AnimatePresence mode="popLayout">
+                {currentItems.map((req) => (
+                  <LogisticaRow
+                    key={req.id}
+                    req={req}
+                    isBoss={isBoss}
+                    onOpenDetail={openDetailModal}
+                    onDelete={handleDelete}
+                    onStatusChange={handleStatusChange}
+                    openMenuId={openMenuId}
+                    setOpenMenuId={setOpenMenuId}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+
+            {/* Paginación Elegante Lebane */}
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center gap-2 mt-4 mb-8">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 hover:bg-stone-50 hover:text-[#2196f3] disabled:opacity-40 disabled:hover:text-stone-500 disabled:hover:bg-white transition-all shadow-sm"
+                >
+                  <FaChevronLeft size={10} />
+                </button>
+
+                <div className="flex gap-1.5 bg-white border border-stone-200 p-1 rounded-xl shadow-sm">
+                  {[...Array(totalPages)].map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setCurrentPage(i + 1)}
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-xs font-bold transition-all ${
+                        currentPage === i + 1
+                          ? "bg-[#e3f2fd] text-[#2196f3]"
+                          : "text-stone-500 hover:bg-stone-50"
+                      }`}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
                 </div>
-                <h3 className="text-lg font-bold text-white leading-tight">
-                  {req.producto}
-                </h3>
-              </div>
-              <div className="text-right">
-                <span className="block text-2xl font-mono font-bold text-white">
-                  {req.cantidad}
-                </span>
-                <span className="text-[10px] text-gray-500 uppercase">
-                  Unidades
-                </span>
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between text-xs text-gray-400 mt-1 border-t border-slate-700/50 pt-2">
-              <span className="flex items-center gap-1">
-                <FaUser /> {req.solicitante || "Anónimo"}
-              </span>
-              <StatusBadge status={req.estado} />
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              {/* BOTONES DE ACCIÓN */}
-              {req.estado === "PENDIENTE" && isBoss && (
-                <>
-                  <button
-                    onClick={(e) => handleStatusChange(e, req.id, "APROBADO")}
-                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded text-xs font-bold"
-                  >
-                    APROBAR
-                  </button>
-                  <button
-                    onClick={(e) => handleStatusChange(e, req.id, "RECHAZADO")}
-                    className="flex-1 bg-slate-700 hover:bg-red-900 text-gray-300 hover:text-white py-2 rounded text-xs font-bold"
-                  >
-                    RECHAZAR
-                  </button>
-                </>
-              )}
-
-              {req.estado === "APROBADO" && isBoss && (
                 <button
-                  onClick={(e) => handleStatusChange(e, req.id, "PREPARADO")}
-                  className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-2"
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(totalPages, p + 1))
+                  }
+                  disabled={currentPage === totalPages}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-stone-200 bg-white text-stone-500 hover:bg-stone-50 hover:text-[#2196f3] disabled:opacity-40 disabled:hover:text-stone-500 disabled:hover:bg-white transition-all shadow-sm"
                 >
-                  <FaBoxOpen /> LISTO PARA DESPACHAR
+                  <FaChevronRight size={10} />
                 </button>
-              )}
-
-              {req.estado === "PREPARADO" && isBoss && (
-                <button
-                  onClick={(e) => handleStatusChange(e, req.id, "ENTREGADO")}
-                  className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-2"
-                >
-                  <FaCheckDouble /> ENTREGADO
-                </button>
-              )}
-
-              <button
-                onClick={(e) => handleDelete(e, req.id)}
-                className="p-2 text-gray-600 hover:text-red-500 ml-auto z-10"
-              >
-                <FaTrash />
-              </button>
-            </div>
-          </motion.div>
-        ))}
-        {activeRequests.length === 0 && (
-          <div className="col-span-full py-10 text-center text-gray-500">
-            Sin solicitudes pendientes.
+              </div>
+            )}
           </div>
         )}
-      </div>
+      </main>
 
-      {/* --- MODAL NUEVA SOLICITUD (SIMPLIFICADO) --- */}
+      {/* --- MODAL CREAR SOLICITUD (Diseño Limpio y Predictivo) --- */}
       <AnimatePresence>
         {isNewModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm p-0 md:p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 backdrop-blur-sm p-4">
             <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              className="bg-slate-800 w-full md:max-w-md rounded-t-2xl md:rounded-2xl border border-slate-600 shadow-2xl"
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              className="bg-white w-full max-w-lg rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] flex flex-col relative overflow-visible"
             >
-              <div className="p-4 bg-slate-900 border-b border-slate-700 flex justify-between items-center">
-                {/* Título Cambiado */}
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <FaPlus className="text-orange-500" /> Solicitar
+              <div className="p-6 md:p-8 border-b border-stone-100 flex justify-between items-center bg-[#fcfbf9] rounded-t-[2rem]">
+                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
+                  <div className="p-2.5 bg-[#e3f2fd] text-[#2196f3] rounded-xl">
+                    <FaPlus size={14} />
+                  </div>
+                  Crear Solicitud
                 </h3>
                 <button
-                  onClick={() => setIsNewModalOpen(false)}
-                  className="text-gray-400 hover:text-white text-2xl"
+                  onClick={() => {
+                    setIsNewModalOpen(false);
+                    setForm({
+                      producto: "",
+                      cantidad: "",
+                      prioridad: "MEDIA",
+                      notas: "",
+                    });
+                    setResetKey((prev) => prev + 1);
+                  }}
+                  className="text-stone-400 hover:text-slate-800 bg-white border border-stone-200 p-2.5 rounded-full shadow-sm transition-all active:scale-95"
                 >
-                  &times;
+                  <FaTimes size={14} />
                 </button>
               </div>
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                <div>
-                  <label className="text-xs text-gray-400 uppercase font-bold">
-                    Producto
+
+              <form onSubmit={handleSubmit} className="p-6 md:p-8 space-y-6">
+                {/* Buscador Predictivo Premium */}
+                <div className="space-y-1.5 relative z-[100]">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1 block">
+                    Producto Semielaborado a mover
                   </label>
-                  <input
-                    autoFocus
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white mt-1"
-                    value={form.producto}
-                    onChange={(e) =>
-                      setForm({ ...form, producto: e.target.value })
-                    }
-                  />
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-stone-300 group-focus-within:text-[#2196f3] transition-colors z-10">
+                      <FaSearch size={12} />
+                    </div>
+                    {/* Anulamos el estilo nativo del AutoComplete y le inyectamos el nuestro */}
+                    <div className="[&_input]:w-full [&_input]:bg-stone-50 hover:[&_input]:bg-stone-100 [&_input]:border [&_input]:border-transparent [&_input]:rounded-xl [&_input]:py-3.5 [&_input]:pl-11 [&_input]:pr-4 [&_input]:text-sm [&_input]:font-bold [&_input]:text-slate-700 focus-within:[&_input]:border-[#bbdefb] focus-within:[&_input]:bg-white focus-within:[&_input]:ring-4 focus-within:[&_input]:ring-[#e3f2fd] [&_input]:transition-all [&_input]:outline-none">
+                      <AutoCompleteInput
+                        key={resetKey}
+                        items={allSemis}
+                        onSelect={(item) =>
+                          setForm({ ...form, producto: item.nombre })
+                        }
+                        placeholder="Buscar por nombre o código..."
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase font-bold">
-                      Cant.
+
+                <div className="grid grid-cols-2 gap-5 relative z-10">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1 block">
+                      Cantidad Total (u.)
                     </label>
                     <input
                       type="number"
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white mt-1"
+                      placeholder="Ej. 150"
+                      className="w-full bg-stone-50 hover:bg-stone-100 border border-transparent rounded-xl p-3.5 text-sm font-bold text-slate-700 focus:border-[#bbdefb] focus:bg-white focus:ring-4 focus:ring-[#e3f2fd] outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       value={form.cantidad}
                       onChange={(e) =>
                         setForm({ ...form, cantidad: e.target.value })
                       }
                     />
                   </div>
-                  <div>
-                    <label className="text-xs text-gray-400 uppercase font-bold">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 pl-1 block">
                       Prioridad
                     </label>
                     <select
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white mt-1"
+                      className="w-full bg-stone-50 hover:bg-stone-100 border border-transparent rounded-xl p-3.5 text-sm font-bold text-slate-700 focus:border-[#bbdefb] focus:bg-white focus:ring-4 focus:ring-[#e3f2fd] outline-none transition-all appearance-none cursor-pointer"
                       value={form.prioridad}
                       onChange={(e) =>
                         setForm({ ...form, prioridad: e.target.value })
                       }
                     >
-                      <option value="BAJA">Baja</option>
-                      <option value="MEDIA">Media</option>
-                      <option value="ALTA">Alta</option>
+                      <option value="BAJA">Baja - Rutina</option>
+                      <option value="MEDIA">Media - Normal</option>
+                      <option value="ALTA">Alta - Urgente</option>
                     </select>
                   </div>
                 </div>
-                {/* CAMPO NOTAS ELIMINADO VISUALMENTE */}
-                <button
-                  type="submit"
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 rounded-xl mt-2"
-                >
-                  ENVIAR SOLICITUD
-                </button>
+
+                <div className="pt-2 relative z-10">
+                  <button
+                    type="submit"
+                    className="w-full flex items-center justify-center gap-2 bg-[#2196f3] hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] text-sm"
+                  >
+                    <FaPaperPlane size={12} /> Solicitar Movimiento
+                  </button>
+                </div>
               </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* --- MODAL DETALLE --- */}
+      {/* --- MODAL HISTORIAL GLOBAL / DETALLE --- */}
       <AnimatePresence>
         {isDetailModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-2 md:p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 backdrop-blur-sm p-4">
             <motion.div
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="bg-slate-900 w-full max-w-5xl h-[90vh] rounded-2xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-[1200px] h-[85vh] md:h-[80vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-stone-100"
             >
-              <div className="p-4 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  <FaList className="text-blue-500" /> Panel Global
+              {/* Header Modal */}
+              <div className="p-6 border-b border-stone-100 bg-[#fcfbf9] flex justify-between items-center shrink-0">
+                <h3 className="text-lg md:text-xl font-bold text-slate-800 flex items-center gap-3">
+                  <div className="p-2.5 bg-white border border-stone-200 text-stone-600 rounded-xl shadow-sm">
+                    <FaHistory size={16} />
+                  </div>
+                  Historial y Auditoría
                 </h3>
                 <button
                   onClick={() => {
                     setIsDetailModalOpen(false);
                     setSelectedRequest(null);
                   }}
-                  className="text-gray-400 hover:text-white text-2xl"
+                  className="text-stone-400 hover:text-slate-800 bg-white border border-stone-200 p-2.5 rounded-full shadow-sm transition-all"
                 >
-                  &times;
+                  <FaTimes size={14} />
                 </button>
               </div>
 
-              <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+              {/* Cuerpo Modal (Split View) */}
+              <div className="flex flex-1 overflow-hidden flex-col md:flex-row bg-[#fcfbf9]">
+                {/* Panel Izquierdo: Lista Completa */}
                 <div
-                  className={`${
-                    selectedRequest ? "hidden md:block" : "block"
-                  } flex-1 overflow-y-auto custom-scrollbar border-r border-slate-700 bg-slate-900/50`}
+                  className={`${selectedRequest ? "hidden md:flex" : "flex"} flex-col w-full md:w-[420px] border-r border-stone-100 bg-white`}
                 >
-                  <table className="w-full text-left text-sm text-gray-300">
-                    <thead className="bg-slate-800 text-gray-400 sticky top-0 uppercase text-xs z-10">
-                      <tr>
-                        <th className="p-3">Fecha</th>
-                        <th className="p-3">Producto</th>
-                        <th className="p-3">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-700">
-                      {requests.map((req) => (
-                        <tr
-                          key={req.id}
-                          onClick={() => openDetailModal(req)}
-                          className={`cursor-pointer transition-colors ${
-                            selectedRequest?.id === req.id
-                              ? "bg-blue-900/20"
-                              : "hover:bg-slate-800"
-                          }`}
-                        >
-                          <td className="p-3 text-xs whitespace-nowrap text-gray-400">
-                            {
-                              formatearFechaHora(req.fecha_creacion).split(
-                                " "
-                              )[0]
-                            }
-                            <br />
-                            <span className="opacity-50">
-                              {
-                                formatearFechaHora(req.fecha_creacion).split(
-                                  " "
-                                )[1]
-                              }
-                            </span>
-                          </td>
-                          <td className="p-3 font-medium text-white">
-                            {req.producto}
-                            <span className="block text-gray-500 text-[10px]">
-                              {req.cantidad} u. • {req.solicitante}
-                            </span>
-                          </td>
-                          <td className="p-3">
-                            <StatusBadge status={req.estado} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="overflow-y-auto custom-scrollbar flex-1 p-4 space-y-2">
+                    {requests.map((req) => (
+                      <div
+                        key={req.id}
+                        onClick={() => openDetailModal(req)}
+                        className={`p-4 rounded-2xl cursor-pointer transition-all border ${
+                          selectedRequest?.id === req.id
+                            ? "bg-[#fafaf8] border-blue-200 shadow-sm ring-2 ring-blue-50"
+                            : "bg-white border-stone-100 hover:border-stone-300 hover:shadow-sm"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2.5">
+                          <span className="text-[10px] text-stone-400 font-bold flex items-center gap-1.5">
+                            <FaClock size={9} />{" "}
+                            {formatearFechaHora(req.fecha_creacion)}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest border ${getStatusColorTable(req.estado)}`}
+                          >
+                            {req.estado}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-700 truncate leading-snug">
+                          {req.producto}
+                        </h4>
+                        <div className="flex justify-between items-center mt-2">
+                          <span className="text-[10px] font-medium text-stone-400 flex items-center gap-1.5">
+                            <FaUser size={9} className="text-stone-300" />{" "}
+                            {req.solicitante}
+                          </span>
+                          <span className="text-xs font-bold text-slate-600 bg-stone-50 px-2.5 py-0.5 rounded-lg border border-stone-100">
+                            {req.cantidad} u.
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
+                {/* Panel Derecho: Detalle de Solicitud */}
                 <div
-                  className={`${
-                    !selectedRequest ? "hidden md:flex" : "flex"
-                  } w-full md:w-5/12 bg-slate-800 flex-col border-t md:border-t-0 border-slate-700`}
+                  className={`${!selectedRequest ? "hidden md:flex" : "flex"} flex-1 flex-col relative bg-[#fcfbf9]`}
                 >
                   {!selectedRequest ? (
-                    <div className="h-full flex flex-col items-center justify-center text-gray-500 p-6">
-                      <FaHistory className="text-4xl mb-3 opacity-30" />
-                      <p>Selecciona una solicitud.</p>
+                    <div className="h-full flex flex-col items-center justify-center text-stone-400 p-8 text-center">
+                      <div className="w-20 h-20 rounded-full bg-white border border-stone-100 flex items-center justify-center mb-6 shadow-sm">
+                        <FaList size={28} className="text-stone-300" />
+                      </div>
+                      <h3 className="text-base font-bold text-slate-600">
+                        Historial General
+                      </h3>
+                      <p className="text-sm font-medium text-stone-400 mt-2 max-w-[250px]">
+                        Selecciona una solicitud de la lista para ver su
+                        recorrido completo y notas de seguimiento.
+                      </p>
                     </div>
                   ) : (
                     <>
-                      <div className="p-4 border-b border-slate-700 bg-slate-800 flex justify-between items-center shadow-md z-10">
+                      {/* Cabecera del Detalle */}
+                      <div className="p-6 md:p-8 border-b border-stone-100 bg-white flex flex-col md:flex-row justify-between md:items-center gap-5 shrink-0 z-10 shadow-sm">
                         <div>
                           <button
                             onClick={() => setSelectedRequest(null)}
-                            className="md:hidden text-gray-400 text-xs mb-1"
+                            className="md:hidden text-[#2196f3] text-[10px] font-bold uppercase tracking-widest mb-3 flex items-center gap-1.5"
                           >
-                            ← Volver
+                            <FaChevronLeft size={8} /> Volver a la lista
                           </button>
-                          <h4 className="text-white font-bold text-lg leading-none">
-                            Solicitud #{selectedRequest.id}
+                          <div className="flex items-center gap-3 mb-1.5">
+                            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                              ID: {selectedRequest.id}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-widest border ${getStatusColorTable(selectedRequest.estado)}`}
+                            >
+                              {selectedRequest.estado}
+                            </span>
+                          </div>
+                          <h4 className="text-lg md:text-xl font-bold text-slate-800 leading-tight">
+                            {selectedRequest.producto}{" "}
+                            <span className="text-[#2196f3]">
+                              ({selectedRequest.cantidad} u.)
+                            </span>
                           </h4>
-                          <p className="text-xs text-orange-400 mt-1">
-                            {selectedRequest.producto} (
-                            {selectedRequest.cantidad})
-                          </p>
                         </div>
-                        <div className="flex bg-slate-900 rounded p-1">
+
+                        {/* Pestañas Chat/Auditoría */}
+                        <div className="flex bg-stone-50 rounded-xl p-1.5 border border-stone-200 shrink-0">
                           <button
                             onClick={() => setActiveTab("TIMELINE")}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            className={`px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all ${
                               activeTab === "TIMELINE"
-                                ? "bg-blue-600 text-white"
-                                : "text-gray-400"
+                                ? "bg-white text-slate-700 shadow-sm"
+                                : "text-stone-400 hover:text-stone-600"
                             }`}
                           >
-                            AUDITORÍA
+                            Recorrido
                           </button>
                           <button
                             onClick={() => setActiveTab("CHAT")}
-                            className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            className={`px-5 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
                               activeTab === "CHAT"
-                                ? "bg-green-600 text-white"
-                                : "text-gray-400"
+                                ? "bg-white text-[#2196f3] shadow-sm"
+                                : "text-stone-400 hover:text-stone-600"
                             }`}
                           >
-                            CHAT
+                            <FaComments size={12} /> Notas
                           </button>
                         </div>
                       </div>
 
-                      <div className="flex-1 overflow-y-auto custom-scrollbar relative bg-slate-900/30">
+                      {/* Contenido (Timeline o Chat) */}
+                      <div className="flex-1 overflow-y-auto custom-scrollbar relative">
                         {loadingData ? (
-                          <div className="flex justify-center p-10">
+                          <div className="flex justify-center items-center h-full">
                             <Loader />
                           </div>
                         ) : activeTab === "TIMELINE" ? (
-                          <div className="p-6">
-                            <div className="relative border-l-2 border-slate-600 ml-3 space-y-8 pl-6">
+                          <div className="p-8 md:p-12">
+                            <div className="relative border-l-2 border-stone-200 ml-6 space-y-10 pl-10">
                               {historyTimeline.map((log, i) => (
                                 <div key={i} className="relative">
                                   <div
-                                    className={`absolute -left-[33px] top-0 h-8 w-8 rounded-full border-4 border-slate-800 flex items-center justify-center ${
+                                    className={`absolute -left-[51px] top-0 h-10 w-10 rounded-full border-4 border-[#fcfbf9] flex items-center justify-center shadow-sm ${
                                       log.esOriginal
-                                        ? "bg-orange-500 text-white"
-                                        : "bg-slate-700 text-gray-300"
+                                        ? "bg-[#e3f2fd] text-[#2196f3]"
+                                        : "bg-white text-stone-400"
                                     }`}
                                   >
                                     {getIcon(log.accion)}
                                   </div>
-                                  <div className="flex flex-col">
-                                    <div className="flex justify-between">
-                                      <span className="text-xs font-bold text-blue-400">
+                                  <div className="flex flex-col bg-white p-6 rounded-2xl border border-stone-100 shadow-sm">
+                                    <div className="flex justify-between items-center mb-3">
+                                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-widest">
                                         {log.accion}
                                       </span>
-                                      <span className="text-[10px] text-gray-500">
+                                      <span className="text-[10px] font-medium text-stone-400 bg-stone-50 px-2.5 py-1 rounded-lg">
                                         {formatearFechaHora(log.fecha)}
                                       </span>
                                     </div>
-                                    <p className="text-sm text-gray-200 mt-1">
+                                    <p className="text-sm text-stone-600 font-medium leading-relaxed">
                                       {log.detalle}
                                     </p>
-                                    <span className="text-[10px] text-gray-500 mt-1 flex items-center gap-1">
-                                      <FaUser /> {log.usuario}
-                                    </span>
+                                    <div className="mt-4 pt-4 border-t border-stone-50 flex items-center gap-2 text-[10px] font-bold text-stone-400 uppercase tracking-widest">
+                                      <FaUser
+                                        size={10}
+                                        className="text-stone-300"
+                                      />{" "}
+                                      {log.usuario}
+                                    </div>
                                   </div>
                                 </div>
                               ))}
@@ -670,12 +1010,21 @@ export default function LogisticaPage() {
                           </div>
                         ) : (
                           <div className="flex flex-col h-full">
-                            <div className="flex-1 p-4 space-y-3">
+                            <div className="flex-1 p-6 md:p-8 space-y-6">
                               {comments.length === 0 && (
-                                <p className="text-center text-gray-500 text-xs mt-10">
-                                  No hay comentarios aún. ¡Inicia la
-                                  conversación!
-                                </p>
+                                <div className="h-full flex flex-col items-center justify-center text-stone-300">
+                                  <FaComments
+                                    size={32}
+                                    className="mb-4 opacity-50 text-stone-200"
+                                  />
+                                  <p className="text-sm font-bold text-stone-400">
+                                    Sin anotaciones aún.
+                                  </p>
+                                  <p className="text-[11px] font-medium mt-1">
+                                    Utiliza el chat abajo para dejar directivas
+                                    claras a la solicitud.
+                                  </p>
+                                </div>
                               )}
                               {comments.map((msg, i) => {
                                 const isMe = msg.usuario === currentUser;
@@ -686,22 +1035,24 @@ export default function LogisticaPage() {
                                       isMe ? "items-end" : "items-start"
                                     }`}
                                   >
-                                    <span className="text-[10px] text-gray-400 mb-0.5 px-1 font-bold">
+                                    <span className="text-[9px] font-bold uppercase tracking-widest text-stone-400 mb-1.5 px-2">
                                       {msg.usuario}
                                     </span>
                                     <div
-                                      className={`max-w-[85%] p-3 rounded-xl text-sm shadow-md ${
+                                      className={`max-w-[85%] px-5 py-3.5 text-sm font-medium shadow-sm ${
                                         isMe
-                                          ? "bg-green-700 text-white rounded-tr-none"
-                                          : "bg-slate-700 text-gray-200 rounded-tl-none"
+                                          ? "bg-[#2196f3] text-white rounded-[20px] rounded-tr-sm"
+                                          : "bg-white border border-stone-200 text-slate-700 rounded-[20px] rounded-tl-sm"
                                       }`}
                                     >
-                                      <p>{msg.mensaje}</p>
+                                      <p className="leading-relaxed">
+                                        {msg.mensaje}
+                                      </p>
                                     </div>
-                                    <span className="text-[9px] text-gray-600 mt-0.5 px-1">
+                                    <span className="text-[9px] font-medium text-stone-400 mt-1.5 px-2">
                                       {
                                         formatearFechaHora(msg.fecha).split(
-                                          " "
+                                          " ",
                                         )[1]
                                       }{" "}
                                       hs
@@ -715,22 +1066,24 @@ export default function LogisticaPage() {
                         )}
                       </div>
 
+                      {/* Input de Chat Estilo Lebane */}
                       {activeTab === "CHAT" && (
                         <form
                           onSubmit={handleSendComment}
-                          className="p-3 bg-slate-800 border-t border-slate-700 flex gap-2"
+                          className="p-5 bg-white border-t border-stone-100 flex gap-3 shrink-0 relative z-20"
                         >
                           <input
-                            className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-green-500 outline-none"
-                            placeholder="Escribe un comentario..."
+                            className="flex-1 bg-stone-50 border border-transparent focus:border-[#bbdefb] focus:bg-white focus:ring-4 focus:ring-[#e3f2fd] rounded-xl px-5 py-3.5 text-sm font-semibold text-slate-700 outline-none transition-all shadow-sm"
+                            placeholder="Escribir una anotación o directiva..."
                             value={newComment}
                             onChange={(e) => setNewComment(e.target.value)}
                           />
                           <button
                             type="submit"
-                            className="bg-green-600 hover:bg-green-500 text-white p-3 rounded-lg"
+                            disabled={!newComment.trim()}
+                            className="bg-[#2196f3] hover:bg-blue-700 disabled:bg-stone-100 disabled:text-stone-300 text-white p-4 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center w-14"
                           >
-                            <FaPaperPlane />
+                            <FaPaperPlane size={14} className="ml-[-2px]" />
                           </button>
                         </form>
                       )}

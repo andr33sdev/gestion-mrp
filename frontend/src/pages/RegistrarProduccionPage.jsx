@@ -1,24 +1,23 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
-  FaPlus,
   FaSpinner,
-  FaClipboardList,
-  FaBoxOpen,
-  FaUser,
-  FaCalendarAlt,
   FaExchangeAlt,
   FaTrash,
   FaCheckCircle,
   FaExclamationTriangle,
   FaSave,
-  FaSearch,
+  FaBoxOpen,
   FaListUl,
+  FaUserCog,
+  FaChevronDown,
+  FaClipboardCheck,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import { API_BASE_URL, authFetch } from "../utils.js";
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
 
-// --- SUB-COMPONENTE: TARJETA DE ITEM EN LISTA (RESPONSIVE) ---
+// --- SUB-COMPONENTE: TARJETA DE ITEM (DISEÑO SUTIL Y DELICADO) ---
 const ProductionItemCard = ({ item, index, onUpdate, onRemove }) => {
   const hasScrap = item.cantidadScrap > 0;
 
@@ -27,41 +26,46 @@ const ProductionItemCard = ({ item, index, onUpdate, onRemove }) => {
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      className={`relative p-5 rounded-2xl border-l-4 shadow-lg transition-all group ${
-        hasScrap
-          ? "bg-slate-800 border-red-500 shadow-red-900/10"
-          : "bg-slate-800 border-green-500 shadow-green-900/10"
-      }`}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="relative bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_8px_20px_-6px_rgba(0,0,0,0.08)] transition-all duration-300 group"
     >
-      <div className="flex justify-between items-start mb-4">
-        <div className="pr-10">
-          <h4 className="font-bold text-white text-lg leading-tight tracking-tight">
+      {/* Indicador de estado lateral (minimalista) */}
+      <div
+        className={`absolute left-0 top-1/2 -translate-y-1/2 h-8 w-[3px] rounded-2xl transition-colors duration-300 ${
+          hasScrap ? "bg-rose-400" : "bg-emerald-400"
+        }`}
+      />
+
+      {/* Cabecera de la tarjeta */}
+      <div className="flex justify-between items-start mb-5 pl-2">
+        <div className="pr-6">
+          <h4 className="font-semibold text-slate-700 text-sm leading-snug mb-1.5">
             {item.nombre}
           </h4>
-          <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-gray-400 border border-slate-700">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-mono font-medium bg-slate-50 border border-slate-100 text-slate-400">
             {item.codigo}
           </span>
         </div>
         <button
           onClick={() => onRemove(index)}
-          className="absolute top-4 right-4 text-slate-600 hover:text-red-400 p-2 rounded-full hover:bg-slate-700/50 transition-colors"
-          title="Quitar de la lista"
+          className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-xl transition-all duration-200 shrink-0"
+          title="Eliminar"
         >
-          <FaTrash />
+          <FaTrash size={13} />
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* INPUT OK */}
-        <div className="bg-slate-900/80 p-3 rounded-xl border border-green-500/20 focus-within:border-green-500/50 transition-colors">
-          <label className="block text-[10px] uppercase font-bold text-green-400 mb-1 flex items-center gap-1.5">
-            <FaCheckCircle /> Cantidad OK
+      {/* Inputs Numéricos */}
+      <div className="grid grid-cols-2 gap-3 pl-2">
+        {/* Cantidad OK */}
+        <div className="bg-slate-50/50 hover:bg-slate-50 rounded-xl p-3 border border-slate-100/60 focus-within:border-emerald-200 focus-within:bg-white focus-within:ring-4 focus-within:ring-emerald-50 transition-all duration-200">
+          <label className="flex items-center gap-1.5 text-[9px] uppercase font-semibold tracking-wider text-slate-400 mb-1">
+            <FaCheckCircle size={10} className="text-emerald-400" /> Producido
           </label>
           <input
             type="number"
             min="0"
-            className="w-full bg-transparent text-2xl font-bold text-white outline-none placeholder-slate-700"
+            className="w-full bg-transparent text-2xl font-medium text-slate-700 outline-none placeholder-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             placeholder="0"
             value={item.cantidadOk}
             onChange={(e) =>
@@ -71,15 +75,15 @@ const ProductionItemCard = ({ item, index, onUpdate, onRemove }) => {
           />
         </div>
 
-        {/* INPUT SCRAP */}
-        <div className="bg-slate-900/80 p-3 rounded-xl border border-red-500/20 focus-within:border-red-500/50 transition-colors">
-          <label className="block text-[10px] uppercase font-bold text-red-400 mb-1 flex items-center gap-1.5">
-            <FaExclamationTriangle /> Fallas
+        {/* Cantidad Scrap */}
+        <div className="bg-slate-50/50 hover:bg-slate-50 rounded-xl p-3 border border-slate-100/60 focus-within:border-rose-200 focus-within:bg-white focus-within:ring-4 focus-within:ring-rose-50 transition-all duration-200">
+          <label className="flex items-center gap-1.5 text-[9px] uppercase font-semibold tracking-wider text-slate-400 mb-1">
+            <FaExclamationTriangle size={10} className="text-rose-400" /> Fallas
           </label>
           <input
             type="number"
             min="0"
-            className="w-full bg-transparent text-2xl font-bold text-white outline-none placeholder-slate-700"
+            className="w-full bg-transparent text-2xl font-medium text-slate-700 outline-none placeholder-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             placeholder="0"
             value={item.cantidadScrap}
             onChange={(e) =>
@@ -90,32 +94,35 @@ const ProductionItemCard = ({ item, index, onUpdate, onRemove }) => {
         </div>
       </div>
 
-      {/* MOTIVO SCRAP (Solo visible si hay scrap) */}
+      {/* Select de Motivo de Scrap */}
       <AnimatePresence>
         {hasScrap && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden mt-3"
+            className="overflow-hidden mt-3 pl-2"
           >
-            <select
-              className="w-full bg-red-900/10 border border-red-500/30 text-red-200 text-sm rounded-lg p-2.5 outline-none focus:border-red-500 cursor-pointer"
-              value={item.motivoScrap}
-              onChange={(e) => onUpdate(index, "motivoScrap", e.target.value)}
-            >
-              <option value="">-- Seleccionar Motivo de Falla --</option>
-              <option value="Pieza quemada">Pieza quemada</option>
-              <option value="Pieza cruda">Pieza cruda</option>
-              <option value="Material erróneo">Material erróneo</option>
-              <option value="Materia prima defectuosa">
-                Materia prima defectuosa
-              </option>
-              <option value="Matriz fría">Matriz fría</option>
-              <option value="Sin respiradero">Sin respiradero</option>
-              <option value="Sin silicona">Sin silicona</option>
-              <option value="Otros">Otros</option>
-            </select>
+            <div className="relative pt-1">
+              <select
+                className="w-full bg-white border border-rose-100 text-rose-600 text-xs font-medium rounded-xl px-3 py-2.5 outline-none focus:border-rose-300 focus:ring-4 focus:ring-rose-50 appearance-none cursor-pointer transition-all"
+                value={item.motivoScrap}
+                onChange={(e) => onUpdate(index, "motivoScrap", e.target.value)}
+              >
+                <option value="">Seleccionar motivo...</option>
+                <option value="Pieza quemada">Pieza quemada</option>
+                <option value="Pieza cruda">Pieza cruda</option>
+                <option value="Material erróneo">Material erróneo</option>
+                <option value="Materia prima defectuosa">
+                  Materia prima defectuosa
+                </option>
+                <option value="Matriz fría">Matriz fría</option>
+                <option value="Sin respiradero">Sin respiradero</option>
+                <option value="Sin silicona">Sin silicona</option>
+                <option value="Otros">Otros</option>
+              </select>
+              <FaChevronDown className="absolute right-3 top-[60%] -translate-y-1/2 text-rose-300 pointer-events-none text-[10px]" />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -124,12 +131,10 @@ const ProductionItemCard = ({ item, index, onUpdate, onRemove }) => {
 };
 
 export default function RegistrarProduccionPage() {
-  // --- ESTADOS GLOBALES ---
   const [openPlans, setOpenPlans] = useState([]);
   const [operarios, setOperarios] = useState([]);
-  const [planProducts, setPlanProducts] = useState([]); // Productos DEL PLAN seleccionado
+  const [planProducts, setPlanProducts] = useState([]);
 
-  // --- ESTADOS DEL FORMULARIO (CONTEXTO) ---
   const [contexto, setContexto] = useState({
     operarioId: "",
     planId: "",
@@ -137,16 +142,13 @@ export default function RegistrarProduccionPage() {
     turno: "Diurno",
   });
 
-  // --- ESTADOS DE CARGA (ITEMS) ---
   const [items, setItems] = useState([]);
-  const [productToAdd, setProductToAdd] = useState(null); // Objeto completo del producto
-  const [resetKey, setResetKey] = useState(0); // Para limpiar el input
+  const [resetKey, setResetKey] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [loadingPlanItems, setLoadingPlanItems] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // --- 1. CARGA INICIAL ---
   useEffect(() => {
     const initData = async () => {
       try {
@@ -157,7 +159,7 @@ export default function RegistrarProduccionPage() {
         if (resPlanes.ok) setOpenPlans(await resPlanes.json());
         if (resOps.ok) setOperarios(await resOps.json());
       } catch (e) {
-        console.error(e);
+        toast.error("Error al cargar datos iniciales");
       } finally {
         setLoading(false);
       }
@@ -165,7 +167,6 @@ export default function RegistrarProduccionPage() {
     initData();
   }, []);
 
-  // --- 2. CARGAR PRODUCTOS AL SELECCIONAR PLAN ---
   useEffect(() => {
     if (!contexto.planId) {
       setPlanProducts([]);
@@ -188,7 +189,7 @@ export default function RegistrarProduccionPage() {
           setPlanProducts(productosDisponibles);
         }
       } catch (e) {
-        console.error(e);
+        toast.error("Error al cargar productos del plan");
       } finally {
         setLoadingPlanItems(false);
       }
@@ -196,33 +197,28 @@ export default function RegistrarProduccionPage() {
     fetchPlanItems();
   }, [contexto.planId]);
 
-  // --- HANDLERS ---
-
   const handleContextChange = (field, value) => {
     setContexto((prev) => ({ ...prev, [field]: value }));
     if (field === "planId") {
       setItems([]);
-      setProductToAdd(null);
-      setResetKey((prev) => prev + 1); // Limpiar buscador
+      setResetKey((prev) => prev + 1);
     }
   };
 
-  const handleAddProduct = () => {
-    if (!productToAdd) return;
+  const handleSelectProduct = (selectedItem) => {
+    if (!selectedItem) return;
 
-    // Evitar duplicados visuales en la lista de carga
-    if (items.some((i) => i.semiId === productToAdd.id)) {
-      alert(
-        "Este producto ya está en la lista. Puedes editar su cantidad abajo.",
-      );
+    if (items.some((i) => i.semiId === selectedItem.id)) {
+      toast.error("Este producto ya está en la lista.");
+      setResetKey((prev) => prev + 1);
       return;
     }
 
     setItems((prev) => [
       {
-        semiId: productToAdd.id,
-        nombre: productToAdd.nombre,
-        codigo: productToAdd.codigo,
+        semiId: selectedItem.id,
+        nombre: selectedItem.nombre,
+        codigo: selectedItem.codigo,
         cantidadOk: "",
         cantidadScrap: "",
         motivoScrap: "",
@@ -230,9 +226,11 @@ export default function RegistrarProduccionPage() {
       ...prev,
     ]);
 
-    // Limpiar selección
-    setProductToAdd(null);
-    setResetKey((prev) => prev + 1); // Forzar reset del input
+    setResetKey((prev) => prev + 1);
+    toast.success("Producto listo para carga", {
+      icon: "✨",
+      style: { borderRadius: "12px", fontSize: "13px" },
+    });
   };
 
   const handleUpdateItem = (index, field, value) => {
@@ -254,259 +252,267 @@ export default function RegistrarProduccionPage() {
       !contexto.fecha ||
       items.length === 0
     ) {
-      return alert(
-        "Faltan datos obligatorios (Operario, Plan, Fecha o Productos).",
-      );
+      return toast.error("Por favor, completa los datos del turno.");
     }
 
     const validItems = items.filter(
       (i) => Number(i.cantidadOk) > 0 || Number(i.cantidadScrap) > 0,
     );
-
     if (validItems.length === 0)
-      return alert("Ingresa cantidades en al menos un producto.");
+      return toast.error("Ingresá cantidades en al menos un producto.");
 
     const scrapInvalido = validItems.some(
       (i) => Number(i.cantidadScrap) > 0 && !i.motivoScrap,
     );
     if (scrapInvalido)
-      return alert("Por favor indica el motivo para los productos con fallas.");
-
-    if (!confirm(`¿Confirmar registro de ${validItems.length} producciones?`))
-      return;
+      return toast.error("Falta indicar el motivo de las fallas.");
 
     setIsSaving(true);
-    try {
-      const promises = validItems.map((item) =>
-        authFetch(`${API_BASE_URL}/produccion/registrar-a-plan`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            plan_id: contexto.planId,
-            semielaborado_id: item.semiId,
-            operario_id: contexto.operarioId,
-            fecha_produccion: contexto.fecha,
-            turno: contexto.turno,
-            cantidad_ok: Number(item.cantidadOk) || 0,
-            cantidad_scrap: Number(item.cantidadScrap) || 0,
-            motivo_scrap: item.motivoScrap,
+
+    const savePromise = new Promise(async (resolve, reject) => {
+      try {
+        const promises = validItems.map((item) =>
+          authFetch(`${API_BASE_URL}/produccion/registrar-a-plan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              plan_id: contexto.planId,
+              semielaborado_id: item.semiId,
+              operario_id: contexto.operarioId,
+              fecha_produccion: contexto.fecha,
+              turno: contexto.turno,
+              cantidad_ok: Number(item.cantidadOk) || 0,
+              cantidad_scrap: Number(item.cantidadScrap) || 0,
+              motivo_scrap: item.motivoScrap,
+            }),
           }),
-        }),
-      );
+        );
+        await Promise.all(promises);
+        setItems([]);
+        resolve();
+      } catch (e) {
+        reject();
+      } finally {
+        setIsSaving(false);
+      }
+    });
 
-      await Promise.all(promises);
-
-      alert("✅ Producción registrada exitosamente.");
-      setItems([]);
-    } catch (e) {
-      alert("Hubo un error al guardar. Verifica la conexión.");
-      console.error(e);
-    } finally {
-      setIsSaving(false);
-    }
+    toast.promise(
+      savePromise,
+      {
+        loading: "Procesando registros...",
+        success: "Producción guardada correctamente",
+        error: "Ocurrió un error al guardar.",
+      },
+      { style: { borderRadius: "12px", fontSize: "13px" } },
+    );
   };
 
-  if (loading)
+  if (loading) {
     return (
-      <div className="flex justify-center items-center h-64 text-white text-xl">
-        <FaSpinner className="animate-spin mr-3" /> Cargando...
+      <div className="flex h-full items-center justify-center bg-[#fafafa] text-slate-400">
+        <FaSpinner className="animate-spin text-2xl mb-4 opacity-50" />
       </div>
     );
+  }
 
   return (
-    <div className="max-w-5xl mx-auto pb-32 px-4 pt-6 animate-in fade-in">
-      {/* HEADER */}
-      <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
-            <FaClipboardList className="text-green-500" /> Registrar Producción
-          </h1>
-          <p className="text-gray-400 text-sm mt-1">
-            Mesa de entrada rápida de producción diaria.
-          </p>
-        </div>
-      </div>
-
-      {/* 1. SECCIÓN DE CONTEXTO */}
-      <div className="bg-slate-800 p-5 rounded-2xl shadow-lg border border-slate-700 mb-8">
-        <h3 className="text-xs font-bold text-gray-400 uppercase mb-4 flex items-center gap-2 tracking-wider">
-          <FaUser /> Configuración del Turno
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {/* OPERARIO */}
+    // Le quitamos el pb-32 fijo que tenía antes
+    <div className="min-h-full bg-[#fafafa] flex flex-col font-sans">
+      {/* HEADER TRANSLÚCIDO Y AIREADO */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-5 md:px-10 md:py-6 shrink-0 z-20 sticky top-0">
+        <div className="max-w-5xl mx-auto flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 shadow-sm shrink-0">
+            <FaClipboardCheck size={18} />
+          </div>
           <div>
-            <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1.5 ml-1">
-              Operario
-            </label>
-            <div className="relative">
-              <select
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-white text-sm focus:border-green-500 outline-none appearance-none"
-                value={contexto.operarioId}
-                onChange={(e) =>
-                  handleContextChange("operarioId", e.target.value)
-                }
-              >
-                <option value="">Seleccionar...</option>
-                {operarios.map((op) => (
-                  <option key={op.id} value={op.id}>
-                    {op.nombre}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-                ▼
+            <h1 className="text-xl md:text-2xl font-semibold text-slate-800 tracking-tight leading-none">
+              Registrar Producción
+            </h1>
+            <p className="text-[11px] font-medium text-slate-400 mt-1.5 tracking-wide hidden sm:block">
+              Ingreso diario de partes y piezas
+            </p>
+          </div>
+        </div>
+      </header>
+
+      {/* CONTENEDOR PRINCIPAL */}
+      <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-8 flex flex-col gap-6 md:gap-8 mt-2">
+        {/* SECCIÓN 1: CONFIGURACIÓN DEL TURNO */}
+        <section className="bg-white rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] overflow-hidden">
+          <div className="border-b border-slate-50 px-6 py-4 flex items-center gap-2.5">
+            <FaUserCog className="text-slate-300" size={14} />
+            <h2 className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              Datos del Turno
+            </h2>
+          </div>
+
+          <div className="p-5 md:p-7 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-[10px] font-medium text-slate-400 mb-2 ml-1">
+                Operario
+              </label>
+              <div className="relative">
+                <select
+                  className="w-full bg-slate-50/50 hover:bg-slate-50 border border-slate-100/80 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-slate-300 focus:bg-white focus:ring-4 focus:ring-slate-50 transition-all appearance-none"
+                  value={contexto.operarioId}
+                  onChange={(e) =>
+                    handleContextChange("operarioId", e.target.value)
+                  }
+                >
+                  <option value="">Seleccionar...</option>
+                  {operarios.map((op) => (
+                    <option key={op.id} value={op.id}>
+                      {op.nombre}
+                    </option>
+                  ))}
+                </select>
+                <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none text-[10px]" />
+              </div>
+            </div>
+
+            <div className="col-span-2 md:col-span-1">
+              <label className="block text-[10px] font-medium text-slate-400 mb-2 ml-1">
+                Plan Activo
+              </label>
+              <div className="relative">
+                <select
+                  className="w-full bg-slate-50/50 hover:bg-slate-50 border border-slate-100/80 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-slate-300 focus:bg-white focus:ring-4 focus:ring-slate-50 transition-all appearance-none"
+                  value={contexto.planId}
+                  onChange={(e) =>
+                    handleContextChange("planId", e.target.value)
+                  }
+                >
+                  <option value="">Seleccionar plan...</option>
+                  {openPlans.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre}
+                    </option>
+                  ))}
+                </select>
+                <FaChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none text-[10px]" />
+              </div>
+            </div>
+
+            <div className="col-span-1">
+              <label className="block text-[10px] font-medium text-slate-400 mb-2 ml-1">
+                Fecha
+              </label>
+              <div className="relative">
+                <input
+                  type="date"
+                  className="w-full bg-slate-50/50 hover:bg-slate-50 border border-slate-100/80 rounded-xl px-3 md:px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-slate-300 focus:bg-white focus:ring-4 focus:ring-slate-50 transition-all [&::-webkit-calendar-picker-indicator]:opacity-40"
+                  value={contexto.fecha}
+                  onChange={(e) => handleContextChange("fecha", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="col-span-1">
+              <label className="block text-[10px] font-medium text-slate-400 mb-2 ml-1">
+                Turno
+              </label>
+              <div className="relative">
+                <select
+                  className="w-full bg-slate-50/50 hover:bg-slate-50 border border-slate-100/80 rounded-xl px-3 md:px-4 py-2.5 text-sm font-medium text-slate-700 outline-none focus:border-slate-300 focus:bg-white focus:ring-4 focus:ring-slate-50 transition-all appearance-none"
+                  value={contexto.turno}
+                  onChange={(e) => handleContextChange("turno", e.target.value)}
+                >
+                  <option value="Diurno">Diurno</option>
+                  <option value="Nocturno">Nocturno</option>
+                </select>
+                <FaExchangeAlt className="absolute right-3 md:right-4 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none text-[10px] rotate-90" />
               </div>
             </div>
           </div>
+        </section>
 
-          {/* PLAN */}
-          <div>
-            <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1.5 ml-1">
-              Plan Activo
-            </label>
-            <div className="relative">
-              <select
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-white text-sm focus:border-green-500 outline-none appearance-none"
-                value={contexto.planId}
-                onChange={(e) => handleContextChange("planId", e.target.value)}
-              >
-                <option value="">Seleccionar Plan...</option>
-                {openPlans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none">
-                ▼
-              </div>
-            </div>
-          </div>
-
-          {/* FECHA */}
-          <div>
-            <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1.5 ml-1">
-              Fecha
-            </label>
-            <div className="relative">
-              <input
-                type="date"
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-white text-sm focus:border-green-500 outline-none"
-                value={contexto.fecha}
-                onChange={(e) => handleContextChange("fecha", e.target.value)}
-              />
-              <FaCalendarAlt className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            </div>
-          </div>
-
-          {/* TURNO */}
-          <div>
-            <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1.5 ml-1">
-              Turno
-            </label>
-            <div className="relative">
-              <select
-                className="w-full bg-slate-900 border border-slate-600 rounded-xl p-3 text-white text-sm focus:border-green-500 outline-none appearance-none"
-                value={contexto.turno}
-                onChange={(e) => handleContextChange("turno", e.target.value)}
-              >
-                <option value="Diurno">Diurno</option>
-                <option value="Nocturno">Nocturno</option>
-              </select>
-              <FaExchangeAlt className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. BARRA DE BÚSQUEDA Y AGREGADO (SOLO SI HAY PLAN) */}
-      <AnimatePresence>
-        {contexto.planId && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-8"
-          >
-            <label className="block text-xs font-bold text-gray-400 mb-2 uppercase flex items-center gap-2 pl-1">
-              <FaBoxOpen /> Agregar Producto del Plan
-              {loadingPlanItems && (
-                <FaSpinner className="animate-spin text-green-500" />
-              )}
-            </label>
-
-            <div className="flex flex-col md:flex-row gap-3 items-stretch bg-slate-800 p-2 rounded-2xl border border-slate-700 shadow-md">
-              {/* INPUT BUSCADOR */}
-              <div className="flex-1 relative z-20">
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none z-10 text-lg">
-                  <FaSearch />
+        {/* SECCIÓN 2: BUSCADOR Y LISTA */}
+        <AnimatePresence>
+          {contexto.planId && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="flex flex-col gap-5 mt-2"
+            >
+              {/* BUSCADOR (Minimalista y flotante) */}
+              <div className="relative z-[60]">
+                <div className="w-full relative z-50">
+                  <AutoCompleteInput
+                    key={resetKey}
+                    items={planProducts}
+                    onSelect={handleSelectProduct}
+                    placeholder="Buscar producto para agregar..."
+                    disabled={loadingPlanItems}
+                  />
                 </div>
-                <AutoCompleteInput
-                  key={resetKey} // Clave para forzar reset al agregar
-                  items={planProducts}
-                  onSelect={(item) => setProductToAdd(item)}
-                  placeholder="Escribe para filtrar productos del plan..."
-                  disabled={loadingPlanItems}
-                />
               </div>
 
-              {/* BOTÓN AGREGAR */}
-              <button
-                onClick={handleAddProduct}
-                disabled={!productToAdd}
-                className="md:w-40 bg-green-600 hover:bg-green-500 text-white font-bold py-3 md:py-0 px-6 rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 flex items-center justify-center gap-2"
-              >
-                <FaPlus /> Agregar
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              {/* Grilla de Tarjetas */}
+              <div>
+                {items.length === 0 ? (
+                  <div className="border border-dashed border-slate-200/60 bg-white/50 rounded-2xl p-12 flex flex-col items-center justify-center text-center mt-2">
+                    <div className="w-12 h-12 bg-slate-50 text-slate-300 rounded-full flex items-center justify-center mb-4 border border-slate-100">
+                      <FaBoxOpen size={18} />
+                    </div>
+                    <h3 className="text-sm font-semibold text-slate-600 mb-1">
+                      Carga vacía
+                    </h3>
+                    <p className="text-xs text-slate-400 max-w-xs leading-relaxed">
+                      Utilizá el buscador de arriba para seleccionar los
+                      productos a registrar.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+                    <AnimatePresence>
+                      {items.map((item, index) => (
+                        <ProductionItemCard
+                          key={`${item.semiId}-${index}`}
+                          item={item}
+                          index={index}
+                          onUpdate={handleUpdateItem}
+                          onRemove={handleRemoveItem}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {/* 3. LISTA DE CARGA (GRID DE TARJETAS) */}
-      <div className="space-y-4">
-        {items.length === 0 ? (
-          contexto.planId && (
-            <div className="text-center py-16 text-gray-500 bg-slate-900/30 rounded-2xl border-2 border-dashed border-slate-700/50 flex flex-col items-center gap-3">
-              <FaListUl className="text-4xl opacity-20" />
-              <p>Lista de carga vacía. Busca y agrega productos arriba.</p>
-            </div>
-          )
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <AnimatePresence>
-              {items.map((item, index) => (
-                <ProductionItemCard
-                  key={`${item.semiId}-${index}`}
-                  item={item}
-                  index={index}
-                  onUpdate={handleUpdateItem}
-                  onRemove={handleRemoveItem}
-                />
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
+        {/* 👇 NUEVO: ESPACIADOR INVISIBLE PARA SCROLL */}
+        {/* Esto empuja el fondo hacia abajo para que la última tarjeta nunca quede tapada */}
+        {items.length > 0 && <div className="h-28 shrink-0" />}
+      </main>
 
-      {/* 4. BOTÓN FLOTANTE / FIJO DE GUARDADO */}
+      {/* 👇 NUEVO: FAB DOCK CON DEGRADADO */}
       <AnimatePresence>
         {items.length > 0 && (
           <motion.div
-            initial={{ y: 100, opacity: 0 }}
+            initial={{ y: 80, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            className="fixed bottom-6 left-0 right-0 px-4 flex justify-center z-50 pointer-events-none"
+            exit={{ y: 80, opacity: 0 }}
+            // El bg-gradient genera el esfumado perfecto con el fondo de la app
+            className="fixed bottom-0 left-0 right-0 z-50 flex justify-center px-4 pb-6 md:pb-8 pt-20 bg-gradient-to-t from-[#fafafa] via-[#fafafa]/95 to-transparent pointer-events-none"
           >
             <button
               onClick={handleSaveAll}
               disabled={isSaving}
-              className="pointer-events-auto bg-blue-600 hover:bg-blue-500 text-white text-lg font-bold py-4 px-12 rounded-full shadow-2xl shadow-blue-900/40 flex items-center gap-3 transition-all hover:scale-105 active:scale-95 disabled:opacity-70 disabled:scale-100 border-2 border-blue-400/20"
+              // Diseño ultra estético: rounded-2xl en mobile, rounded-full en PC, borde fino e iluminado
+              className="pointer-events-auto w-full md:w-auto max-w-sm bg-slate-800 hover:bg-slate-900 text-white font-medium text-[13px] md:text-sm py-4 px-8 rounded-2xl md:rounded-2xl shadow-[0_15px_40px_-10px_rgba(0,0,0,0.3)] border border-slate-700/50 flex items-center justify-center gap-3 transition-all duration-300 hover:-translate-y-1 active:scale-95 disabled:opacity-70 disabled:hover:translate-y-0 backdrop-blur-md"
             >
-              {isSaving ? <FaSpinner className="animate-spin" /> : <FaSave />}
+              {isSaving ? (
+                <FaSpinner className="animate-spin text-slate-400" size={16} />
+              ) : (
+                <FaSave className="text-emerald-400" size={16} />
+              )}
               {isSaving
-                ? "Guardando..."
-                : `Registrar ${items.length} Productos`}
+                ? "Procesando..."
+                : `Guardar Registros (${items.length})`}
             </button>
           </motion.div>
         )}

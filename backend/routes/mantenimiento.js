@@ -1,91 +1,129 @@
-// backend/routes/mantenimiento.js
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
-// Importamos la función de notificación
-const {
-  notificarNuevoTicketMantenimiento,
-} = require("../services/telegramBotListener");
 
-// 1. Obtener Tickets (IGUAL)
 router.get("/", async (req, res) => {
   try {
-    const result = await db.query(`
-      SELECT *,
-        EXTRACT(EPOCH FROM (COALESCE(fecha_inicio_revision, NOW()) - fecha_creacion))/60 as minutos_respuesta_calc,
-        EXTRACT(EPOCH FROM (COALESCE(fecha_solucion, NOW()) - fecha_inicio_revision))/60 as minutos_reparacion_calc
-      FROM tickets_mantenimiento 
-      ORDER BY 
-        CASE WHEN estado = 'PENDIENTE' THEN 1 WHEN estado = 'EN_REVISION' THEN 2 ELSE 3 END,
-        CASE WHEN prioridad = 'ALTA' THEN 1 WHEN prioridad = 'MEDIA' THEN 2 ELSE 3 END,
-        fecha_creacion DESC
-    `);
-    res.json(result.rows);
-  } catch (e) {
-    res.status(500).send(e.message);
+    const { rows } = await db.query(
+      "SELECT * FROM tickets_mantenimiento ORDER BY id DESC",
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send(err.message);
   }
 });
 
-// 2. Crear Ticket (MODIFICADO para notificar)
 router.post("/", async (req, res) => {
-  const { maquina, titulo, descripcion, prioridad, tipo, creado_por } =
-    req.body;
+  const {
+    maquina,
+    titulo,
+    descripcion,
+    prioridad,
+    tipo,
+    creado_por,
+    asignado_a,
+  } = req.body;
   try {
-    const nuevo = await db.query(
-      `INSERT INTO tickets_mantenimiento (maquina, titulo, descripcion, prioridad, tipo, creado_por)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    const result = await db.query(
+      `INSERT INTO tickets_mantenimiento (maquina, titulo, descripcion, estado, prioridad, tipo, creado_por, asignado_a, fecha_creacion, alerta_24h_enviada) 
+       VALUES ($1, $2, $3, 'PENDIENTE', $4, $5, $6, $7, CURRENT_TIMESTAMP, false) RETURNING *`,
       [
         maquina,
-        titulo,
+        titulo || "Falla",
         descripcion,
         prioridad || "MEDIA",
         tipo || "CORRECTIVO",
-        creado_por || "Anónimo",
-      ]
+        creado_por,
+        asignado_a || "Técnico de Turno",
+      ],
     );
-
-    // --- ENVIAR NOTIFICACIÓN TELEGRAM ---
-    if (nuevo.rows.length > 0) {
-      notificarNuevoTicketMantenimiento(nuevo.rows[0]);
-    }
-
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).send(e.message);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).send(err.message);
   }
 });
 
-// 3. Cambiar Estado (IGUAL)
 router.put("/:id/estado", async (req, res) => {
-  const { nuevo_estado, notas, tecnico } = req.body;
-  const { id } = req.params;
+  const {
+    estado,
+    resuelto_por,
+    fecha_inicio_revision,
+    fecha_solucion,
+    notas_revision,
+    solucion_notas,
+  } = req.body;
   try {
-    if (nuevo_estado === "EN_REVISION") {
-      await db.query(
-        "UPDATE tickets_mantenimiento SET estado = 'EN_REVISION', fecha_inicio_revision = NOW(), asignado_a = $1 WHERE id = $2",
-        [tecnico, id]
-      );
-    } else if (nuevo_estado === "SOLUCIONADO") {
-      await db.query(
-        "UPDATE tickets_mantenimiento SET estado = 'SOLUCIONADO', fecha_solucion = NOW(), solucion_notas = $1 WHERE id = $2",
-        [notas, id]
-      );
+    let query =
+      "UPDATE tickets_mantenimiento SET estado = $1, resuelto_por = $2";
+    let params = [estado, resuelto_por];
+    let queryCount = 3;
+
+    if (fecha_inicio_revision) {
+      query += `, fecha_inicio_revision = $${queryCount}`;
+      params.push(fecha_inicio_revision);
+      queryCount++;
     }
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).send(e.message);
+    if (fecha_solucion) {
+      query += `, fecha_solucion = $${queryCount}`;
+      params.push(fecha_solucion);
+      queryCount++;
+    }
+    if (notas_revision !== undefined) {
+      query += `, notas_revision = $${queryCount}`;
+      params.push(notas_revision);
+      queryCount++;
+    }
+    if (solucion_notas !== undefined) {
+      query += `, solucion_notas = $${queryCount}`;
+      params.push(solucion_notas);
+      queryCount++;
+    }
+
+    query += ` WHERE id = $${queryCount}`;
+    params.push(req.params.id);
+
+    await db.query(query, params);
+    res.json({ success: true, msg: "Estado actualizado" });
+  } catch (err) {
+    res.status(500).send(err.message);
   }
 });
 
-// 4. ELIMINAR TICKET (IGUAL)
 router.delete("/:id", async (req, res) => {
   try {
     await db.query("DELETE FROM tickets_mantenimiento WHERE id = $1", [
       req.params.id,
     ]);
+    res.json({ success: true, msg: "Ticket eliminado" });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// --- NUEVAS RUTAS PARA EL PERFIL DE MÁQUINA ---
+router.get("/maquina/:nombre", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      "SELECT notas FROM maquinas_perfil WHERE maquina = $1",
+      [req.params.nombre],
+    );
+    res.json({ notas: rows.length ? rows[0].notas : "" });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+router.put("/maquina/:nombre", async (req, res) => {
+  try {
+    const { notas } = req.body;
+    await db.query(
+      `INSERT INTO maquinas_perfil (maquina, notas) VALUES ($1, $2)
+       ON CONFLICT (maquina) DO UPDATE SET notas = EXCLUDED.notas`,
+      [req.params.nombre, notas],
+    );
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).send(e.message);
+  } catch (err) {
+    res.status(500).send(err.message);
   }
 });
 

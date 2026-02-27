@@ -6,7 +6,7 @@ const getPlanById = async (req, res) => {
   try {
     const planRes = await db.query(
       "SELECT * FROM planes_produccion WHERE id=$1",
-      [id]
+      [id],
     );
 
     if (planRes.rowCount === 0) {
@@ -23,6 +23,7 @@ const getPlanById = async (req, res) => {
             pi.cantidad_requerida,
             pi.fecha_inicio_estimada, 
             pi.ritmo_turno,
+            pi.estado, /* 👇 ¡ACÁ ESTABA EL CULPABLE! Ahora sí traemos el estado */
             COALESCE((SELECT SUM(rp.cantidad_ok) FROM registros_produccion rp WHERE rp.plan_item_id = pi.id), 0) as cantidad_producida,
             s.id, s.nombre, s.codigo
         FROM planes_items pi 
@@ -30,7 +31,7 @@ const getPlanById = async (req, res) => {
         WHERE pi.plan_id = $1
         ORDER BY pi.id ASC
       `,
-      [id]
+      [id],
     );
 
     // Formateo de datos para el frontend
@@ -43,6 +44,8 @@ const getPlanById = async (req, res) => {
       fecha_inicio_estimada: i.fecha_inicio_estimada
         ? new Date(i.fecha_inicio_estimada).toISOString().split("T")[0]
         : new Date().toISOString().split("T")[0],
+      // Nos aseguramos de inyectar el estado explícitamente por las dudas
+      estado_kanban: i.estado || "PENDIENTE",
     }));
 
     res.json(plan);

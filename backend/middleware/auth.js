@@ -1,57 +1,76 @@
 // backend/middleware/auth.js
-const KEY_PANEL = process.env.API_KEY_PANEL;
-const KEY_GERENCIA = process.env.API_KEY_GERENCIA;
-const KEY_DEPOSITO = process.env.API_KEY_DEPOSITO;
+const jwt = require("jsonwebtoken");
+const db = require("../db");
 
-// 1. Middleware base: Verifica que la clave sea válida (cualquiera de las dos)
-const protect = (req, res, next) => {
-  const apiKey = req.headers["x-api-key"];
+// Llave secreta (en producción debería estar en tu archivo .env)
+const JWT_SECRET =
+  process.env.JWT_SECRET || "mrp_super_secreto_2026_seguridad_maxima";
 
-  if (!apiKey) {
-    return res
-      .status(401)
-      .json({ msg: "⛔ Acceso denegado: Falta credencial" });
+// 1. Proteger: Verifica si el usuario está logueado y activo
+exports.protect = async (req, res, next) => {
+  let token;
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
   }
 
-  if (apiKey === KEY_GERENCIA) {
-    req.userRole = "GERENCIA"; // Es el jefe, tiene poder total
-    return next();
+  if (!token) {
+    return res.status(401).json({ msg: "No autorizado. Inicie sesión." });
   }
 
-  if (apiKey === KEY_PANEL) {
-    req.userRole = "PANEL"; // Es un operario
-    return next();
-  }
+  try {
+    // Decodificar el token
+    const decoded = jwt.verify(token, JWT_SECRET);
 
-  if (apiKey === KEY_DEPOSITO) {
-    req.userRole = "DEPOSITO"; // Es personal de depósito
-    return next();
-  }
+    // Buscar el usuario en la BD
+    const { rows } = await db.query(
+      "SELECT id, nombre, email, rol, modulos_acceso, activo FROM usuarios WHERE id = $1",
+      [decoded.id],
+    );
+    const usuario = rows[0];
 
-  if (apiKey === process.env.API_KEY_MANTENIMIENTO) {
-    return res.json({ role: "MANTENIMIENTO" }); // Es personal de mantenimiento
-  }
-
-  // Si no coincide con ninguna
-  return res.status(403).json({ msg: "⛔ Credencial incorrecta" });
-};
-
-// 2. Middleware de restricción: Solo deja pasar si el rol es suficiente
-// Uso: router.delete("/", protect, restrictTo('GERENCIA'), ...)
-const restrictTo = (...allowedRoles) => {
-  return (req, res, next) => {
-    // Si el usuario tiene rol 'GERENCIA', siempre lo dejamos pasar (superusuario)
-    if (req.userRole === "GERENCIA") return next();
-
-    // Si no es gerencia, verificamos si su rol está en la lista permitida
-    if (!allowedRoles.includes(req.userRole)) {
+    if (!usuario) {
+      return res.status(401).json({ msg: "El usuario ya no existe." });
+    }
+    if (!usuario.activo) {
       return res
         .status(403)
-        .json({ msg: "⛔ No tienes permisos para realizar esta acción." });
+        .json({ msg: "Usuario inactivo. Contacte a gerencia." });
     }
 
+    // Le pasamos el usuario a la siguiente ruta
+    req.user = usuario;
+    next();
+  } catch (error) {
+    return res.status(401).json({ msg: "Token inválido o expirado." });
+  }
+};
+
+// 2. Restringir por Rol (Ej: Solo GERENCIA)
+exports.restrictTo = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.rol)) {
+      return res
+        .status(403)
+        .json({ msg: "No tienes permiso para realizar esta acción." });
+    }
     next();
   };
 };
 
-module.exports = { protect, restrictTo };
+// 3. NUEVO: Validar si tiene acceso a un módulo específico
+exports.requireModule = (modulo) => {
+  return (req, res, next) => {
+    if (req.user.rol === "GERENCIA") return next(); // Gerencia entra a todo
+
+    const modulos = req.user.modulos_acceso || [];
+    if (!modulos.includes(modulo)) {
+      return res
+        .status(403)
+        .json({ msg: `No tienes permisos para el módulo: ${modulo}` });
+    }
+    next();
+  };
+};

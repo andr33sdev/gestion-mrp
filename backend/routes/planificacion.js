@@ -24,46 +24,78 @@ router.get("/abiertos", async (req, res) => {
   res.json(rows);
 });
 
-// NUEVA RUTA: Obtener Pedidos Sin Stock (MEJORADA CON ESTRUCTURA JSON)
+// NUEVA RUTA PARA EL TABLERO KANBAN (Fusionada)
+// Trae los ítems de planes abiertos para mostrar en las tarjetas estéticas
+router.get("/kanban", async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        pi.*, 
+        s.nombre as producto_nombre,
+        p.nombre as plan_nombre,
+        p.estado as plan_estado
+      FROM planes_items pi
+      JOIN semielaborados s ON pi.semielaborado_id = s.id
+      JOIN planes_produccion p ON pi.plan_id = p.id
+      WHERE p.estado = 'ABIERTO' OR pi.estado != 'FINALIZADO'
+      ORDER BY pi.fecha_inicio_estimada ASC, pi.id DESC
+    `;
+    const { rows } = await db.query(query);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// --- RUTAS PARA LA FICHA DE ÍTEM ---
+router.get("/item/:id/notas", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      "SELECT notas FROM plan_item_notas WHERE plan_item_id = $1",
+      [req.params.id],
+    );
+    res.json({ notas: rows.length ? rows[0].notas : "" });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+router.put("/item/:id/notas", async (req, res) => {
+  try {
+    const { notas } = req.body;
+    const itemId = req.params.id;
+
+    await db.query(
+      `INSERT INTO plan_item_notas (plan_item_id, notas) VALUES ($1, $2)
+       ON CONFLICT (plan_item_id) DO UPDATE SET notas = EXCLUDED.notas`,
+      [itemId, notas],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("ERROR EN NOTAS:", err.message); // Esto te dirá el problema real en la terminal
+    res.status(500).send("Error al guardar la nota: " + err.message);
+  }
+});
+
 router.get("/sin-stock", async (req, res) => {
   try {
     const query = `
       SELECT * FROM pedidos_clientes 
       WHERE 
-        -- 1. CRITERIO DE INCLUSIÓN (Variantes de texto que indican falta de stock)
-        (
-          estado ILIKE '%SIN STOCK%' 
-          OR estado ILIKE '%S/STOCK%' 
-          OR estado ILIKE '%FALTA%'
-          OR estado ILIKE '%A PRODUCIR%'
-          OR estado ILIKE '%REVISAR%'
-          OR estado ILIKE '%ATRASADO%'
-        )
-        -- 2. CRITERIO DE EXCLUSIÓN POR ESTADO (No cancelados ni finalizados explícitos)
-        AND estado NOT ILIKE '%CANCELADO%'
-        AND estado NOT ILIKE '%ENTREGADO%'
-        AND estado NOT ILIKE '%DESPACHADO%'
-        AND estado NOT ILIKE '%ANULADO%'
-        
-        -- 3. CRITERIO DE EXCLUSIÓN POR PROCESO (La clave para limpiar "viejos")
-        -- Si ya tiene fecha de despacho, ya salió (no es sin stock).
+        (estado ILIKE '%SIN STOCK%' OR estado ILIKE '%S/STOCK%' OR estado ILIKE '%FALTA%' OR estado ILIKE '%A PRODUCIR%' OR estado ILIKE '%REVISAR%' OR estado ILIKE '%ATRASADO%')
+        AND estado NOT ILIKE '%CANCELADO%' AND estado NOT ILIKE '%ENTREGADO%' AND estado NOT ILIKE '%DESPACHADO%' AND estado NOT ILIKE '%ANULADO%'
         AND (fecha_despacho IS NULL OR fecha_despacho = '')
-        -- Si ya tiene fecha de preparación, ya se armó (el stock estaba).
         AND (fecha_preparacion IS NULL OR fecha_preparacion = '')
-
       ORDER BY id DESC
     `;
-
     const result = await db.query(query);
     res.json(result.rows);
   } catch (e) {
     console.error("Error al buscar pedidos sin stock:", e);
-    // Devolvemos array vacío para no romper el frontend si falla
     res.status(500).json([]);
   }
 });
 
-// GET DETALLE DEL PLAN (CORREGIDO)
 router.get("/:id", getPlanById);
 
 router.get("/:id/operarios", async (req, res) => {
@@ -129,7 +161,7 @@ async function verificarAlertasMRP(client, planId, nombrePlan) {
 
 // --- RUTAS DE ESCRITURA ---
 
-router.post("/", restrictTo("GERENCIA"), async (req, res) => {
+router.post("/", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
   const { nombre, items } = req.body;
   const client = await db.connect();
   try {
@@ -141,9 +173,8 @@ router.post("/", restrictTo("GERENCIA"), async (req, res) => {
     const planId = resPlan.rows[0].id;
 
     for (const item of items) {
-      // AQUI AGREGAMOS LOS CAMPOS NUEVOS AL INSERT
       await client.query(
-        "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, 'PENDIENTE')",
         [
           planId,
           item.semielaborado.id,
@@ -164,22 +195,88 @@ router.post("/", restrictTo("GERENCIA"), async (req, res) => {
   }
 });
 
-// Ruta para forzar la sincronización manual desde el botón
+// NUEVA RUTA: Actualizar ítem individual desde el Kanban
+router.put("/item/:id", async (req, res) => {
+  const { estado, maquina } = req.body;
+  try {
+    await db.query(
+      // Usamos COALESCE para que si 'maquina' viene vacío, no borre lo que ya estaba ni tire error
+      "UPDATE planes_items SET estado = $1, maquina = COALESCE($2, maquina) WHERE id = $3",
+      [estado, maquina || null, req.params.id],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error guardando estado en Kanban:", err.message);
+    res.status(500).send(err.message);
+  }
+});
+
+// OBTENER COMENTARIOS DE UN ÍTEM
+router.get("/item/:id/comentarios", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      "SELECT * FROM plan_item_comentarios WHERE plan_item_id = $1 ORDER BY fecha ASC",
+      [req.params.id],
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// AGREGAR UN NUEVO COMENTARIO
+router.post("/item/:id/comentarios", async (req, res) => {
+  try {
+    const { texto, usuario } = req.body;
+    await db.query(
+      "INSERT INTO plan_item_comentarios (plan_item_id, usuario, texto) VALUES ($1, $2, $3)",
+      [req.params.id, usuario, texto],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// EDITAR UN COMENTARIO
+router.put("/item/:itemId/comentarios/:comentarioId", async (req, res) => {
+  try {
+    const { texto } = req.body;
+    await db.query(
+      "UPDATE plan_item_comentarios SET texto = $1 WHERE id = $2",
+      [texto, req.params.comentarioId],
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// ELIMINAR UN COMENTARIO
+router.delete("/item/:itemId/comentarios/:comentarioId", async (req, res) => {
+  try {
+    await db.query("DELETE FROM plan_item_comentarios WHERE id = $1", [
+      req.params.comentarioId,
+    ]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
 router.post("/sincronizar-ya", async (req, res) => {
   try {
-    // Esto ejecuta la función que acabamos de corregir
     await sincronizarPedidos();
     res.json({
       success: true,
       message: "Base de datos actualizada con el Excel",
     });
   } catch (e) {
-    console.error(e);
     res.status(500).json({ error: "Error al sincronizar" });
   }
 });
 
-router.put("/:id/estado", restrictTo("GERENCIA"), async (req, res) => {
+router.put("/:id/estado", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
   const { estado } = req.body;
   await db.query("UPDATE planes_produccion SET estado = $1 WHERE id = $2", [
     estado,
@@ -188,24 +285,16 @@ router.put("/:id/estado", restrictTo("GERENCIA"), async (req, res) => {
   res.json({ success: true });
 });
 
-// EDITAR PLAN (CORREGIDO)
-router.put("/:id", restrictTo("GERENCIA"), async (req, res) => {
+router.put("/:id", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
   const { nombre, items } = req.body;
-
-  // Log para depuración en consola del servidor
-  console.log(
-    `💾 Guardando Plan ${req.params.id}. Items recibidos: ${items?.length}`,
-  );
-
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    if (nombre) {
+    if (nombre)
       await client.query(
         "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
         [nombre, req.params.id],
       );
-    }
 
     const current = await client.query(
       "SELECT id FROM planes_items WHERE plan_id = $1",
@@ -215,43 +304,47 @@ router.put("/:id", restrictTo("GERENCIA"), async (req, res) => {
     const incomingIds = [];
 
     for (const item of items) {
-      // Aseguramos valores
-      const ritmo = item.ritmo_turno || 50;
-      const fecha = item.fecha_inicio_estimada || null;
+      // 👇 Tomamos el estado que manda el frontend, o PENDIENTE por defecto
+      const estadoFila = item.estado_kanban || "PENDIENTE";
 
       if (item.plan_item_id) {
-        // ACTUALIZACION: Agregamos ritmo y fecha
         await client.query(
-          `UPDATE planes_items 
-           SET cantidad_requerida = $1, 
-               ritmo_turno = $2, 
-               fecha_inicio_estimada = $3
-           WHERE id = $4`,
-          [item.cantidad, ritmo, fecha, item.plan_item_id],
+          // 👇 Se agregó "estado = $4"
+          `UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3, estado = $4 WHERE id = $5`,
+          [
+            item.cantidad,
+            item.ritmo_turno || 50,
+            item.fecha_inicio_estimada || null,
+            estadoFila, // 👈 Nuevo
+            item.plan_item_id,
+          ],
         );
         incomingIds.push(item.plan_item_id);
       } else {
-        // INSERCION (Nuevos items/remanentes): Agregamos ritmo y fecha
         await client.query(
-          "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada) VALUES ($1, $2, $3, $4, $5)",
-          [req.params.id, item.semielaborado.id, item.cantidad, ritmo, fecha],
+          // 👇 Se agregó la columna "estado" al INSERT
+          "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, $6)",
+          [
+            req.params.id,
+            item.semielaborado.id,
+            item.cantidad,
+            item.ritmo_turno || 50,
+            item.fecha_inicio_estimada || null,
+            estadoFila, // 👈 Nuevo
+          ],
         );
       }
     }
-
     const toDelete = dbIds.filter((id) => !incomingIds.includes(id));
     if (toDelete.length)
       await client.query("DELETE FROM planes_items WHERE id = ANY($1::int[])", [
         toDelete,
       ]);
-
     if (nombre) await verificarAlertasMRP(client, req.params.id, nombre);
-
     await client.query("COMMIT");
     res.json({ success: true });
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error("Error al guardar plan:", e);
     res.status(500).send(e.message);
   } finally {
     client.release();

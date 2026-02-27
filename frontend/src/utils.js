@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react"; // Esto probablemente sobre, utils no suele usar hooks, pero mantenemos imports si los tenías.
-import { getAuthData, logout } from "./auth/authHelper";
+// ==========================================
+// utils.js
+// ==========================================
 
 // --- CONSTANTES ---
-export const API_BASE_URL = "https://horno-backend.onrender.com/api"; //
+export const API_BASE_URL = "https://horno-backend.onrender.com/api";
 //export const API_BASE_URL = "http://localhost:4000/api";
 
 export const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
@@ -15,17 +16,18 @@ export const HORAS_TIMEOUT_ENFRIADO = 2;
 export const MAX_HORAS_CICLO_PROMEDIO = 4;
 export const ALARMA_WINDOW_HOURS = 24;
 
-// --- FETCH CON AUTENTICACIÓN MEJORADO ---
-export async function authFetch(url, options = {}) {
-  const { token } = getAuthData();
+// --- FUNCIÓN FETCH UNIFICADA CON SEGURIDAD (JWT) ---
+export const authFetch = async (url, options = {}) => {
+  const token = localStorage.getItem("mrp_token");
 
   const headers = {
     "Content-Type": "application/json",
     ...options.headers,
   };
 
+  // Si hay token en el navegador, lo inyectamos en la cabecera
   if (token) {
-    headers["x-api-key"] = token;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   const response = await fetch(url, {
@@ -33,49 +35,53 @@ export async function authFetch(url, options = {}) {
     headers,
   });
 
-  // CAMBIO CLAVE AQUÍ:
-  // Solo expulsamos si es 401 (Token inválido o no enviado).
-  // Si es 403 (Rol insuficiente), dejamos pasar la respuesta para manejarla en la UI.
+  // Si el backend nos dice 401 (No autorizado / Token vencido)
   if (response.status === 401) {
-    console.warn("⛔ Sesión expirada.");
-    logout();
-    throw new Error("Sesión expirada.");
+    console.error("⛔ EL BACKEND RECHAZÓ EL TOKEN. RUTA:", url);
+    // TEMPORALMENTE COMENTADO PARA FRENAR EL BUCLE:
+    // localStorage.removeItem("mrp_token");
+    // localStorage.removeItem("mrp_user");
+    // if (window.location.pathname !== "/login") {
+    //   window.location.href = "/login";
+    // }
   }
 
   return response;
-}
+};
 
-// --- FUNCIONES AUXILIARES ---
+// --- FUNCIONES AUXILIARES DE TIEMPOS (Horno) ---
 export function formatDuration(ms) {
   if (isNaN(ms) || ms < 0) return "N/A";
   const totalSeconds = Math.floor(ms / 1000);
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s
-    .toString()
-    .padStart(2, "0")}`;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
 export function getStationStatus(stationId, allRecords) {
   const lastEvent = allRecords.find(
     (reg) =>
-      reg.accion.includes(`Estacion ${stationId}`) && reg.tipo !== "PRODUCCION"
+      reg.accion.includes(`Estacion ${stationId}`) && reg.tipo !== "PRODUCCION",
   );
+
   let status = "INACTIVA";
   if (lastEvent) {
     if (lastEvent.accion.includes("Se inicio ciclo")) status = "COCINANDO";
     else if (lastEvent.accion.includes("Enfriando")) status = "ENFRIANDO";
   }
+
   const cycleStartEvents = allRecords.filter(
     (reg) =>
       reg.tipo === "EVENTO" &&
-      reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`)
+      reg.accion.includes(`Se inicio ciclo Estacion ${stationId}`),
   );
+
   let cycleDuration = "N/A";
   let averageCycleTime = "N/A";
   let averageCycleTimeMs = null;
   const allCycleDurationsMs = [];
+
   if (cycleStartEvents.length >= 2) {
     for (let i = 0; i < cycleStartEvents.length - 1; i++) {
       try {
@@ -98,6 +104,7 @@ export function getStationStatus(stationId, allRecords) {
       averageCycleTimeMs = avgMs;
     }
   }
+
   let liveCycleStartTime = null;
   if (status === "COCINANDO" || status === "ENFRIANDO") {
     if (cycleStartEvents[0]) {
@@ -108,19 +115,21 @@ export function getStationStatus(stationId, allRecords) {
       }
     }
   }
+
   let cyclesToday = 0;
   try {
     const todayStr = new Date().toISOString().substring(0, 10);
     cyclesToday = cycleStartEvents.filter((reg) => {
       const eventDate = new Date(reg.timestamp);
       eventDate.setMinutes(
-        eventDate.getMinutes() - eventDate.getTimezoneOffset()
+        eventDate.getMinutes() - eventDate.getTimezoneOffset(),
       );
       return eventDate.toISOString().substring(0, 10) === todayStr;
     }).length;
   } catch (e) {
     console.error(e);
   }
+
   if (status === "ENFRIANDO" && lastEvent) {
     try {
       const enfriandoStartTime = new Date(lastEvent.timestamp);
@@ -133,6 +142,7 @@ export function getStationStatus(stationId, allRecords) {
       console.error(e);
     }
   }
+
   return {
     status,
     lastEvent: lastEvent || null,
