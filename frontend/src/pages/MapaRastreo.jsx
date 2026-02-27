@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import io from "socket.io-client";
@@ -22,6 +22,14 @@ const socketURL = API_BASE_URL.replace("/api", "");
 const socket = io(socketURL, {
   transports: ["websocket"],
   secure: true,
+});
+
+// --- CONFIGURACIÓN DEL ÍCONO DEL CAMIÓN ---
+const camionIcon = new L.Icon({
+  iconUrl: "/camion.png", // Apunta a la imagen en tu carpeta public
+  iconSize: [72, 72], // Tamaño en píxeles (ajustalo si se ve muy grande/chico)
+  iconAnchor: [36, 36], // El punto de la imagen que toca la coordenada exacta (la mitad)
+  popupAnchor: [0, -20], // Donde aparece el cartelito con el nombre
 });
 
 export default function MapaRastreo() {
@@ -80,17 +88,36 @@ export default function MapaRastreo() {
         />
 
         {marcadores.map((rep, idx) => (
-          <Marker key={idx} position={[rep.lat, rep.lng]}>
-            <Popup>
-              <div className="text-center">
-                <p className="font-bold text-slate-800">{rep.nombre}</p>
-                <p className="text-xs text-stone-500">
-                  Velocidad:{" "}
-                  {rep.velocidad ? Math.round(rep.velocidad * 3.6) : 0} km/h
-                </p>
-              </div>
-            </Popup>
-          </Marker>
+          <React.Fragment key={idx}>
+            {/* El camión siempre se dibuja */}
+            <Marker position={[rep.lat, rep.lng]} icon={camionIcon}>
+              <Popup>
+                <div className="text-center">
+                  <p className="font-bold text-slate-800">{rep.nombre}</p>
+                  <p className="text-xs text-stone-500">
+                    Velocidad:{" "}
+                    {rep.velocidad ? Math.round(rep.velocidad * 3.6) : 0} km/h
+                  </p>
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    Precisión: ±{Math.round(rep.precision || 0)}m
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+
+            {/* Si el error es mayor a 50 metros, dibujamos un círculo de advertencia */}
+            {rep.precision > 50 && (
+              <Circle
+                center={[rep.lat, rep.lng]}
+                radius={rep.precision} // El tamaño del círculo es exactamente el error en metros
+                pathOptions={{
+                  color: "#ef4444", // Borde rojo
+                  fillColor: "#ef4444", // Relleno rojo
+                  fillOpacity: 0.15, // Bien transparente para no tapar las calles
+                }}
+              />
+            )}
+          </React.Fragment>
         ))}
       </MapContainer>
     </div>

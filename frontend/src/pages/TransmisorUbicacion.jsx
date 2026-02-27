@@ -77,13 +77,14 @@ export default function TransmisorUbicacion() {
             const { latitude, longitude, speed, accuracy } = position.coords;
             setPrecisionMetros(Math.round(accuracy));
 
-            if (accuracy > 50) return; // Filtramos señal mala
+            //if (accuracy > 50) return; // Filtramos señal mala
 
             socket.emit("enviarUbicacion", {
               nombre: user?.nombre || "Repartidor",
               lat: latitude,
               lng: longitude,
               velocidad: speed || 0,
+              precision: accuracy,
             });
           }
         },
