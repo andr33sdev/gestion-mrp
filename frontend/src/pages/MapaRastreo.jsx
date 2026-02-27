@@ -19,7 +19,10 @@ L.Icon.Default.mergeOptions({
 });
 
 const socketURL = API_BASE_URL.replace("/api", "");
-const socket = io(socketURL);
+const socket = io(socketURL, {
+  transports: ["websocket"],
+  secure: true,
+});
 
 export default function MapaRastreo() {
   const [flota, setFlota] = useState({});

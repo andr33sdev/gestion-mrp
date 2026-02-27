@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GestionMRP</string>
+    <string name="title_activity_main">GestionMRP</string>
+    <string name="package_name">com.gestion.mrp</string>
+    <string name="custom_url_scheme">com.gestion.mrp</string>
+</resources>
