@@ -4,12 +4,14 @@
 
 // --- CONSTANTES ---
 export const API_BASE_URL = "https://horno-backend.onrender.com/api";
-//export const API_BASE_URL = "http://localhost:4000/api";
+//export const API_BASE_URL = "http://192.168.1.40:4000/api";
 
 export const REGISTROS_API_URL = `${API_BASE_URL}/registros`;
 export const PRODUCCION_API_URL = `${API_BASE_URL}/produccion`;
 export const PEDIDOS_API_URL = `${API_BASE_URL}/pedidos-analisis`;
 export const SUGERENCIAS_PLAN_URL = `${API_BASE_URL}/planificacion/sugerencias-produccion`;
+export const AUTH_API_URL = `${API_BASE_URL}/auth`;
+export const UPDATE_FCM_TOKEN_URL = `${AUTH_API_URL}/update-fcm`;
 
 export const POLLING_INTERVAL = 10000;
 export const HORAS_TIMEOUT_ENFRIADO = 2;
@@ -38,12 +40,11 @@ export const authFetch = async (url, options = {}) => {
   // Si el backend nos dice 401 (No autorizado / Token vencido)
   if (response.status === 401) {
     console.error("⛔ EL BACKEND RECHAZÓ EL TOKEN. RUTA:", url);
-    // TEMPORALMENTE COMENTADO PARA FRENAR EL BUCLE:
-    // localStorage.removeItem("mrp_token");
-    // localStorage.removeItem("mrp_user");
-    // if (window.location.pathname !== "/login") {
-    //   window.location.href = "/login";
-    // }
+    localStorage.removeItem("mrp_token");
+    localStorage.removeItem("mrp_user");
+    if (window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
   }
 
   return response;

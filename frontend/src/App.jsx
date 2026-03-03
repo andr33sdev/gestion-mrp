@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -35,6 +35,10 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
 
+// --- IMPORTACIÓN DE PLUGINS NATIVOS Y UTILS ---
+import { PushNotifications } from "@capacitor/push-notifications";
+import { Capacitor } from "@capacitor/core";
+
 // Importación de Páginas
 import Dashboard from "./pages/Dashboard.jsx";
 import PanelControl from "./pages/PanelControl.jsx";
@@ -56,8 +60,6 @@ import DepositoPage from "./pages/DepositoPage.jsx";
 import DepositoDespacho from "./pages/DepositoDespacho.jsx";
 import SugerenciasPage from "./pages/SugerenciasPage.jsx";
 import GestorUsuarios from "./pages/GestorUsuarios.jsx";
-import TransmisorUbicacion from "./pages/TransmisorUbicacion";
-import MapaRastreo from "./pages/MapaRastreo";
 
 import { getAuthData, logout } from "./auth/authHelper";
 
@@ -131,28 +133,14 @@ const NAV_LINKS = [
     icon: <FaHardHat />,
     moduloReq: "MANTENIMIENTO",
   },
-  // El menú de Accesos no tiene moduloReq porque solo lo ve la Gerencia por código
   {
     path: "/usuarios",
     label: "Accesos",
     icon: <FaUserShield />,
     moduloReq: "ACCESOS_ADMIN",
   },
-  {
-    path: "/mapa",
-    label: "Mapa Flota",
-    icon: <FaMapMarkedAlt />,
-    moduloReq: "LOGISTICA",
-  },
-  {
-    path: "/transmitir",
-    label: "Mi Radar",
-    icon: <FaLocationArrow />,
-    moduloReq: "HOJA_RUTA",
-  },
 ];
 
-// --- RUTAS PROTEGIDAS CON REVISIÓN DE MÓDULO INTELIGENTE ---
 const ProtectedRoute = ({ children, requiredModule }) => {
   const { token, user } = getAuthData();
   const location = useLocation();
@@ -162,29 +150,22 @@ const ProtectedRoute = ({ children, requiredModule }) => {
     return <Navigate to={`/login?returnTo=${returnTo}`} replace />;
   }
 
-  // La gerencia y la jefatura pasan a todos lados sin importar los módulos
   if (user.rol === "GERENCIA" || user.rol === "JEFE PRODUCCIÓN")
     return children;
 
-  // Si la ruta requiere un módulo y el usuario no lo tiene:
   if (
     requiredModule &&
     (!user.modulos || !user.modulos.includes(requiredModule))
   ) {
-    // 1. Buscamos cuál es el primer módulo del menú al que SÍ tiene acceso
     const primerEnlacePermitido = NAV_LINKS.find((link) =>
       user.modulos?.includes(link.moduloReq),
     );
-
-    // 2. Si le encontramos uno, lo mandamos directo para ahí (evita el bucle y la pantalla blanca)
     if (
       primerEnlacePermitido &&
       location.pathname !== primerEnlacePermitido.path
     ) {
       return <Navigate to={primerEnlacePermitido.path} replace />;
     }
-
-    // 3. Si por algún motivo no tiene NINGÚN permiso asignado en todo el sistema:
     return (
       <div className="flex h-screen w-full items-center justify-center bg-[#f8fafc] text-slate-500 flex-col gap-4">
         <FaUserLock size={48} className="text-slate-300" />
@@ -206,11 +187,9 @@ const ProtectedRoute = ({ children, requiredModule }) => {
       </div>
     );
   }
-
   return children;
 };
 
-// --- SIDEBAR ESTILO LEBANE ---
 const Sidebar = ({
   links,
   isCollapsed,
@@ -220,12 +199,10 @@ const Sidebar = ({
   role,
 }) => {
   const location = useLocation();
-
   return (
     <aside
       className={`hidden lg:flex flex-col bg-white border-r border-gray-100 transition-all duration-300 z-50 ${isCollapsed ? "w-20" : "w-64"}`}
     >
-      {/* Logo */}
       <div className="h-16 flex items-center px-6 border-b border-gray-100">
         <div className="flex items-center gap-2 text-blue-600">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm">
@@ -238,8 +215,6 @@ const Sidebar = ({
           )}
         </div>
       </div>
-
-      {/* Navegación */}
       <nav className="flex-1 overflow-y-auto py-6 px-3 space-y-1 custom-scrollbar">
         {links.map((link) => {
           const isActive = location.pathname === link.path;
@@ -260,8 +235,6 @@ const Sidebar = ({
           );
         })}
       </nav>
-
-      {/* Footer Usuario */}
       <div className="p-4 border-t border-gray-100">
         <div
           className={`flex items-center gap-3 ${isCollapsed ? "justify-center" : ""}`}
@@ -305,10 +278,8 @@ const Sidebar = ({
 
 const Layout = ({ children }) => {
   const navigate = useNavigate();
-  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-
   const { user } = getAuthData();
   const role = user?.rol;
   const nombreUsuario = user?.nombre || "Usuario";
@@ -334,7 +305,6 @@ const Layout = ({ children }) => {
 
   return (
     <div className="flex h-screen bg-[#F3F4F6] text-gray-900 font-sans overflow-hidden">
-      {/* Sidebar Desktop */}
       <Sidebar
         links={allowedLinks}
         isCollapsed={isCollapsed}
@@ -343,26 +313,19 @@ const Layout = ({ children }) => {
         userBadge={userBadge}
         role={role}
       />
-
-      {/* --- HEADER MÓVIL CORREGIDO --- */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-stone-100 flex items-center justify-between px-6 z-[40]">
-        {/* Hamburguesa a la izquierda */}
         <button
           onClick={() => setSidebarOpen(true)}
           className="p-2.5 bg-stone-50 text-slate-600 rounded-xl active:scale-95 transition-all border border-stone-100"
         >
           <FaBars size={20} />
         </button>
-
-        {/* Texto a la derecha */}
         <div className="flex items-center gap-2">
           <span className="font-extrabold text-xl tracking-tight text-blue-600">
             Gestion<span className="text-gray-800">MRP</span>
           </span>
         </div>
       </div>
-
-      {/* Menú Lateral Móvil (Drawer) */}
       <AnimatePresence>
         {sidebarOpen && (
           <>
@@ -394,62 +357,32 @@ const Layout = ({ children }) => {
                   <FaTimes size={20} />
                 </button>
               </div>
-
               <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-                {allowedLinks.map((link) => {
-                  const isActive = location.pathname === link.path;
-                  return (
-                    <Link
-                      key={link.path}
-                      to={link.path}
-                      onClick={() => setSidebarOpen(false)}
-                      className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all ${
-                        isActive
-                          ? "bg-blue-50 text-blue-700 font-bold"
-                          : "text-slate-500 hover:bg-stone-50"
-                      }`}
+                {allowedLinks.map((link) => (
+                  <Link
+                    key={link.path}
+                    to={link.path}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all ${useLocation().pathname === link.path ? "bg-blue-50 text-blue-700 font-bold" : "text-slate-500 hover:bg-stone-50"}`}
+                  >
+                    <span
+                      className={
+                        useLocation().pathname === link.path
+                          ? "text-blue-600"
+                          : "text-stone-300"
+                      }
                     >
-                      <span
-                        className={
-                          isActive ? "text-blue-600" : "text-stone-300"
-                        }
-                      >
-                        {link.icon}
-                      </span>
-                      <span className="text-sm">{link.label}</span>
-                    </Link>
-                  );
-                })}
+                      {link.icon}
+                    </span>
+                    <span className="text-sm">{link.label}</span>
+                  </Link>
+                ))}
               </nav>
-
-              <div className="p-6 border-t border-stone-50 bg-stone-50/50">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold border border-blue-200">
-                    {nombreUsuario.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-slate-800 truncate">
-                      {nombreUsuario}
-                    </p>
-                    <p className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">
-                      {role}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="w-full py-3 bg-white border border-stone-200 text-rose-500 rounded-xl font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <FaSignOutAlt /> Salir
-                </button>
-              </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
-
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
-        {/* pt-16 es vital para que el contenido no quede debajo del header móvil */}
         <main className="flex-1 overflow-y-auto scroll-smooth pt-16 lg:pt-0">
           <div className="w-full h-full">{children}</div>
         </main>
@@ -459,6 +392,69 @@ const Layout = ({ children }) => {
 };
 
 export default function App() {
+  useEffect(() => {
+    const inicializarNotificaciones = async () => {
+      // 1. Verificamos que estamos en el celular (no en la web)
+      const isNative =
+        window.Capacitor && window.Capacitor.getPlatform() !== "web";
+
+      if (isNative) {
+        try {
+          // 2. Limpiamos escuchadores viejos por seguridad
+          await PushNotifications.removeAllListeners();
+
+          // 3. Preparamos la "trampa" para cuando llegue el token
+          PushNotifications.addListener("registration", async (token) => {
+            // ACÁ ESTÁ TU ALERT Y TU CONSOLE.LOG NORMALES
+            console.log("🚀 TOKEN CAPTURADO AUTOMÁTICAMENTE:", token.value);
+            alert("¡Token capturado!\n" + token.value.substring(0, 30) + "...");
+
+            // Obtenemos el usuario y el token de sesión usando tu helper
+            const { user } = getAuthData();
+
+            if (user && user.id) {
+              try {
+                // Lo mandamos a tu DB de forma silenciosa
+                await authFetch(UPDATE_FCM_TOKEN_URL, {
+                  method: "PUT",
+                  body: JSON.stringify({ fcm_token: token.value }),
+                });
+                console.log(
+                  "✅ Token guardado en la Base de Datos exitosamente.",
+                );
+              } catch (e) {
+                console.error(
+                  "❌ Error de red al guardar el token en la DB:",
+                  e,
+                );
+              }
+            }
+          });
+
+          // 4. Escuchador de errores nativos
+          PushNotifications.addListener("registrationError", (err) => {
+            console.error("❌ Error nativo de Firebase:", err);
+            alert("Error de Firebase: " + JSON.stringify(err));
+          });
+
+          // 5. Pedimos permisos y disparamos el registro
+          const permisos = await PushNotifications.requestPermissions();
+          if (permisos.receive === "granted") {
+            await PushNotifications.register();
+          } else {
+            console.warn(
+              "⚠️ El usuario denegó los permisos de notificaciones.",
+            );
+          }
+        } catch (error) {
+          console.error("❌ Error general inicializando Push:", error);
+        }
+      }
+    };
+
+    inicializarNotificaciones();
+  }, []); // El array vacío hace que corra solo una vez al abrir la app
+
   return (
     <BrowserRouter>
       <Toaster
@@ -468,20 +464,13 @@ export default function App() {
             fontSize: "12px",
             fontWeight: "bold",
             borderRadius: "16px",
-            color: "#334155", // slate-700
+            color: "#334155",
           },
-          success: {
-            iconTheme: {
-              primary: "#10B981", // emerald-500
-              secondary: "#fff",
-            },
-          },
+          success: { iconTheme: { primary: "#10B981", secondary: "#fff" } },
         }}
       />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-
-        {/* Rutas con Layout - Reemplazados los allowedRoles por requiredModule */}
         <Route
           path="/"
           element={
@@ -502,8 +491,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Nota: Panel de Control lo dejamos libre si tiene permisos, o le podés asignar un módulo si preferís. Lo ato a "PLANIFICACION" para que siga la lógica */}
         <Route
           path="/panel-control"
           element={
@@ -514,7 +501,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/registrar-produccion"
           element={
@@ -575,8 +561,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* El calendario no estaba en la lista de módulos visuales, lo ato al inicio, podés ajustarlo */}
         <Route
           path="/calendario"
           element={
@@ -587,7 +571,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/ingenieria"
           element={
@@ -608,8 +591,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Detalle Producto suele ser público para todos los logueados con acceso a ingeniería o registro */}
         <Route
           path="/producto/:nombre"
           element={
@@ -620,7 +601,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
         <Route
           path="/compras"
           element={
@@ -671,8 +651,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-
-        {/* Ruta Exclusiva de Gerencia (No atada a un módulo seleccionable) */}
         <Route
           path="/usuarios"
           element={
@@ -683,27 +661,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/mapa"
-          element={
-            <ProtectedRoute requiredModule="LOGISTICA">
-              <Layout>
-                <MapaRastreo />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/transmitir"
-          element={
-            <ProtectedRoute requiredModule="HOJA_RUTA">
-              <Layout>
-                <TransmisorUbicacion />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

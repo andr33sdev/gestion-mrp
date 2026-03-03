@@ -1,32 +1,38 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-
-// --- 1. IMPORTAMOS HTTP Y SOCKET.IO (NUEVO) ---
 const http = require("http");
-const { Server } = require("socket.io");
+
+// --- 1. CONFIGURACIÓN DE FIREBASE ---
+const admin = require("firebase-admin");
+
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+  ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+  : require("./firebase-key.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+console.log("🔥 Firebase Admin inicializado correctamente");
 
 // --- SERVICIOS Y UTILIDADES ---
 const { setupAuth } = require("./google-drive");
 const { inicializarTablas } = require("./services/dbInit");
-
 const {
   sincronizarBaseDeDatos,
   sincronizarPedidos,
-  sincronizarStockSemielaborados,
-  sincronizarMateriasPrimas,
 } = require("./services/syncService");
-
 const {
   iniciarBotReceptor,
   getBot,
   checkAlertasMantenimiento,
 } = require("./services/telegramBotListener");
-
 const { vigilarCompetencia } = require("./services/competenciaService");
-const { protect } = require("./middleware/auth"); // <-- ACÁ ESTÁ EL PATOVICA
+const { protect } = require("./middleware/auth");
 
 // --- IMPORTAR RUTAS ---
+const authRoutes = require("./routes/auth");
 const generalRoutes = require("./routes/general");
 const comprasRoutes = require("./routes/compras");
 const produccionRoutes = require("./routes/produccion");
@@ -42,7 +48,6 @@ const rrhhRoutes = require("./routes/rrhh");
 const changelogRoutes = require("./routes/changelog");
 const sugerenciasRoutes = require("./routes/sugerencias");
 const depositoRoutes = require("./routes/deposito");
-const authRoutes = require("./routes/auth");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -51,75 +56,41 @@ app.use(cors());
 app.use(express.json());
 
 // ==========================================
-// 2. CREACIÓN DEL SERVIDOR Y RADAR (MODIFICADO)
+// FUNCIÓN GLOBAL DE NOTIFICACIONES
 // ==========================================
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-  },
-});
-
-// MEMORIA PERSISTENTE PARA EVITAR "VEHÍCULOS 0"
-const flotaActiva = {};
-const timersDesconexion = {};
-
-io.on("connection", (socket) => {
-  console.log("🟢 Dispositivo conectado al radar satelital:", socket.id);
-
-  // Enviamos los vehículos que ya están en memoria apenas alguien abre el mapa
-  socket.emit("estadoInicialFlota", flotaActiva);
-
-  socket.on("enviarUbicacion", (data) => {
-    // Usamos el nombre como ID único para que no dependa del ID de socket
-    const idUnico = data.nombre || socket.id;
-
-    // Si el usuario volvió, cancelamos su borrado programado
-    if (timersDesconexion[idUnico]) {
-      clearTimeout(timersDesconexion[idUnico]);
-      delete timersDesconexion[idUnico];
-    }
-
-    // Guardamos/Actualizamos en la memoria del servidor
-    flotaActiva[idUnico] = {
-      ...data,
-      idSocket: socket.id,
-      ultimaConexion: new Date(),
-    };
-
-    // Reenviamos a los mapas
-    socket.broadcast.emit("recibirUbicacion", flotaActiva[idUnico]);
-  });
-
-  socket.on("disconnect", () => {
-    // Buscamos a quién le pertenecía este socket
-    const idUnico = Object.keys(flotaActiva).find(
-      (key) => flotaActiva[key].idSocket === socket.id,
-    );
-
-    if (idUnico) {
-      console.log(`🟡 Corte de señal para ${idUnico}. Esperando 60s...`);
-
-      // No lo borramos del mapa inmediatamente, le damos 1 minuto de gracia
-      timersDesconexion[idUnico] = setTimeout(() => {
-        console.log(`🔴 Desconexión definitiva: ${idUnico}`);
-        delete flotaActiva[idUnico];
-        io.emit("repartidorDesconectado", idUnico);
-        delete timersDesconexion[idUnico];
-      }, 60000);
-    }
-  });
-});
+const enviarNotificacionApp = async (fcmToken, titulo, mensaje) => {
+  if (!fcmToken) return;
+  const message = {
+    notification: { title: titulo, body: mensaje },
+    token: fcmToken,
+    android: { priority: "high" },
+  };
+  try {
+    await admin.messaging().send(message);
+    console.log("🔔 Push enviada con éxito");
+  } catch (error) {
+    console.error("❌ Error enviando Push:", error);
+  }
+};
 
 // ==========================================
-// 1. RUTA PÚBLICA (SIN CANDADO)
+// RUTAS PÚBLICAS (SIN CANDADO)
 // ==========================================
 app.use("/api/auth", authRoutes);
 
+// Ruta de prueba liberada (movida aquí arriba para que funcione sin token JWT)
+app.get("/api/test-push/:token", async (req, res) => {
+  const miToken = req.params.token;
+  await enviarNotificacionApp(
+    miToken,
+    "¡Conexión Exitosa! 🏭",
+    "Tu servidor Node.js ya tiene línea directa con tu Xiaomi.",
+  );
+  res.send(`🚀 Notificación enviada al token: ${miToken.substring(0, 10)}...`);
+});
+
 // ==========================================
-// 2. RUTAS PRIVADAS (CON "protect")
+// RUTAS PRIVADAS (CON "protect")
 // ==========================================
 app.use("/api", protect, generalRoutes);
 app.use("/api/compras", protect, comprasRoutes);
@@ -137,29 +108,21 @@ app.use("/api/changelog", protect, changelogRoutes);
 app.use("/api/sugerencias", protect, sugerenciasRoutes);
 app.use("/api/deposito", protect, depositoRoutes);
 
+// ==========================================
+// INICIO DE SERVICIOS
+// ==========================================
 async function iniciarServidor() {
   try {
     await setupAuth();
     await inicializarTablas();
 
-    // --- 3. CAMBIO CLAVE: Usamos server.listen en lugar de app.listen ---
-    server.listen(PORT, () =>
-      console.log(`🚀 Servidor y Radar corriendo en puerto ${PORT}`),
-    );
-
-    console.log("⏰ Iniciando servicios...");
+    iniciarBotReceptor();
 
     sincronizarBaseDeDatos();
     sincronizarPedidos();
-    // sincronizarStockSemielaborados();
-    // sincronizarMateriasPrimas();
-    iniciarBotReceptor();
-
-    // INTERVALOS
     setInterval(sincronizarBaseDeDatos, 2 * 60 * 1000);
     setInterval(sincronizarPedidos, 15 * 60 * 1000);
 
-    // Vigilancia Competencia (Cada 30 minutos)
     setInterval(
       () => {
         const bot = getBot();
@@ -169,14 +132,18 @@ async function iniciarServidor() {
       30 * 60 * 1000,
     );
 
-    // --- VIGILANCIA MANTENIMIENTO ---
     setInterval(
       () => {
-        console.log("🔧 Chequeando alertas mantenimiento 24h...");
+        console.log("🔧 Chequeando alertas mantenimiento...");
         checkAlertasMantenimiento();
       },
       60 * 60 * 1000,
     );
+
+    // 👇 ACÁ ESTÁ LA MAGIA QUE FALTABA 👇
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Servidor Express escuchando en http://0.0.0.0:${PORT}`);
+    });
   } catch (error) {
     console.error("❌ Error fatal:", error);
   }

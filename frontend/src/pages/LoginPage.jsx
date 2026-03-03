@@ -10,7 +10,9 @@ import {
   FaCheckCircle,
   FaSpinner,
 } from "react-icons/fa";
-import { API_BASE_URL } from "../utils.js"; // Asegurate de que la ruta sea correcta
+import { API_BASE_URL } from "../utils.js";
+import { PushNotifications } from "@capacitor/push-notifications";
+import { Capacitor } from "@capacitor/core";
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -33,12 +35,9 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setErrorMsg(null);
-    setSuccessMsg(null);
-
-    const endpoint = isLogin ? "/auth/login" : "/auth/register";
 
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -46,28 +45,43 @@ export default function LoginPage() {
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.msg || "Ocurrió un error inesperado.");
+      if (!response.ok) throw new Error(data.msg || "Error");
+
+      // 1. GUARDAR DATOS (Esto es lo único que importa para entrar)
+      localStorage.setItem("mrp_token", data.token);
+      localStorage.setItem("mrp_user", JSON.stringify(data.usuario));
+
+      // 2. DISPARAR REGISTRO DE TOKEN (Sin 'await', que corra de fondo)
+      if (Capacitor.isNativePlatform()) {
+        iniciarRegistroPush(data.token);
       }
 
-      if (isLogin) {
-        // --- LOGIN EXITOSO ---
-        // Guardamos el token y los datos del usuario en el navegador
-        localStorage.setItem("mrp_token", data.token);
-        localStorage.setItem("mrp_user", JSON.stringify(data.usuario));
-
-        // Recargamos la página para que la App lea el token y lo deje pasar
-        window.location.href = "/";
-      } else {
-        // --- REGISTRO EXITOSO ---
-        setSuccessMsg(data.msg);
-        setIsLogin(true); // Lo pasamos a la pantalla de login
-        setFormData({ nombre: "", email: "", password: "" }); // Limpiamos formulario
-      }
+      // 3. ENTRAR AL SISTEMA YA MISMO
+      window.location.href = "/";
     } catch (error) {
       setErrorMsg(error.message);
-    } finally {
       setLoading(false);
+    }
+  };
+
+  // Sacamos esta función afuera para que no trabe el Login
+  const iniciarRegistroPush = async (tokenSesion) => {
+    try {
+      await PushNotifications.requestPermissions();
+      await PushNotifications.register();
+
+      PushNotifications.addListener("registration", (tokenFCM) => {
+        fetch(`${API_BASE_URL}/auth/update-fcm`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${tokenSesion}`,
+          },
+          body: JSON.stringify({ fcm_token: tokenFCM.value }),
+        });
+      });
+    } catch (e) {
+      console.error("Error silencioso en Push:", e);
     }
   };
 

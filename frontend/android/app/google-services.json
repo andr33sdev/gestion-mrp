@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "574060322032",
+    "project_id": "gestion-mrp-cd072",
+    "storage_bucket": "gestion-mrp-cd072.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:574060322032:android:c626e1ac30585e1fe0b635",
+        "android_client_info": {
+          "package_name": "com.gestion.mrp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3NBOdRglJHykXGakg7X1_w28dBlUVwMM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

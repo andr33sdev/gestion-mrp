@@ -1,5 +1,9 @@
 {
   "appId": "com.gestion.mrp",
-  "appName": "GestionMRP",
-  "webDir": "dist"
+  "appName": "Gestion MRP",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
 }

@@ -6,12 +6,13 @@ const {
 } = require("./competenciaService");
 const { agregarPedidoAlSheet } = require("../google-drive");
 const db = require("../db");
+const admin = require("firebase-admin"); // <--- AÑADIDO: Importamos Firebase Admin
 
 // --- 1. CONFIGURACIÓN ---
 const tokenAdmin = process.env.TELEGRAM_BOT_TOKEN;
 const tokenPedidos = process.env.TELEGRAM_BOT_TOKEN_PEDIDOS;
 const tokenMantenimiento = process.env.TELEGRAM_BOT_TOKEN_MANTENIMIENTO;
-const tokenLogistica = process.env.TELEGRAM_BOT_TOKEN_LOGISTICA; // <--- NUEVO
+const tokenLogistica = process.env.TELEGRAM_BOT_TOKEN_LOGISTICA;
 
 const ADMIN_CHAT_ID = process.env.TELEGRAM_ADMIN_ID;
 const MANTENIMIENTO_CHAT_ID = process.env.TELEGRAM_CHAT_ID_MANTENIMIENTO;
@@ -19,10 +20,50 @@ const MANTENIMIENTO_CHAT_ID = process.env.TELEGRAM_CHAT_ID_MANTENIMIENTO;
 let botAdminInstance = null;
 let botPedidosInstance = null;
 let botMantenimientoInstance = null;
-let botLogisticaInstance = null; // <--- NUEVO
+let botLogisticaInstance = null;
 
 const colaDePedidos = [];
 let procesandoCola = false;
+
+// --- FUNCIÓN AUXILIAR: ENVIAR PUSH NOTIFICATIONS ---
+async function notificarPorPush(rol, titulo, body) {
+  try {
+    const { rows } = await db.query(
+      "SELECT fcm_token FROM usuarios WHERE rol = $1 AND activo = true AND fcm_token IS NOT NULL",
+      [rol],
+    );
+
+    if (rows.length === 0) return;
+
+    const tokens = rows.map((r) => r.fcm_token);
+
+    const message = {
+      notification: { title: titulo, body: body },
+      tokens: tokens,
+      android: { priority: "high" },
+    };
+
+    const response = await admin.messaging().sendEachForMulticast(message);
+
+    console.log(
+      `🔔 Push intentó enviarse a ${tokens.length} dispositivo(s) del rol ${rol}. Éxitos: ${response.successCount}`,
+    );
+
+    // --- NUEVO: DETECTOR DE ERRORES DE FIREBASE ---
+    if (response.failureCount > 0) {
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(
+            `❌ Firebase rechazó el token [${idx}]. Motivo:`,
+            resp.error.message,
+          );
+        }
+      });
+    }
+  } catch (error) {
+    console.error("❌ Error grave ejecutando Push Notification:", error);
+  }
+}
 
 // --- HELPER FECHA ---
 function getPeriodo(fechaStr) {
@@ -57,7 +98,6 @@ function parsearMensajePedido(text) {
       detalles: "",
       cantidad: 0,
     };
-
     const esML = text.includes("MARKETPLACE") || text.includes("MSHOPS");
     if (esML) datos.detalles = "MercadoLibre";
 
@@ -94,7 +134,7 @@ function parsearMensajePedido(text) {
   }
 }
 
-// --- PROCESADOR COLA (CON SYNC FORZADO) ---
+// --- PROCESADOR COLA ---
 async function procesarSiguientePedido(bot) {
   if (procesandoCola || colaDePedidos.length === 0) return;
   procesandoCola = true;
@@ -127,17 +167,14 @@ async function procesarSiguientePedido(bot) {
 //  INICIALIZADOR PRINCIPAL
 // ========================================================
 function iniciarBotReceptor() {
-  // 1. Bot Admin
   if (tokenAdmin && !botAdminInstance) {
     botAdminInstance = new TelegramBot(tokenAdmin, { polling: true });
     configurarBotAdmin(botAdminInstance);
   }
-  // 2. Bot Pedidos
   if (tokenPedidos && !botPedidosInstance) {
     botPedidosInstance = new TelegramBot(tokenPedidos, { polling: true });
     configurarBotPedidos(botPedidosInstance);
   }
-  // 3. Bot Mantenimiento
   if (tokenMantenimiento && !botMantenimientoInstance) {
     botMantenimientoInstance = new TelegramBot(tokenMantenimiento, {
       polling: true,
@@ -146,11 +183,10 @@ function iniciarBotReceptor() {
     botMantenimientoInstance.onText(/\/id/, (msg) => {
       botMantenimientoInstance.sendMessage(
         msg.chat.id,
-        `Chat ID: ${msg.chat.id}`
+        `Chat ID: ${msg.chat.id}`,
       );
     });
   }
-  // 4. Bot Logística (NUEVO)
   if (tokenLogistica && !botLogisticaInstance) {
     botLogisticaInstance = new TelegramBot(tokenLogistica, { polling: true });
     configurarBotLogistica(botLogisticaInstance);
@@ -166,7 +202,6 @@ function configurarBotPedidos(bot) {
     const texto = msg.text || "";
     const chatId = msg.chat.id;
 
-    // A. PEDIDO EQUAL
     const datosPedido = parsearMensajePedido(texto);
     if (datosPedido) {
       colaDePedidos.push({ datos: datosPedido, chatId });
@@ -174,12 +209,11 @@ function configurarBotPedidos(bot) {
       return;
     }
 
-    // B. CONSULTA CLIENTE
     if (/\d+/.test(texto)) {
       const numeros = texto.match(/\d+/g);
       if (!numeros) return;
       const ordenCompra = numeros.reduce((a, b) =>
-        a.length > b.length ? a : b
+        a.length > b.length ? a : b,
       );
       const filtroCliente = texto
         .replace(/\d+/g, "")
@@ -192,39 +226,36 @@ function configurarBotPedidos(bot) {
       try {
         bot.sendChatAction(chatId, "typing");
         const res = await db.query(
-          `SELECT * FROM pedidos_clientes 
-           WHERE oc_cliente = $1 
-           ORDER BY id DESC`,
-          [ordenCompra]
+          `SELECT * FROM pedidos_clientes WHERE oc_cliente = $1 ORDER BY id DESC`,
+          [ordenCompra],
         );
-
         let encontrados = res.rows;
+
         if (encontrados.length === 0) {
           bot.sendMessage(
             chatId,
             `❌ No encontré la orden <b>${ordenCompra}</b>.`,
-            { parse_mode: "HTML" }
+            { parse_mode: "HTML" },
           );
           return;
         }
 
         if (filtroCliente.length > 2) {
           encontrados = encontrados.filter((p) =>
-            (p.cliente || "").toLowerCase().includes(filtroCliente)
+            (p.cliente || "").toLowerCase().includes(filtroCliente),
           );
           if (encontrados.length === 0) {
             bot.sendMessage(
               chatId,
               `⚠️ Encontré la orden ${ordenCompra} pero no coincide con "${filtroCliente}".`,
-              { parse_mode: "HTML" }
+              { parse_mode: "HTML" },
             );
             return;
           }
         }
 
         const cabecera = encontrados[0];
-        let respuesta = `📋 <b>ESTADO DE ORDEN #${ordenCompra}</b>\n`;
-        respuesta += `🏢 <b>Cliente:</b> ${cabecera.cliente}\n\n`;
+        let respuesta = `📋 <b>ESTADO DE ORDEN #${ordenCompra}</b>\n🏢 <b>Cliente:</b> ${cabecera.cliente}\n\n`;
 
         encontrados.forEach((p) => {
           let estado = p.estado || "PENDIENTE";
@@ -235,9 +266,7 @@ function configurarBotPedidos(bot) {
           if (estado.includes("DESPACHADO") || estado.includes("ENVIADO"))
             icono = "🚚";
 
-          respuesta += `${icono} <b>${p.modelo}</b> (x${p.cantidad})\n`;
-          respuesta += `   Status: <i>${estado}</i>\n`;
-          respuesta += `   ────────────────\n`;
+          respuesta += `${icono} <b>${p.modelo}</b> (x${p.cantidad})\n Status: <i>${estado}</i>\n ────────────────\n`;
         });
 
         bot.sendMessage(chatId, respuesta, { parse_mode: "HTML" });
@@ -252,7 +281,7 @@ function configurarBotPedidos(bot) {
       bot.sendMessage(
         chatId,
         "👋 Envíame tu <b>Número de Orden (OC)</b> para ver el estado.",
-        { parse_mode: "HTML" }
+        { parse_mode: "HTML" },
       );
     }
   });
@@ -267,23 +296,18 @@ function configurarBotAdmin(bot) {
     const texto = msg.text || "";
     const chatId = msg.chat.id;
 
-    // --- COMANDO PARA VER ID ---
     if (texto === "/id") {
       bot.sendMessage(chatId, `🆔 El ID de este chat es: ${chatId}`);
       console.log("ID DETECTADO:", chatId);
     }
-
-    // Comando START
     if (texto === "/start") bot.sendMessage(chatId, "👷 Bot Conoflex Activo");
 
-    // 2. Agrega este bloque para el disparo manual:
     if (texto === "/revisar") {
       bot.sendMessage(
         chatId,
-        "🕵️ Iniciando revisión completa de competencia..."
+        "🕵️ Iniciando revisión completa de competencia...",
       );
       try {
-        // Ejecuta la misma función que antes hacía el automático
         await vigilarCompetencia(bot, chatId);
         bot.sendMessage(chatId, "✅ Revisión finalizada.");
       } catch (error) {
@@ -292,63 +316,43 @@ function configurarBotAdmin(bot) {
       }
     }
 
-    // --- CÓDIGO RESTAURADO PARA ESPIAR ---
     if (texto.startsWith("/espiar ")) {
-      // Formato esperado: /espiar https://... Nombre del Producto
       const partes = texto.split(" ");
       const url = partes[1];
-      const alias = partes.slice(2).join(" "); // Une el resto por si el nombre tiene espacios
+      const alias = partes.slice(2).join(" ");
 
-      if (!url || !alias) {
+      if (!url || !alias)
         return bot.sendMessage(
           chatId,
           "⚠️ <b>Formato:</b> /espiar [URL] [Nombre]",
-          { parse_mode: "HTML" }
+          { parse_mode: "HTML" },
         );
-      }
 
       bot.sendMessage(chatId, `🕵️ <b>Procesando:</b> ${alias}...`, {
         parse_mode: "HTML",
       });
 
       try {
-        // 1. Detectar el sitio automáticamente
         let sitio = "GENERICO";
         if (url.includes("mercadolibre")) sitio = "MERCADOLIBRE";
-
-        // 2. Guardar en Base de Datos (PostgreSQL)
-        const insertQuery = `
-          INSERT INTO competencia_tracking (url, alias, sitio, activo, ultimo_precio, ultima_revision)
-          VALUES ($1, $2, $3, TRUE, 0, NOW())
-          RETURNING *
-        `;
+        const insertQuery = `INSERT INTO competencia_tracking (url, alias, sitio, activo, ultimo_precio, ultima_revision) VALUES ($1, $2, $3, TRUE, 0, NOW()) RETURNING *`;
         const res = await db.query(insertQuery, [url, alias, sitio]);
         const nuevoItem = res.rows[0];
-
-        // 3. Escanear inmediatamente para tener el precio base
-        // (Aquí usamos la función que ya estaba importada en la línea 2)
         const reporte = await escanearProducto(nuevoItem);
 
-        if (reporte) {
-          // Si devuelve reporte, lo mostramos
+        if (reporte)
           bot.sendMessage(chatId, reporte, { parse_mode: "Markdown" });
-        } else {
-          // Si no (ej. precio 0 o error de lectura), confirmamos guardado
+        else
           bot.sendMessage(
             chatId,
             `✅ <b>Guardado.</b> Se monitoreará cada hora.`,
-            { parse_mode: "HTML" }
+            { parse_mode: "HTML" },
           );
-        }
       } catch (error) {
         console.error("Error comando espiar:", error);
-        bot.sendMessage(
-          chatId,
-          "❌ Error al guardar. Verifica que la URL no sea demasiado larga o duplicada."
-        );
+        bot.sendMessage(chatId, "❌ Error al guardar.");
       }
     }
-    // -------------------------------------
   });
 }
 
@@ -356,55 +360,43 @@ function configurarBotAdmin(bot) {
 //  NUEVO: LÓGICA BOT LOGÍSTICA (SUSCRIPCIONES)
 // ========================================================
 function configurarBotLogistica(bot) {
-  // 1. Suscribirse
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const firstName = msg.from.first_name || "SinNombre";
     const username = msg.from.username || "SinUser";
-
     try {
       await db.query(
-        `INSERT INTO telegram_suscriptores (chat_id, first_name, username) 
-                 VALUES ($1, $2, $3) 
-                 ON CONFLICT (chat_id) DO NOTHING`,
-        [chatId, firstName, username]
+        `INSERT INTO telegram_suscriptores (chat_id, first_name, username) VALUES ($1, $2, $3) ON CONFLICT (chat_id) DO NOTHING`,
+        [chatId, firstName, username],
       );
       bot.sendMessage(
         chatId,
-        `¡Hola ${firstName}! 👋\nYa estás suscrito a las alertas de Logística.`
+        `¡Hola ${firstName}! 👋\nYa estás suscrito a las alertas de Logística.`,
       );
-      console.log(`✅ Nuevo suscriptor Logística: ${firstName}`);
     } catch (err) {
       console.error("Error guardando suscriptor Logística:", err);
     }
   });
 
-  // 2. Desuscribirse
   bot.onText(/\/stop/, async (msg) => {
     const chatId = msg.chat.id;
     try {
       await db.query("DELETE FROM telegram_suscriptores WHERE chat_id = $1", [
         chatId,
       ]);
-      bot.sendMessage(
-        chatId,
-        "🔕 Te has dado de baja. No recibirás más alertas."
-      );
+      bot.sendMessage(chatId, "🔕 Te has dado de baja.");
     } catch (err) {
       console.error(err);
     }
   });
 
-  // Manejo de errores de conexión
   bot.on("polling_error", (error) => {
     if (error.code !== "EFATAL") console.warn(`[BOT LOGISTICA] ${error.code}`);
   });
 }
 
-// FUNCION DE DIFUSION PARA LOGISTICA
 async function enviarNotificacionLogistica(tipo, data) {
   if (!botLogisticaInstance) return;
-
   const hora = new Date().toLocaleString("es-AR", {
     timeZone: "America/Argentina/Buenos_Aires",
     hour: "2-digit",
@@ -416,7 +408,6 @@ async function enviarNotificacionLogistica(tipo, data) {
     case "NUEVA_SOLICITUD":
       mensaje = `📦 <b>NUEVA SOLICITUD (#${data.id})</b>\n👤 <b>Pide:</b> ${data.solicitante}\n🛠 <b>Producto:</b> ${data.producto}\n🔢 <b>Cantidad:</b> ${data.cantidad}\n🚨 <b>Prioridad:</b> ${data.prioridad}\n⏰ <i>${hora} hs</i>`;
       break;
-
     case "CAMBIO_ESTADO":
       const iconos = {
         APROBADO: "✅",
@@ -428,31 +419,24 @@ async function enviarNotificacionLogistica(tipo, data) {
       const icono = iconos[data.estado] || "🔄";
       mensaje = `${icono} <b>ESTADO ACTUALIZADO (#${data.id})</b>\n👤 <b>Responsable:</b> ${data.usuario}\n🛠 <b>Producto:</b> ${data.producto}\n📊 <b>Nuevo Estado:</b> ${data.estado}\n⏰ <i>${hora} hs</i>`;
       break;
-
     case "NUEVO_COMENTARIO":
       mensaje = `💬 <b>NUEVO COMENTARIO (#${data.id})</b>\n👤 <b>${data.usuario} dice:</b>\n"<i>${data.mensaje}</i>"\n\n🛠 <b>En:</b> ${data.producto}\n⏰ <i>${hora} hs</i>`;
       break;
-
     default:
       return;
   }
 
   try {
     const res = await db.query("SELECT chat_id FROM telegram_suscriptores");
-    const suscriptores = res.rows;
-
-    if (suscriptores.length === 0) return;
-
-    const envios = suscriptores.map((sub) =>
+    const envios = res.rows.map((sub) =>
       botLogisticaInstance
         .sendMessage(sub.chat_id, mensaje, { parse_mode: "HTML" })
         .catch((err) => {
-          if (err.response && err.response.statusCode === 403) {
+          if (err.response && err.response.statusCode === 403)
             db.query("DELETE FROM telegram_suscriptores WHERE chat_id = $1", [
               sub.chat_id,
             ]);
-          }
-        })
+        }),
     );
     await Promise.all(envios);
   } catch (error) {
@@ -461,37 +445,29 @@ async function enviarNotificacionLogistica(tipo, data) {
 }
 
 // ========================================================
-//  FUNCIONES MANTENIMIENTO
+//  FUNCIONES MANTENIMIENTO (CON PUSH NOTIFICATIONS)
 // ========================================================
 async function notificarNuevoTicketMantenimiento(ticket) {
-  if (!botMantenimientoInstance || !MANTENIMIENTO_CHAT_ID) return;
-
-  const prioridadIcon =
-    ticket.prioridad === "ALTA"
-      ? "🔴"
-      : ticket.prioridad === "MEDIA"
-      ? "🟡"
-      : "🔵";
-
-  const msg =
-    `🔧 <b>NUEVO REPORTE DE FALLA</b>\n\n` +
-    `🏭 <b>Máquina:</b> ${ticket.maquina}\n` +
-    `${prioridadIcon} <b>Prioridad:</b> ${ticket.prioridad}\n` +
-    `📝 <b>Problema:</b> ${ticket.titulo}\n` +
-    `👤 <b>Reportó:</b> ${ticket.creado_por || "Anónimo"}\n` +
-    `📅 <i>${new Date().toLocaleString("es-AR")}</i>`;
-
-  try {
-    await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, {
-      parse_mode: "HTML",
-    });
-  } catch (e) {
-    console.error("Error Telegram Mant:", e.message);
+  // 1. Notificación a Telegram (APAGADO TEMPORALMENTE)
+  /*
+  if (botMantenimientoInstance && MANTENIMIENTO_CHAT_ID) {
+    const prioridadIcon = ticket.prioridad === "ALTA" ? "🔴" : ticket.prioridad === "MEDIA" ? "🟡" : "🔵";
+    const msg = `🔧 <b>NUEVO REPORTE DE FALLA</b>\n\n🏭 <b>Máquina:</b> ${ticket.maquina}\n${prioridadIcon} <b>Prioridad:</b> ${ticket.prioridad}\n📝 <b>Problema:</b> ${ticket.titulo}\n👤 <b>Reportó:</b> ${ticket.creado_por || "Anónimo"}\n📅 <i>${new Date().toLocaleString("es-AR")}</i>`;
+    try { await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, { parse_mode: "HTML" }); } 
+    catch (e) { console.error("Error Telegram Mant:", e.message); }
   }
+  */
+
+  // 2. Notificación Push a la App (Jefe de Producción o Mantenimiento)
+  const pushTitle = `Falla en ${ticket.maquina} 🔧`;
+  const pushBody = `Reportado por ${ticket.creado_por || "Anónimo"}: ${ticket.titulo}`;
+
+  // Enviamos al Jefe de Producción y al Encargado de Mantenimiento
+  await notificarPorPush("JEFE PRODUCCIÓN", pushTitle, pushBody);
+  await notificarPorPush("ENC. MANTENIMIENTO", pushTitle, pushBody);
 }
 
 async function checkAlertasMantenimiento() {
-  if (!botMantenimientoInstance || !MANTENIMIENTO_CHAT_ID) return;
   try {
     const query = `
         SELECT * FROM tickets_mantenimiento 
@@ -502,19 +478,24 @@ async function checkAlertasMantenimiento() {
     const { rows } = await db.query(query);
 
     for (const t of rows) {
-      const msg =
-        `🚨 <b>ALERTA: TICKET +24H</b> 🚨\n\n` +
-        `El reporte #${t.id} sigue sin solución.\n` +
-        `🏭 <b>Máquina:</b> ${t.maquina}\n` +
-        `📝 <b>Título:</b> ${t.titulo}\n\n` +
-        `<i>Por favor, actualizar estado o resolver.</i>`;
+      // 1. Notificación Telegram (APAGADO TEMPORALMENTE)
+      /*
+      if (botMantenimientoInstance && MANTENIMIENTO_CHAT_ID) {
+        const msg = `🚨 <b>ALERTA: TICKET +24H</b> 🚨\n\nEl reporte #${t.id} sigue sin solución.\n🏭 <b>Máquina:</b> ${t.maquina}\n📝 <b>Título:</b> ${t.titulo}\n\n<i>Por favor, actualizar estado o resolver.</i>`;
+        await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, { parse_mode: "HTML" });
+      }
+      */
 
-      await botMantenimientoInstance.sendMessage(MANTENIMIENTO_CHAT_ID, msg, {
-        parse_mode: "HTML",
-      });
+      // 2. Notificación Push a la App
+      const pushTitle = `🚨 Ticket +24hs: ${t.maquina}`;
+      const pushBody = `El reporte #${t.id} sigue sin solución. Por favor revisar.`;
+      await notificarPorPush("JEFE PRODUCCIÓN", pushTitle, pushBody);
+      await notificarPorPush("ENC. MANTENIMIENTO", pushTitle, pushBody);
+
+      // Actualizar estado en DB
       await db.query(
         "UPDATE tickets_mantenimiento SET alerta_24h_enviada = TRUE WHERE id = $1",
-        [t.id]
+        [t.id],
       );
     }
   } catch (e) {
@@ -530,7 +511,7 @@ async function enviarAlertaStock(itemsCriticos) {
   try {
     await botAdminInstance.sendMessage(
       ADMIN_CHAT_ID,
-      `⚠️ Alerta Stock: ${itemsCriticos.length} items bajos.`
+      `⚠️ Alerta Stock: ${itemsCriticos.length} items bajos.`,
     );
   } catch (e) {
     console.error(e);
@@ -542,7 +523,7 @@ async function enviarAlertaMRP(plan, items) {
   try {
     await botAdminInstance.sendMessage(
       ADMIN_CHAT_ID,
-      `🏭 Alerta MRP para ${plan}.`
+      `🏭 Alerta MRP para ${plan}.`,
     );
   } catch (e) {
     console.error(e);

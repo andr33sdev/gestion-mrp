@@ -1,4 +1,6 @@
 node_modules
 client_secret.json
 google-key.json
+firebase-key.json
+firebase-key.json.json
 .env

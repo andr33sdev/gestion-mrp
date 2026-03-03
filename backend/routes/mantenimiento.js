@@ -1,6 +1,10 @@
+// backend/routes/mantenimiento.js
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+
+// Importamos Firebase Admin (asegurate de tenerlo inicializado en tu index.js o archivo principal)
+const admin = require("firebase-admin");
 
 router.get("/", async (req, res) => {
   try {
@@ -13,6 +17,7 @@ router.get("/", async (req, res) => {
   }
 });
 
+// --- EL GATILLO DE CREACIÓN DE TICKETS Y ALERTAS PUSH ---
 router.post("/", async (req, res) => {
   const {
     maquina,
@@ -23,7 +28,9 @@ router.post("/", async (req, res) => {
     creado_por,
     asignado_a,
   } = req.body;
+
   try {
+    // 1. Guardamos el ticket en la base de datos
     const result = await db.query(
       `INSERT INTO tickets_mantenimiento (maquina, titulo, descripcion, estado, prioridad, tipo, creado_por, asignado_a, fecha_creacion, alerta_24h_enviada) 
        VALUES ($1, $2, $3, 'PENDIENTE', $4, $5, $6, $7, CURRENT_TIMESTAMP, false) RETURNING *`,
@@ -37,7 +44,53 @@ router.post("/", async (req, res) => {
         asignado_a || "Técnico de Turno",
       ],
     );
-    res.status(201).json(result.rows[0]);
+
+    const nuevoTicket = result.rows[0];
+
+    // 2. DISPARAMOS LAS NOTIFICACIONES PUSH (FIREBASE)
+    // Usamos un try/catch interno para que si falla Google, el ticket se cree igual en la BD
+    try {
+      // Buscamos los tokens de los roles que deben enterarse
+      const { rows: usuariosPush } = await db.query(
+        "SELECT fcm_token FROM usuarios WHERE rol IN ('MANTENIMIENTO', 'JEFE MANTENIMIENTO', 'GERENCIA', 'JEFE PRODUCCIÓN') AND fcm_token IS NOT NULL AND fcm_token != ''",
+      );
+
+      // Extraemos solo los strings de los tokens
+      const tokens = usuariosPush.map((u) => u.fcm_token);
+
+      if (tokens.length > 0) {
+        // Armamos el mensaje de alerta
+        const mensajePush = {
+          notification: {
+            title: `🚨 Falla en ${nuevoTicket.maquina}`,
+            body: `[Prioridad ${nuevoTicket.prioridad}] - ${nuevoTicket.titulo}`,
+          },
+          data: {
+            // Mandamos data oculta por si el día de mañana querés que al tocar la app abra este ticket
+            ruta: "/mantenimiento",
+            ticketId: String(nuevoTicket.id),
+          },
+          tokens: tokens, // Array de todos los celulares destino
+        };
+
+        // Disparamos a todos al mismo tiempo
+        const pushResponse = await admin
+          .messaging()
+          .sendEachForMulticast(mensajePush);
+        console.log(
+          `✅ Alerta Push de Mantenimiento enviada. Éxito: ${pushResponse.successCount}, Fallos: ${pushResponse.failureCount}`,
+        );
+      } else {
+        console.log(
+          "ℹ️ Nuevo ticket creado, pero no hay celulares con sesión activa para recibir la alerta.",
+        );
+      }
+    } catch (pushErr) {
+      console.error("❌ Falló el envío de la alerta Push:", pushErr);
+    }
+
+    // Devolvemos el ticket creado a React
+    res.status(201).json(nuevoTicket);
   } catch (err) {
     res.status(500).send(err.message);
   }
@@ -100,7 +153,7 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
-// --- NUEVAS RUTAS PARA EL PERFIL DE MÁQUINA ---
+// --- RUTAS PARA EL PERFIL DE MÁQUINA ---
 router.get("/maquina/:nombre", async (req, res) => {
   try {
     const { rows } = await db.query(

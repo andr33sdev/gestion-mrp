@@ -136,6 +136,22 @@ router.delete(
   },
 );
 
+// --- 6. ACTUALIZAR TOKEN DE NOTIFICACIONES (FCM) ---
+router.put("/update-fcm", protect, async (req, res) => {
+  const { fcm_token } = req.body;
+  const userId = req.user.id; 
+
+  try {
+    await db.query("UPDATE usuarios SET fcm_token = $1 WHERE id = $2", [
+      fcm_token,
+      userId,
+    ]);
+    res.json({ success: true, msg: "Token FCM actualizado correctamente." });
+  } catch (error) {
+    res.status(500).json({ msg: "Error al guardar el token en el servidor." });
+  }
+});
+
 // ==========================================
 // CATÁLOGO DE PUESTOS / ROLES (CRUD)
 // ==========================================
