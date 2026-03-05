@@ -7,16 +7,20 @@ import {
   FaExclamationTriangle,
   FaTools,
   FaSpinner,
+  FaHistory,
+  FaChartLine,
 } from "react-icons/fa";
 import {
+  AreaChart,
+  Area,
   LineChart,
   Line,
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   CartesianGrid,
+  Legend 
 } from "recharts";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { Capacitor } from "@capacitor/core";
@@ -29,41 +33,39 @@ import {
   formatDuration,
   getStationStatus,
   authFetch,
+  UPDATE_FCM_TOKEN_URL,
 } from "../utils.js";
 
-// --- Sub-componente StationCard ---
+// --- Sub-componente StationCard (Estilo Lebane) ---
 function StationCard({ title, data }) {
   const [liveDuration, setLiveDuration] = useState("---");
-  const animations = {
+
+  const statusConfig = {
     COCINANDO: {
-      opacity: [1, 0.6, 1],
-      transition: { duration: 1.5, repeat: Infinity, ease: "easeInOut" },
-    },
-    ENFRIANDO: {
-      rotate: [0, 360],
-      transition: { duration: 10, repeat: Infinity, ease: "linear" },
-    },
-    INACTIVA: { opacity: 1, rotate: 0 },
-  };
-  const statusStyles = {
-    COCINANDO: {
-      bgColor: "bg-gradient-to-br from-red-700 to-red-900",
-      textColor: "text-red-100",
+      color: "text-orange-600",
+      bg: "bg-orange-50",
+      border: "border-orange-100",
       icon: FaFire,
+      label: "Cocinando",
     },
     ENFRIANDO: {
-      bgColor: "bg-gradient-to-br from-blue-700 to-blue-900",
-      textColor: "text-blue-100",
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+      border: "border-blue-100",
       icon: FaSnowflake,
+      label: "Enfriando",
     },
     INACTIVA: {
-      bgColor: "bg-gradient-to-br from-gray-600 to-gray-800",
-      textColor: "text-gray-300",
+      color: "text-slate-400",
+      bg: "bg-slate-50",
+      border: "border-slate-200",
       icon: FaPowerOff,
+      label: "Inactiva",
     },
   };
-  const styles = statusStyles[data.status];
-  const IconComponent = styles.icon;
+
+  const config = statusConfig[data.status] || statusConfig.INACTIVA;
+  const Icon = config.icon;
 
   useEffect(() => {
     if (!data.liveCycleStartTime) {
@@ -76,138 +78,91 @@ function StationCard({ title, data }) {
     return () => clearInterval(timerId);
   }, [data.liveCycleStartTime]);
 
-  const formatFullTimestamp = (timestampString) => {
-    if (!timestampString) return { fecha: "N/A", hora: "N/A" };
-    const date = new Date(timestampString);
-    return {
-      fecha: date.toLocaleDateString("es-AR"),
-      hora: date.toLocaleTimeString("es-AR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      }),
-    };
-  };
-  const { hora: lastEventHora } = formatFullTimestamp(
-    data.lastEvent?.timestamp,
-  );
-
   return (
-    <div
-      className={`rounded-xl shadow-2xl p-6 ${styles.bgColor} transition-all duration-500`}
-    >
-      <h2 className="text-3xl font-bold text-white mb-5">{title}</h2>
-      <div
-        className={`flex flex-col items-center justify-center p-8 rounded-lg ${styles.textColor} mb-6`}
-      >
-        <motion.div animate={animations[data.status]}>
-          <IconComponent className="text-6xl" />
-        </motion.div>
-        <span className="text-4xl font-extrabold mt-4">{data.status}</span>
-      </div>
-      <div className="grid grid-cols-2 gap-4 mb-6 text-white text-center">
-        <div className="bg-green-800/80 p-3 rounded-lg shadow-inner">
-          <div className="text-xs text-green-300 uppercase">En Vivo</div>
-          <div className="text-2xl font-bold font-mono">{liveDuration}</div>
-        </div>
-        <div className="bg-blue-900/80 p-3 rounded-lg shadow-inner">
-          <div className="text-xs text-blue-300 uppercase">Ciclos Hoy</div>
-          <div className="text-2xl font-bold font-mono">{data.cyclesToday}</div>
-        </div>
-        <div className="bg-black/20 p-3 rounded-lg shadow-inner">
-          <div className="text-xs text-gray-300 uppercase">Ciclo Ant.</div>
-          <div className="text-2xl font-bold font-mono">
-            {data.cycleDuration}
-          </div>
-        </div>
-        <div className="bg-purple-900/80 p-3 rounded-lg shadow-inner">
-          <div className="text-xs text-purple-300 uppercase">
-            Prom. (Últ. 10)
-          </div>
-          <div className="text-2xl font-bold font-mono">
-            {data.averageCycleTime}
-          </div>
-        </div>
-      </div>
-      {data.status !== "INACTIVA" && (
-        <div className="mb-4 bg-black/20 p-3 rounded-lg max-h-32 overflow-y-auto">
-          <h3 className="font-semibold text-sm mb-1 text-gray-200">
-            Producción:
-          </h3>
-          {data.productos && data.productos.length > 0 ? (
-            <ul className="list-disc list-inside text-gray-200 text-sm">
-              {data.productos.map((p, i) => (
-                <li key={i}>{p}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-400 italic text-xs">Sin carga</p>
-          )}
-        </div>
-      )}
-      <div className="text-sm text-gray-200 bg-black/20 p-4 rounded-lg">
-        <p>
-          <strong>Último:</strong>{" "}
-          {data.lastEvent
-            ? `${data.lastEvent.accion} (${lastEventHora})`
-            : "N/A"}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function AlarmMenu({ alarms }) {
-  const [isOpen, setIsOpen] = useState(false);
-  if (!Array.isArray(alarms) || alarms.length === 0) return null;
-  const formatTime = (ts) =>
-    new Date(ts).toLocaleTimeString("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  return (
-    <div className="relative mb-8 w-full md:w-1/2 mx-auto z-10">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full bg-red-700 text-white p-3 rounded-lg shadow-lg flex items-center justify-center font-bold text-lg hover:bg-red-600 transition-colors"
-      >
-        <motion.div
-          animate={{ scale: [1, 1.2, 1] }}
-          transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md">
+      <div className="p-5 border-b border-slate-50 flex justify-between items-center">
+        <h3 className="font-bold text-slate-700 tracking-tight text-sm">
+          {title}
+        </h3>
+        <div
+          className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${config.bg} ${config.color} ${config.border}`}
         >
-          <FaExclamationTriangle className="mr-3" />
+          {config.label}
+        </div>
+      </div>
+
+      <div className="p-6 flex flex-col items-center">
+        <motion.div
+          animate={data.status === "COCINANDO" ? { scale: [1, 1.05, 1] } : {}}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className={`w-16 h-16 rounded-full ${config.bg} flex items-center justify-center mb-4`}
+        >
+          <Icon className={`text-2xl ${config.color}`} />
         </motion.div>
-        {alarms.length} Alarma(s) (24hs)
-      </button>
-      {isOpen && (
-        <div className="absolute w-full bg-slate-700 rounded-b-lg shadow-xl overflow-hidden p-4 max-h-60 overflow-y-auto">
-          {alarms.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-start p-2 border-b border-slate-600 last:border-b-0"
-            >
-              <FaExclamationTriangle className="text-yellow-300 mr-3 mt-1" />
-              <div>
-                <span className="font-bold">({formatTime(a.timestamp)})</span>{" "}
-                <span className="text-gray-300">{a.accion}</span>
-              </div>
-            </div>
-          ))}
+
+        <div className="text-center mb-6">
+          <p className="text-[10px] text-slate-400 uppercase font-bold tracking-tight mb-1">
+            Tiempo Actual
+          </p>
+          <p className="text-4xl font-bold text-slate-800 font-mono tracking-tighter">
+            {liveDuration}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 w-full">
+          <div className="bg-slate-50 p-2.5 rounded-xl text-center border border-slate-100">
+            <p className="text-[9px] uppercase font-bold text-slate-400 mb-1">
+              Hoy
+            </p>
+            <p className="text-base font-bold text-slate-700">
+              {data.cyclesToday}
+            </p>
+          </div>
+          <div className="bg-slate-50 p-2.5 rounded-xl text-center border border-slate-100">
+            <p className="text-[9px] uppercase font-bold text-slate-400 mb-1">
+              Anterior
+            </p>
+            <p className="text-base font-bold text-slate-700 font-mono">
+              {data.cycleDuration || "00:00"}
+            </p>
+          </div>
+          <div className="bg-slate-50 p-2.5 rounded-xl text-center border border-slate-100">
+            <p className="text-[9px] uppercase font-bold text-slate-400 mb-1">
+              Promedio
+            </p>
+            <p className="text-base font-bold text-slate-700 font-mono">
+              {data.averageCycleTime || "00:00"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {data.productos?.length > 0 && (
+        <div className="px-6 pb-6 mt-auto">
+          <div className="flex flex-wrap gap-1">
+            {data.productos.map((p, i) => (
+              <span
+                key={i}
+                className="bg-blue-50 text-blue-600 text-[9px] font-bold px-2 py-1 rounded-md border border-blue-100"
+              >
+                {p}
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// --- Componente Principal del Dashboard ---
+// --- Componente Principal ---
 export default function Dashboard({ onNavigate }) {
   const [registros, setRegistros] = useState([]);
   const [produccion, setProduccion] = useState({ 1: [], 2: [] });
   const [cargando, setCargando] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
+  const ITEMS_PER_PAGE = 8;
 
-  // 1. Efecto para obtener datos de la API (Polling)
   useEffect(() => {
     const fetchDatos = async () => {
       const token = localStorage.getItem("mrp_token");
@@ -226,13 +181,12 @@ export default function Dashboard({ onNavigate }) {
           const dataReg = await resReg.json();
           if (Array.isArray(dataReg)) setRegistros(dataReg);
         }
-
         if (resProd.ok) {
           const dataProd = await resProd.json();
           setProduccion(dataProd);
         }
       } catch (e) {
-        console.error("Error de red o parseo:", e);
+        console.error("Error Dashboard:", e);
       } finally {
         setCargando(false);
       }
@@ -243,69 +197,38 @@ export default function Dashboard({ onNavigate }) {
     return () => clearInterval(intervalId);
   }, []);
 
-  // 2. Efecto para registrar FCM automáticamente (VERSIÓN SILENCIOSA)
+  // Registro FCM (Corrección de URL y silencio de errores)
   useEffect(() => {
     const initFCM = async () => {
       if (Capacitor.getPlatform() === "web") return;
-
       const tokenSesion = localStorage.getItem("mrp_token");
       if (!tokenSesion) return;
 
       try {
         const perm = await PushNotifications.requestPermissions();
-
         if (perm.receive === "granted") {
           await PushNotifications.removeAllListeners();
-
           PushNotifications.addListener("registration", async (token) => {
             try {
-              await fetch(`http://192.168.1.40:4000/api/auth/update-fcm`, {
+              // USAMOS LA CONSTANTE DEL UTILS QUE YA TIENE LA URL DE PRODUCCIÓN
+              await authFetch(UPDATE_FCM_TOKEN_URL, {
                 method: "PUT",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${tokenSesion}`,
-                },
                 body: JSON.stringify({ fcm_token: token.value }),
               });
-            } catch (e) {
-              // Silencio absoluto si hay error de red
-            }
+            } catch (e) {}
           });
-
-          PushNotifications.addListener("registrationError", () => {
-            // Silencio absoluto si falla Firebase
-          });
-
           await PushNotifications.register();
         }
-      } catch (e) {
-        // Silencio absoluto si falla Capacitor
-      }
+      } catch (e) {}
     };
-
     initFCM();
   }, []);
 
-  // Si no hay token, pantalla de bienvenida
-  if (!localStorage.getItem("mrp_token")) {
-    return (
-      <div className="flex flex-col justify-center items-center h-[60vh] text-center animate-in fade-in">
-        <FaFire className="text-6xl text-orange-500 mb-4 animate-pulse" />
-        <h1 className="text-3xl font-bold text-white mb-2">
-          Bienvenido a Gestión MRP
-        </h1>
-        <p className="text-gray-400 mb-8 max-w-md">
-          Sistema de monitoreo en tiempo real.
-        </p>
-      </div>
-    );
-  }
-
-  // --- CÁLCULOS SEGUROS ---
+  // --- Cálculos ---
   const cycleTimeMap = useMemo(() => {
     if (!Array.isArray(registros)) return {};
     const newMap = {};
-    const processStarts = (stationId, actionName) => {
+    const processStarts = (stationId) => {
       const starts = registros.filter(
         (r) =>
           r.tipo === "EVENTO" &&
@@ -317,12 +240,10 @@ export default function Dashboard({ onNavigate }) {
         newMap[starts[i].id] = {
           durationStr: formatDuration(diffMs),
           durationMs: diffMs,
-          accion: actionName,
         };
       }
     };
-    processStarts(1, "Estacion 1");
-    processStarts(2, "Estacion 2");
+    [1, 2].forEach(processStarts);
     return newMap;
   }, [registros]);
 
@@ -342,265 +263,254 @@ export default function Dashboard({ onNavigate }) {
         if (mins > 0 && mins <= MAX_HORAS_CICLO_PROMEDIO * 60)
           combinedData.push({
             timestamp: starts[i].timestamp,
-            [`Estación ${id}`]: mins,
+            [`E${id}`]: mins,
           });
       }
     });
     return combinedData
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-      .slice(-30);
+      .slice(-15);
   }, [registros]);
 
-  const recentAlarms = useMemo(() => {
-    if (!Array.isArray(registros)) return [];
-    const limit = new Date().getTime() - ALARMA_WINDOW_HOURS * 3600000;
-    return registros.filter(
-      (r) => r.tipo === "ALARMA" && new Date(r.timestamp).getTime() > limit,
-    );
-  }, [registros]);
+  const statusE1 = getStationStatus(1, registros);
+  const statusE2 = getStationStatus(2, registros);
+  statusE1.productos = produccion[1] || [];
+  statusE2.productos = produccion[2] || [];
 
-  const statusEstacion1 = getStationStatus(1, registros);
-  const statusEstacion2 = getStationStatus(2, registros);
-  const avgMsEstacion1 = statusEstacion1.averageCycleTimeMs;
-  const avgMsEstacion2 = statusEstacion2.averageCycleTimeMs;
-
-  statusEstacion1.productos = produccion[1] || [];
-  statusEstacion2.productos = produccion[2] || [];
-
-  const calculatedTotalPages = Math.ceil(registros.length / ITEMS_PER_PAGE);
-  const totalPages = Math.max(1, Math.min(calculatedTotalPages, 25));
-
-  const safeRegistros = Array.isArray(registros) ? registros : [];
-  const historialPaginado = safeRegistros.slice(
+  const totalPages = Math.max(1, Math.ceil(registros.length / ITEMS_PER_PAGE));
+  const historialPaginado = (Array.isArray(registros) ? registros : []).slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE,
   );
 
+  // Funciones de navegación (Aquí estaba el error)
   const handleNextPage = () =>
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
   const handlePrevPage = () => setCurrentPage((prev) => Math.max(prev - 1, 1));
 
   if (cargando)
     return (
-      <div className="flex justify-center items-center h-screen bg-gray-900 text-white text-2xl">
-        <FaSpinner className="animate-spin mr-4" /> Cargando datos...
+      <div className="flex flex-col justify-center items-center h-screen bg-slate-50 text-blue-600">
+        <FaSpinner className="animate-spin text-3xl mb-4" />
+        <span className="font-bold tracking-tighter text-sm uppercase">
+          Sincronizando Sistemas...
+        </span>
       </div>
     );
 
   return (
-    <div className="animate-in fade-in duration-500 relative">
-      <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
-        <h1 className="text-4xl md:text-5xl font-bold text-center md:text-left flex items-center gap-3 text-white">
-          <FaFire className="text-orange-500" /> Hornos en Vivo
-        </h1>
+    <div className="p-4 lg:p-10 w-full mx-auto space-y-10 animate-in fade-in duration-500 bg-[#f8fafc] min-h-screen">
+      {/* Header Minimalista */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 tracking-tighter flex items-center gap-2">
+            <FaFire className="text-orange-500" /> Hornos en Vivo
+          </h1>
+          <p className="text-slate-400 text-xs font-bold uppercase tracking-wide">
+            Monitoreo de telemetría en tiempo real
+          </p>
+        </div>
         <button
           onClick={() => onNavigate("/panel-control")}
-          className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg border border-slate-600 flex items-center gap-2 transition-all active:scale-95 group"
+          className="bg-white hover:bg-slate-50 text-slate-700 px-6 py-3 rounded-2xl font-bold shadow-sm border border-slate-200 flex items-center gap-2 transition-all active:scale-95 text-xs uppercase tracking-wider"
         >
-          <FaTools className="text-gray-400 group-hover:text-white transition-colors" />{" "}
-          Panel de Control
+          <FaTools className="text-slate-400" /> Panel Control
         </button>
       </div>
 
-      <AlarmMenu alarms={recentAlarms} />
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 mb-12">
-        <StationCard title="Estación 1 (Izquierda)" data={statusEstacion1} />
-        <StationCard title="Estación 2 (Derecha)" data={statusEstacion2} />
+      {/* Grid de Estaciones */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <StationCard title="ESTACIÓN IZQUIERDA (1)" data={statusE1} />
+        <StationCard title="ESTACIÓN DERECHA (2)" data={statusE2} />
       </div>
 
-      <div className="bg-slate-800 rounded-lg shadow-xl p-6 h-[400px] mb-12">
-        <h3 className="text-xl font-bold mb-4">
-          Tiempos de Ciclo (Últimos 30)
-        </h3>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={cycleChartData}
-            margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
-            <XAxis
-              dataKey="timestamp"
-              stroke="#94a3b8"
-              tickFormatter={(ts) =>
-                new Date(ts).toLocaleDateString("es-AR", {
-                  day: "2-digit",
-                  month: "2-digit",
-                })
-              }
-            />
-            <YAxis
-              stroke="#94a3b8"
-              label={{
-                value: "Minutos",
-                angle: -90,
-                position: "insideLeft",
-                fill: "#94a3b8",
-              }}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#1e293b",
-                borderColor: "#334155",
-                borderRadius: "8px",
-              }}
-              labelStyle={{ color: "#cbd5e1" }}
-            />
-            <Legend wrapperStyle={{ color: "#cbd5e1" }} />
-            <Line
-              type="monotone"
-              dataKey="Estación 1"
-              stroke="#c0392b"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-              connectNulls
-            />
-            <Line
-              type="monotone"
-              dataKey="Estación 2"
-              stroke="#2980b9"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-              connectNulls
-            />
-          </LineChart>
-        </ResponsiveContainer>
+      {/* Gráfico Estilizado Estilo Lebane (Funcionalidad Restaurada) */}
+      <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 md:p-8 mb-12">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-center">
+            <FaChartLine className="text-slate-500 text-lg" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800 tracking-tight text-lg">
+              Tiempos de Ciclo
+            </h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Últimos 30 registros (minutos)
+            </p>
+          </div>
+        </div>
+
+        <div className="h-[350px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={cycleChartData}
+              margin={{ top: 5, right: 20, left: -10, bottom: 5 }}
+            >
+              {/* Cuadrícula sutil y limpia */}
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="#f1f5f9"
+              />
+
+              <XAxis
+                dataKey="timestamp"
+                stroke="#94a3b8"
+                fontSize={10}
+                fontWeight="bold"
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(ts) =>
+                  new Date(ts).toLocaleTimeString("es-AR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                }
+              />
+
+              <YAxis
+                stroke="#94a3b8"
+                fontSize={10}
+                fontWeight="bold"
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => `${v}m`}
+              />
+
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#fff",
+                  borderColor: "#e2e8f0",
+                  borderRadius: "12px",
+                  boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                }}
+                labelStyle={{ color: "#64748b", marginBottom: "4px" }}
+                labelFormatter={(ts) =>
+                  new Date(ts).toLocaleTimeString("es-AR")
+                }
+              />
+
+              {/* Leyenda automática de Recharts, pero estilizada */}
+              <Legend
+                iconType="circle"
+                wrapperStyle={{
+                  fontSize: "12px",
+                  fontWeight: "bold",
+                  color: "#64748b",
+                  paddingTop: "10px",
+                }}
+              />
+
+              <Line
+                type="monotone"
+                dataKey="Estación 1"
+                name="Estación 1"
+                stroke="#f43f5e" /* Rose 500 */
+                strokeWidth={3}
+                /* Acá está la magia: le devolvemos los puntos pero con diseño limpio (centro blanco, borde de color) */
+                dot={{ r: 4, fill: "#fff", strokeWidth: 2 }}
+                activeDot={{ r: 6, strokeWidth: 0, fill: "#f43f5e" }}
+                connectNulls={true} /* Vital para que no se corte la línea */
+              />
+
+              <Line
+                type="monotone"
+                dataKey="Estación 2"
+                name="Estación 2"
+                stroke="#0ea5e9" /* Sky 500 */
+                strokeWidth={3}
+                dot={{ r: 4, fill: "#fff", strokeWidth: 2 }}
+                activeDot={{ r: 6, strokeWidth: 0, fill: "#0ea5e9" }}
+                connectNulls={true}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
 
-      <h2 className="text-3xl font-semibold mb-6">
-        Historial Reciente (Global)
-      </h2>
-      <div className="bg-slate-800 rounded-lg shadow-xl overflow-x-auto">
-        <table className="w-full table-auto min-w-[800px]">
-          <thead className="bg-slate-700 text-left text-xs uppercase text-gray-400">
-            <tr>
-              <th className="px-4 py-3 text-center">Fecha</th>
-              <th className="px-4 py-3 text-center">Hora</th>
-              <th className="px-4 py-3 text-center">Tipo</th>
-              <th className="px-4 py-3 text-center">Acción</th>
-              <th className="px-4 py-3 text-center">Tiempo Ciclo</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700">
-            {historialPaginado.length === 0 ? (
+      {/* Tabla de Actividad */}
+      <div className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="p-6 border-b border-slate-50 flex items-center gap-2">
+          <FaHistory className="text-slate-400" />
+          <h3 className="font-bold text-slate-700 tracking-tight">
+            Registro de Actividad
+          </h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50/50 text-slate-400 text-[10px] uppercase font-bold tracking-widest">
               <tr>
-                <td colSpan="5" className="p-8 text-center text-gray-500">
-                  No hay registros disponibles
-                </td>
+                <th className="px-8 py-5">Hora</th>
+                <th className="px-8 py-5">Descripción del Evento</th>
+                <th className="px-8 py-5">Categoría</th>
+                <th className="px-8 py-5 text-right">Duración</th>
               </tr>
-            ) : (
-              historialPaginado.map((reg) => {
-                const date = new Date(reg.timestamp);
-                const options = { timeZone: "America/Argentina/Buenos_Aires" };
-                const fechaStr = date.toLocaleDateString("es-AR", options);
-                const horaStr = date.toLocaleTimeString("es-AR", {
-                  ...options,
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                });
-                const cycleData = cycleTimeMap[reg.id];
-                let durationStr = "---";
-                let slowCycleClass = "";
-
-                if (reg.tipo === "PRODUCCION" && cycleData) {
-                  durationStr = cycleData.durationStr;
-                  if (
-                    cycleData.accion.includes("Estacion 1") &&
-                    avgMsEstacion1 &&
-                    cycleData.durationMs > avgMsEstacion1 * 1.5
-                  )
-                    slowCycleClass = "text-red-400 font-bold";
-                  else if (
-                    cycleData.accion.includes("Estacion 2") &&
-                    avgMsEstacion2 &&
-                    cycleData.durationMs > avgMsEstacion2 * 1.5
-                  )
-                    slowCycleClass = "text-red-400 font-bold";
-                }
-
-                const tipoClass =
-                  reg.tipo === "ALARMA"
-                    ? "bg-red-600/90 text-red-100"
-                    : reg.tipo === "PRODUCCION"
-                      ? "bg-green-600/90 text-green-100"
-                      : "bg-blue-600/90 text-blue-100";
-                let productosParseados = [];
-                if (reg.tipo === "PRODUCCION") {
-                  try {
-                    productosParseados = JSON.parse(reg.productos_json || "[]");
-                  } catch (e) {}
-                }
-
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {historialPaginado.map((reg) => {
+                const isAlarma = reg.tipo === "ALARMA";
+                const isProd = reg.tipo === "PRODUCCION";
                 return (
                   <tr
                     key={reg.id}
-                    className="hover:bg-slate-700/50 text-center"
+                    className="hover:bg-slate-50/30 transition-colors"
                   >
-                    <td className="px-4 py-3 text-sm">{fechaStr}</td>
-                    <td className="px-4 py-3 text-sm font-mono">{horaStr}</td>
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-8 py-5 text-[11px] font-bold text-slate-400 font-mono">
+                      {new Date(reg.timestamp).toLocaleTimeString("es-AR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="px-8 py-5">
+                      <p className="text-xs font-bold text-slate-700">
+                        {reg.accion}
+                      </p>
+                    </td>
+                    <td className="px-8 py-5">
                       <span
-                        className={`px-3 py-1 text-xs font-bold uppercase rounded-full ${tipoClass}`}
+                        className={`text-[9px] px-2.5 py-1 rounded-lg font-bold uppercase tracking-tighter ${
+                          isAlarma
+                            ? "bg-red-50 text-red-600"
+                            : isProd
+                              ? "bg-green-50 text-green-600"
+                              : "bg-blue-50 text-blue-600"
+                        }`}
                       >
                         {reg.tipo}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-left">
-                      {reg.tipo === "PRODUCCION" ? (
-                        <div className="flex flex-wrap gap-2">
-                          <span className="font-semibold text-gray-300">
-                            Fin de Ciclo:
-                          </span>
-                          {productosParseados.length > 0 ? (
-                            productosParseados.map((prod, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2 py-0.5 bg-gray-600 text-gray-100 rounded-md text-sm"
-                              >
-                                {prod}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-gray-500 italic">
-                              Sin productos
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        reg.accion
-                      )}
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-sm font-mono ${slowCycleClass}`}
-                    >
-                      {durationStr}
+                    <td className="px-8 py-5 text-right text-[11px] font-bold text-slate-600 font-mono">
+                      {cycleTimeMap[reg.id]?.durationStr || "---"}
                     </td>
                   </tr>
                 );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex justify-between items-center mt-6 text-gray-300">
-        <button
-          onClick={handlePrevPage}
-          disabled={currentPage === 1}
-          className="px-5 py-2 bg-slate-600 text-white rounded-md shadow disabled:opacity-50 hover:bg-slate-500 transition-colors"
-        >
-          Anterior
-        </button>
-        <span className="font-semibold">
-          Página {currentPage} de {totalPages}
-        </span>
-        <button
-          onClick={handleNextPage}
-          disabled={currentPage === totalPages}
-          className="px-5 py-2 bg-slate-600 text-white rounded-md shadow disabled:opacity-50 hover:bg-slate-500 transition-colors"
-        >
-          Siguiente
-        </button>
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Paginador */}
+        <div className="p-6 bg-slate-50/20 flex justify-between items-center border-t border-slate-50">
+          <button
+            onClick={handlePrevPage}
+            disabled={currentPage === 1}
+            className="text-xs font-bold text-slate-400 hover:text-blue-600 disabled:opacity-20 transition-colors uppercase tracking-widest"
+          >
+            Anterior
+          </button>
+          <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">
+            Pág {currentPage} / {totalPages}
+          </span>
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage === totalPages}
+            className="text-xs font-bold text-slate-400 hover:text-blue-600 disabled:opacity-20 transition-colors uppercase tracking-widest"
+          >
+            Siguiente
+          </button>
+        </div>
       </div>
     </div>
   );

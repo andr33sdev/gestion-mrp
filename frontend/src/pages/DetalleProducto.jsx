@@ -428,7 +428,7 @@ export default function DetalleProducto() {
             <FaArrowLeft />
           </button>
           <div>
-            <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
               {decodedName}
             </h1>
             <p className="text-xs text-gray-400 flex items-center gap-2">

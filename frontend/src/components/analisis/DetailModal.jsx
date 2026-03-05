@@ -275,7 +275,7 @@ export default function DetailModal({
         {/* HEADER */}
         <div className="p-5 border-b border-gray-100 flex justify-between items-start bg-white sticky top-0 z-20 shrink-0">
           <div>
-            <h2 className="text-2xl font-extrabold text-gray-900 flex items-center gap-3 tracking-tight">
+            <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3 tracking-tight">
               {isCli ? (
                 <FaUserTie className="text-purple-600" />
               ) : (
@@ -313,7 +313,7 @@ export default function DetailModal({
               <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
                 Volumen Filtrado
               </h3>
-              <p className="text-4xl font-black text-gray-900 tracking-tighter">
+              <p className="text-4xl font-bold text-gray-900 tracking-tighter">
                 {totalVolFiltered.toLocaleString()}
               </p>
               <p className="text-[10px] text-gray-400 mb-3">unidades</p>

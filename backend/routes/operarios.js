@@ -71,7 +71,7 @@ router.get("/:id/stats", async (req, res) => {
 });
 
 // ESCRITURA RESTRINGIDA (Solo Gerencia crea/borra operarios)
-router.use(restrictTo("GERENCIA"));
+router.use(restrictTo("GERENCIA", "JEFE PRODUCCIÓN"));
 
 router.post("/", async (req, res) => {
   try {

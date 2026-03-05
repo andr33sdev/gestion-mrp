@@ -15,7 +15,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 router.use(protect);
-router.use(restrictTo("GERENCIA"));
+router.use(restrictTo("GERENCIA", "JEFE PRODUCCIÓN"));
 
 router.post("/chat", async (req, res) => {
   const { mensaje } = req.body;

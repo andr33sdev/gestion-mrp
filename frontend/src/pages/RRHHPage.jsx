@@ -1355,7 +1355,7 @@ export default function RRHHPage() {
                 {kpi.label}
               </p>
               <p
-                className={`text-2xl md:text-3xl font-black ${kpi.color} font-mono truncate`}
+                className={`text-2xl md:text-3xl font-bold ${kpi.color} font-mono truncate`}
               >
                 {kpi.isMoney ? formatCurrency(kpi.val) : kpi.val.toFixed(2)}
               </p>
@@ -1381,7 +1381,7 @@ export default function RRHHPage() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-300">
-            <thead className="bg-slate-950 text-gray-400 uppercase text-[10px] font-extrabold tracking-wider border-b border-slate-800">
+            <thead className="bg-slate-950 text-gray-400 uppercase text-[10px] font-bold tracking-wider border-b border-slate-800">
               <tr>
                 <th className="p-5">Empleado</th>
                 <th className="p-5">Fecha</th>
@@ -1479,7 +1479,7 @@ export default function RRHHPage() {
                       "-"
                     )}
                   </td>
-                  <td className="p-5 text-right font-black text-white bg-blue-900/10 border-l border-blue-500/20 text-sm">
+                  <td className="p-5 text-right font-bold text-white bg-blue-900/10 border-l border-blue-500/20 text-sm">
                     {formatCurrency(row.totalLiquidacion)}
                   </td>
                 </tr>

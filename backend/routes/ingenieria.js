@@ -478,7 +478,7 @@ router.put("/historial-recetas/:id/activar", async (req, res) => {
 });
 
 // --- RUTAS DE ESCRITURA (SOLO GERENCIA) ---
-router.use(restrictTo("GERENCIA"));
+router.use(restrictTo("GERENCIA", "JEFE PRODUCCIÓN"));
 
 // 1. SINCRONIZACIÓN STOCK
 router.post("/sincronizar-stock", async (req, res) => {

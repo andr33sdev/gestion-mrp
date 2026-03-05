@@ -415,7 +415,7 @@ const ParetoModal = ({ isOpen, onClose, data, isCli }) => {
               <FaChartPie size={24} />
             </div>
             <div>
-              <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight">
+              <h2 className="text-2xl font-bold text-slate-800 tracking-tight">
                 Concentración Top 20
               </h2>
               <p className="text-sm text-slate-500 font-medium mt-1">
@@ -461,7 +461,7 @@ const ParetoModal = ({ isOpen, onClose, data, isCli }) => {
                     <td className="px-6 py-3.5 font-bold text-slate-800 uppercase text-xs">
                       {item.name}
                     </td>
-                    <td className="px-6 py-3.5 text-right font-mono font-black text-indigo-600 text-base">
+                    <td className="px-6 py-3.5 text-right font-mono font-bold text-indigo-600 text-base">
                       {item.value}
                     </td>
                     <td className="px-6 py-3.5 text-right text-slate-500 font-bold">
@@ -679,21 +679,21 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
 
         {/* WIDGET DÓLAR (SaaS Premium) */}
         <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm transition-all hover:border-emerald-300">
-          <label className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-[9px]">
+          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-[9px]">
               U$S
             </span>
             Cotización Dólar
           </label>
           <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-black text-xs">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs">
               $
             </span>
             <input
               type="number"
               value={valorDolar}
               onChange={handleDolarChange}
-              className="w-24 pl-7 pr-2 py-1.5 bg-slate-50 border border-transparent rounded-xl text-sm font-black text-emerald-700 outline-none focus:bg-white focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 transition-all shadow-inner"
+              className="w-24 pl-7 pr-2 py-1.5 bg-slate-50 border border-transparent rounded-xl text-sm font-bold text-emerald-700 outline-none focus:bg-white focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 transition-all shadow-inner"
             />
           </div>
         </div>
@@ -762,7 +762,7 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
               Ingresos (Facturación)
             </h3>
             <div
-              className="text-3xl font-extrabold text-slate-800 tracking-tight leading-none truncate"
+              className="text-3xl font-bold text-slate-800 tracking-tight leading-none truncate"
               title={formatCurrency(facturacionRango)}
             >
               {formatCurrency(facturacionRango)}
@@ -797,7 +797,7 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
               <InfoTooltip text="Ingresos menos costos de fabricación según las recetas configuradas y la cotización actual." />
             </h3>
             <div
-              className={`text-3xl font-extrabold tracking-tight leading-none truncate ${rentabilidadRango >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+              className={`text-3xl font-bold tracking-tight leading-none truncate ${rentabilidadRango >= 0 ? "text-emerald-600" : "text-rose-600"}`}
               title={formatCurrency(rentabilidadRango)}
             >
               {formatCurrency(rentabilidadRango)}

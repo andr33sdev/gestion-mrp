@@ -1210,7 +1210,7 @@ export default function DepositoPage() {
     <div className="flex flex-col h-[calc(100vh-64px)] md:h-[calc(100vh-80px)] animate-in fade-in relative bg-slate-950 overflow-hidden">
       <div className="absolute top-4 left-4 right-4 z-20 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pointer-events-none">
         <div className="bg-slate-900/90 backdrop-blur-xl p-3 md:px-5 md:py-3 rounded-xl border border-slate-700/50 shadow-2xl pointer-events-auto flex flex-col">
-          <h1 className="text-lg font-extrabold text-white flex items-center gap-2">
+          <h1 className="text-lg font-bold text-white flex items-center gap-2">
             <FaWarehouse className="text-indigo-500 text-xl" /> IGLÚ DIGITAL
           </h1>
           <p className="text-[10px] text-gray-500 uppercase tracking-wide">

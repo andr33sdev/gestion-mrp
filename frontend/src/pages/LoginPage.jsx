@@ -93,7 +93,7 @@ export default function LoginPage() {
           <div className="bg-blue-600 text-white w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
             <FaLock size={28} />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-800 tracking-tight">
+          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">
             Gestión MRP
           </h1>
           <p className="text-slate-500 font-medium mt-2 uppercase tracking-wider text-xs">

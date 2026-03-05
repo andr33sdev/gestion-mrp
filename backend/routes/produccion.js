@@ -128,7 +128,7 @@ router.post("/registrar-a-plan", async (req, res) => {
 
 // Borrar un registro histórico específico (Auditoría)
 // Esto sí lo protegemos para que un operario no pueda "borrar sus errores" sin supervisión
-router.delete("/registro/:id", restrictTo("GERENCIA"), async (req, res) => {
+router.delete("/registro/:id", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
   const { id } = req.params;
   const client = await db.connect();
   try {

@@ -300,7 +300,7 @@ export default function MantenimientoPage() {
     const { color, icon } = config[prioridad] || config.MEDIA;
     return (
       <span
-        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border shrink-0 ${color}`}
+        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border shrink-0 ${color}`}
       >
         {icon} {prioridad}
       </span>
@@ -330,7 +330,7 @@ export default function MantenimientoPage() {
               <FaWrench size={18} className="md:w-5 md:h-5" />
             </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 tracking-tight">
+              <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">
                 Mantenimiento
               </h1>
               <p className="hidden md:block text-slate-500 font-medium text-xs mt-0.5">
@@ -429,7 +429,7 @@ export default function MantenimientoPage() {
         {kpis.isSearching && (
           <button
             onClick={limpiarFiltros}
-            className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors w-full xl:w-auto justify-center shrink-0"
+            className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-colors w-full xl:w-auto justify-center shrink-0"
           >
             <FaTimes size={10} /> Limpiar
           </button>
@@ -474,7 +474,7 @@ export default function MantenimientoPage() {
           className={`${activeTab === "PENDIENTES" ? "flex" : "hidden lg:flex"} flex-col bg-slate-50/30 lg:bg-transparent rounded-2xl h-full min-h-0`}
         >
           <div className="hidden lg:flex pb-2 shrink-0 items-center justify-between border-b border-slate-200/50 mb-3">
-            <h2 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+            <h2 className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
               En Espera
             </h2>
@@ -487,7 +487,7 @@ export default function MantenimientoPage() {
             {kpis.pendientes.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200/80 rounded-2xl bg-slate-50/50 opacity-80 mt-2">
                 <FaClock size={16} className="text-slate-300 mb-2" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   {kpis.isSearching ? "Sin coincidencias" : "Sin reportes"}
                 </span>
               </div>
@@ -508,7 +508,7 @@ export default function MantenimientoPage() {
                               e.stopPropagation();
                               setFichaMaquina(t.maquina);
                             }}
-                            className="text-[10px] font-black text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-1.5 py-0.5 rounded transition-colors uppercase tracking-widest flex items-center gap-1 -ml-1.5"
+                            className="text-[10px] font-bold text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-1.5 py-0.5 rounded transition-colors uppercase tracking-widest flex items-center gap-1 -ml-1.5"
                             title="Ver ficha del equipo"
                           >
                             <FaCogs /> {t.maquina}
@@ -547,7 +547,7 @@ export default function MantenimientoPage() {
                         </div>
                         <div className="flex justify-between items-end">
                           <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
+                            <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
                               Reportado por
                             </span>
                             <span className="text-[10px] font-bold text-slate-600">
@@ -595,7 +595,7 @@ export default function MantenimientoPage() {
           className={`${activeTab === "REVISION" ? "flex" : "hidden lg:flex"} flex-col bg-slate-50/30 lg:bg-transparent rounded-2xl h-full min-h-0`}
         >
           <div className="hidden lg:flex pb-2 shrink-0 items-center justify-between border-b border-slate-200/50 mb-3">
-            <h2 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+            <h2 className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
               En Revisión
             </h2>
@@ -608,7 +608,7 @@ export default function MantenimientoPage() {
             {kpis.enRevision.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200/80 rounded-2xl bg-slate-50/50 opacity-80 mt-2">
                 <FaTools size={16} className="text-slate-300 mb-2" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   {kpis.isSearching ? "Sin coincidencias" : "Taller Libre"}
                 </span>
               </div>
@@ -629,7 +629,7 @@ export default function MantenimientoPage() {
                               e.stopPropagation();
                               setFichaMaquina(t.maquina);
                             }}
-                            className="text-[10px] font-black text-blue-500 hover:text-blue-700 hover:bg-blue-50 px-1.5 py-0.5 rounded transition-colors uppercase tracking-widest flex items-center gap-1 -ml-1.5"
+                            className="text-[10px] font-bold text-blue-500 hover:text-blue-700 hover:bg-blue-50 px-1.5 py-0.5 rounded transition-colors uppercase tracking-widest flex items-center gap-1 -ml-1.5"
                             title="Ver ficha del equipo"
                           >
                             <FaCogs className="animate-pulse" /> {t.maquina}
@@ -653,7 +653,7 @@ export default function MantenimientoPage() {
                     {isExpanded && (
                       <div className="px-3.5 pb-3.5 pt-1 animate-in slide-in-from-top-2 fade-in duration-200">
                         <div className="bg-slate-50/50 p-3 rounded-lg border border-slate-100 mb-2">
-                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">
+                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">
                             Falla Reportada
                           </span>
                           <p className="text-[11px] font-medium text-slate-600 leading-relaxed">
@@ -662,7 +662,7 @@ export default function MantenimientoPage() {
                         </div>
                         {t.notas_revision && (
                           <div className="bg-blue-50/50 p-2.5 rounded-lg border border-blue-100 mb-3">
-                            <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest block mb-0.5">
+                            <span className="text-[8px] font-bold text-blue-400 uppercase tracking-widest block mb-0.5">
                               Diagnóstico
                             </span>
                             <p className="text-[10px] font-medium text-slate-600 italic">
@@ -721,7 +721,7 @@ export default function MantenimientoPage() {
           className={`${activeTab === "SOLUCIONADO" ? "flex" : "hidden lg:flex"} flex-col bg-slate-50/30 lg:bg-transparent rounded-2xl h-full min-h-0`}
         >
           <div className="hidden lg:flex pb-2 shrink-0 items-center justify-between border-b border-slate-200/50 mb-3">
-            <h2 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+            <h2 className="text-[10px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
               Historial
             </h2>
@@ -734,7 +734,7 @@ export default function MantenimientoPage() {
             {kpis.resueltos.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-200/60 rounded-2xl bg-transparent opacity-60 mt-2">
                 <FaBoxOpen size={16} className="text-slate-300 mb-2" />
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   {kpis.isSearching ? "Sin coincidencias" : "Sin Historial"}
                 </span>
               </div>
@@ -759,7 +759,7 @@ export default function MantenimientoPage() {
                               e.stopPropagation();
                               setFichaMaquina(t.maquina);
                             }}
-                            className="text-[9px] font-black text-slate-500 hover:text-slate-800 uppercase tracking-widest truncate hover:bg-slate-100 px-1 rounded transition-colors -ml-1"
+                            className="text-[9px] font-bold text-slate-500 hover:text-slate-800 uppercase tracking-widest truncate hover:bg-slate-100 px-1 rounded transition-colors -ml-1"
                             title="Ver ficha del equipo"
                           >
                             {t.maquina}
@@ -782,7 +782,7 @@ export default function MantenimientoPage() {
                       <div className="px-3 pb-3 animate-in slide-in-from-top-2 fade-in duration-200">
                         {t.descripcion && (
                           <div className="bg-slate-50/80 p-2.5 rounded-lg border border-slate-100 mb-2.5">
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">
+                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">
                               Falla Reportada
                             </span>
                             <p className="text-[10px] font-medium text-slate-600 leading-relaxed">
@@ -794,7 +794,7 @@ export default function MantenimientoPage() {
                           <div className="mb-3 space-y-2.5 pl-2 border-l-2 border-emerald-200">
                             {t.notas_revision && (
                               <div>
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block">
+                                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest block">
                                   Diagnóstico Inicial
                                 </span>
                                 <p className="text-[10px] font-medium text-slate-500 italic leading-relaxed">
@@ -804,7 +804,7 @@ export default function MantenimientoPage() {
                             )}
                             {t.solucion_notas && (
                               <div>
-                                <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest block">
+                                <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest block">
                                   Solución Aplicada
                                 </span>
                                 <p className="text-[10px] font-medium text-slate-600 italic leading-relaxed">
@@ -816,7 +816,7 @@ export default function MantenimientoPage() {
                         )}
                         <div className="flex justify-between items-end border-t border-slate-100/50 pt-2 mt-2">
                           <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">
+                            <span className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">
                               Resuelto por
                             </span>
                             <span className="text-[9px] font-bold text-slate-500">
@@ -861,7 +861,7 @@ export default function MantenimientoPage() {
             {kpis.hiddenCount > 0 && !kpis.isSearching && (
               <div className="py-4 flex justify-center">
                 <div className="bg-slate-100/80 border border-slate-200 px-4 py-2 rounded-full flex flex-col items-center">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
                     + {kpis.hiddenCount} tickets anteriores
                   </span>
                   <span className="text-[9px] font-medium text-slate-400 mt-0.5 flex items-center gap-1">
@@ -880,7 +880,7 @@ export default function MantenimientoPage() {
           <div className="bg-white w-full md:max-w-md md:rounded-[2rem] rounded-t-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-0 md:zoom-in-95 max-h-[90vh] flex flex-col border border-slate-100">
             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
               <div>
-                <h2 className="text-base font-extrabold text-slate-800 tracking-tight">
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">
                   Directorio de Equipos
                 </h2>
                 <p className="text-[10px] font-medium text-slate-400 mt-0.5">
@@ -935,10 +935,10 @@ export default function MantenimientoPage() {
                   <FaCogs size={20} />
                 </div>
                 <div>
-                  <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
+                  <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">
                     Ficha de Equipo
                   </h2>
-                  <h1 className="text-xl font-extrabold text-slate-800 leading-none">
+                  <h1 className="text-xl font-bold text-slate-800 leading-none">
                     {fichaMaquina}
                   </h1>
                 </div>
@@ -953,7 +953,7 @@ export default function MantenimientoPage() {
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm relative">
-                <h3 className="text-[11px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-3">
+                <h3 className="text-[11px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-3">
                   <FaStickyNote className="text-amber-500" /> Notas y
                   Recordatorios
                 </h3>
@@ -973,7 +973,7 @@ export default function MantenimientoPage() {
               </div>
 
               <div>
-                <h3 className="text-[11px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-4 px-1">
+                <h3 className="text-[11px] font-bold text-slate-800 uppercase tracking-widest flex items-center gap-2 mb-4 px-1">
                   <FaHistory className="text-blue-500" /> Últimas intervenciones
                 </h3>
                 <div className="space-y-3">
@@ -990,7 +990,7 @@ export default function MantenimientoPage() {
                             {t.titulo}
                           </h4>
                           <span
-                            className={`text-[8px] font-black px-2 py-0.5 rounded uppercase shrink-0 ${t.estado === "SOLUCIONADO" ? "bg-emerald-50 text-emerald-600" : t.estado === "EN_REVISION" ? "bg-blue-50 text-blue-600" : "bg-rose-50 text-rose-600"}`}
+                            className={`text-[8px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${t.estado === "SOLUCIONADO" ? "bg-emerald-50 text-emerald-600" : t.estado === "EN_REVISION" ? "bg-blue-50 text-blue-600" : "bg-rose-50 text-rose-600"}`}
                           >
                             {t.estado === "SOLUCIONADO"
                               ? "Listo"
@@ -1027,7 +1027,7 @@ export default function MantenimientoPage() {
         <div className="fixed inset-0 z-[99999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95">
             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h2 className="text-sm font-extrabold text-slate-800">
+              <h2 className="text-sm font-bold text-slate-800">
                 {estadoPrompt.titulo}
               </h2>
               <button
@@ -1084,7 +1084,7 @@ export default function MantenimientoPage() {
           <div className="bg-white w-full md:max-w-md md:rounded-[2rem] rounded-t-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 md:slide-in-from-bottom-0 md:zoom-in-95 max-h-[90vh] flex flex-col border border-slate-100">
             <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
               <div>
-                <h2 className="text-base font-extrabold text-slate-800 tracking-tight">
+                <h2 className="text-base font-bold text-slate-800 tracking-tight">
                   Nuevo Reporte
                 </h2>
                 <p className="text-[10px] font-medium text-slate-400 mt-0.5">
@@ -1104,7 +1104,7 @@ export default function MantenimientoPage() {
               className="p-5 space-y-4 overflow-y-auto custom-scrollbar bg-slate-50/30"
             >
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                   Máquina o Sector
                 </label>
                 <select
@@ -1128,7 +1128,7 @@ export default function MantenimientoPage() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                   Problema Principal
                 </label>
                 <input
@@ -1144,7 +1144,7 @@ export default function MantenimientoPage() {
               </div>
 
               <div>
-                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                   Descripción
                 </label>
                 <textarea
@@ -1160,7 +1160,7 @@ export default function MantenimientoPage() {
 
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                     Urgencia
                   </label>
                   <div className="flex flex-col gap-1.5">
@@ -1179,7 +1179,7 @@ export default function MantenimientoPage() {
                   </div>
                 </div>
                 <div className="flex-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
                     Tipo
                   </label>
                   <div className="flex flex-col gap-1.5">

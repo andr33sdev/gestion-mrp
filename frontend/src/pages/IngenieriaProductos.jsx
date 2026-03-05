@@ -744,7 +744,7 @@ function FichaTecnicaModal({ semiId, onClose, showToast }) {
               Stock Disponible
             </span>
             <div className="flex items-end gap-3">
-              <span className="text-3xl font-black text-slate-800 leading-none">
+              <span className="text-3xl font-bold text-slate-800 leading-none">
                 {stockActual}
               </span>
               <span
@@ -768,7 +768,7 @@ function FichaTecnicaModal({ semiId, onClose, showToast }) {
               Mínimo Requerido
             </span>
             <div className="flex items-end gap-3">
-              <span className="text-3xl font-black text-slate-800 leading-none">
+              <span className="text-3xl font-bold text-slate-800 leading-none">
                 {minimoActual}
               </span>
               <span className="text-xs font-semibold text-slate-400 mb-0.5">
@@ -785,7 +785,7 @@ function FichaTecnicaModal({ semiId, onClose, showToast }) {
               Rendimiento Lote Prom.
             </span>
             <div className="flex items-end gap-3">
-              <span className="text-3xl font-black text-blue-600 leading-none">
+              <span className="text-3xl font-bold text-blue-600 leading-none">
                 {stats?.promedio_lote
                   ? Number(stats.promedio_lote).toFixed(0)
                   : "N/D"}
@@ -2031,7 +2031,7 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
                   <div className="flex items-center gap-4 flex-1 overflow-hidden pr-4">
                     <div
                       onClick={() => onCantidadChange && onCantidadChange(idx)}
-                      className="bg-slate-50 min-w-[48px] h-11 flex items-center justify-center rounded-xl font-black text-blue-600 border border-slate-200 text-sm cursor-pointer hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors px-2 shadow-sm"
+                      className="bg-slate-50 min-w-[48px] h-11 flex items-center justify-center rounded-xl font-bold text-blue-600 border border-slate-200 text-sm cursor-pointer hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors px-2 shadow-sm"
                       title="Clic para editar cantidad"
                     >
                       {ing.cantidad}x
@@ -2063,7 +2063,7 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
                       <span className="text-[9px] text-blue-400 font-bold tracking-widest uppercase mb-0.5">
                         Subtotal
                       </span>
-                      <span className="text-sm font-mono font-black text-blue-600">
+                      <span className="text-sm font-mono font-bold text-blue-600">
                         {formatCurrency(subtotal)}
                       </span>
                     </div>
@@ -2085,7 +2085,7 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
       {items.length > 0 && (
         <div className="mt-4 shrink-0 bg-white border border-slate-200 shadow-sm rounded-3xl p-5 flex justify-between items-center animate-in fade-in slide-in-from-bottom-4">
           <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-lg border border-blue-100 shadow-sm">
+            <span className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-lg border border-blue-100 shadow-sm">
               {items.length}
             </span>
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
@@ -2100,7 +2100,7 @@ function DroppableArea({ items, onRemove, placeholderText, onCantidadChange }) {
               <br />
               Estimado
             </span>
-            <span className="text-3xl font-black text-emerald-600 font-mono tracking-tight bg-emerald-50 px-4 py-1.5 rounded-xl border border-emerald-100 shadow-sm">
+            <span className="text-3xl font-bold text-emerald-600 font-mono tracking-tight bg-emerald-50 px-4 py-1.5 rounded-xl border border-emerald-100 shadow-sm">
               {formatCurrency(costoTotal)}
             </span>
           </div>
@@ -2503,7 +2503,7 @@ export default function IngenieriaProductos() {
         )}
       </AnimatePresence>
 
-      <div className="flex flex-col h-[calc(100vh-100px)] min-h-[600px] gap-6 animate-in fade-in bg-[#f8fafc] text-slate-800">
+      <div className="flex flex-col h-full gap-6 animate-in fade-in bg-[#f8fafc] text-slate-800">
         {/* HEADER LIMPIO LEBANE */}
         <div className="bg-white border-b border-slate-200 px-8 py-5 flex-none shadow-[0_2px_10px_rgba(0,0,0,0.02)] z-10 rounded-b-2xl md:rounded-none">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -2683,7 +2683,7 @@ export default function IngenieriaProductos() {
                   </h2>
                   {seleccionado && (
                     <div className="flex items-center gap-2 mt-2">
-                      <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
+                      <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
                         Mesa de Trabajo
                       </span>
                       <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
@@ -2714,12 +2714,12 @@ export default function IngenieriaProductos() {
                   </span>
                   <div className="flex items-center gap-2">
                     <div className="relative">
-                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-600 font-black text-xs">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs">
                         $
                       </span>
                       <input
                         type="number"
-                        className="w-24 pl-6 pr-2 py-1.5 text-sm font-black text-emerald-700 bg-white border border-emerald-200 rounded-lg outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 transition-all shadow-inner text-right"
+                        className="w-24 pl-6 pr-2 py-1.5 text-sm font-bold text-emerald-700 bg-white border border-emerald-200 rounded-lg outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-50 transition-all shadow-inner text-right"
                         value={costoImportacion}
                         onChange={(e) => setCostoImportacion(e.target.value)}
                         placeholder="0.00"

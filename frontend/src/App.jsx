@@ -31,6 +31,8 @@ import {
   FaUserLock,
   FaMapMarkedAlt,
   FaLocationArrow,
+  FaShoppingCart,
+  FaFire,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
@@ -57,15 +59,21 @@ import RRHHPage from "./pages/RRHHPage";
 import ChangelogPage from "./pages/ChangelogPage";
 import DetalleProducto from "./pages/DetalleProducto";
 import DepositoPage from "./pages/DepositoPage.jsx";
-import DepositoDespacho from "./pages/DepositoDespacho.jsx";
 import SugerenciasPage from "./pages/SugerenciasPage.jsx";
 import GestorUsuarios from "./pages/GestorUsuarios.jsx";
+import Home from "./pages/Home.jsx";
 
 import { getAuthData, logout } from "./auth/authHelper";
 
 // --- CONFIGURACIÓN DEL MENÚ BASADO EN MÓDULOS ---
 const NAV_LINKS = [
   { path: "/", label: "Inicio", icon: <FaChartPie />, moduloReq: "INICIO" },
+  {
+    path: "/hornos", // Nueva ruta para el Dashboard
+    label: "Horno N°2",
+    icon: <FaFire />,
+    moduloReq: "INICIO",
+  },
   {
     path: "/analisis-pedidos",
     label: "Métricas",
@@ -89,12 +97,6 @@ const NAV_LINKS = [
     label: "Logística",
     icon: <FaTruck />,
     moduloReq: "LOGISTICA",
-  },
-  {
-    path: "/deposito-despacho",
-    label: "Despacho",
-    icon: <FaBoxOpen />,
-    moduloReq: "DESPACHO",
   },
   {
     path: "/deposito-3d",
@@ -132,6 +134,12 @@ const NAV_LINKS = [
     label: "Mantenimiento",
     icon: <FaHardHat />,
     moduloReq: "MANTENIMIENTO",
+  },
+  {
+    path: "/compras",
+    label: "Compras",
+    icon: <FaShoppingCart />,
+    moduloReq: "COMPRAS",
   },
   {
     path: "/usuarios",
@@ -209,7 +217,7 @@ const Sidebar = ({
             <FaWarehouse />
           </div>
           {!isCollapsed && (
-            <span className="font-extrabold text-xl tracking-tight text-blue-600">
+            <span className="font-bold text-xl tracking-tight text-blue-600">
               Gestion<span className="text-gray-800">MRP</span>
             </span>
           )}
@@ -239,12 +247,12 @@ const Sidebar = ({
         <div
           className={`flex items-center gap-3 ${isCollapsed ? "justify-center" : ""}`}
         >
-          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-sm font-black shadow-inner border border-blue-200 uppercase">
+          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-sm font-bold shadow-inner border border-blue-200 uppercase">
             {userBadge.text.charAt(0)}
           </div>
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-extrabold text-slate-800 truncate tracking-tight">
+              <p className="text-xs font-bold text-slate-800 truncate tracking-tight">
                 {userBadge.text}
               </p>
               <div className="flex items-center justify-between mt-0.5">
@@ -321,7 +329,7 @@ const Layout = ({ children }) => {
           <FaBars size={20} />
         </button>
         <div className="flex items-center gap-2">
-          <span className="font-extrabold text-xl tracking-tight text-blue-600">
+          <span className="font-bold text-xl tracking-tight text-blue-600">
             Gestion<span className="text-gray-800">MRP</span>
           </span>
         </div>
@@ -378,6 +386,34 @@ const Layout = ({ children }) => {
                   </Link>
                 ))}
               </nav>
+
+              {/* 👇 AGREGAR ESTE BLOQUE DESDE ACÁ 👇 */}
+              <div className="p-4 border-t border-stone-100">
+                <div className="flex items-center gap-3 px-4 py-3 mb-2 bg-slate-50 rounded-xl">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-sm font-bold uppercase">
+                    {userBadge.text.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-800 truncate">
+                      {userBadge.text}
+                    </p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      {role || "OPERARIO"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setSidebarOpen(false);
+                    handleLogout();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-rose-600 hover:bg-rose-50 font-bold transition-colors border border-rose-100 shadow-sm"
+                >
+                  <FaSignOutAlt />
+                  Cerrar Sesión
+                </button>
+              </div>
+              {/* 👆 HASTA ACÁ 👆 */}
             </motion.div>
           </>
         )}
@@ -394,57 +430,44 @@ const Layout = ({ children }) => {
 export default function App() {
   useEffect(() => {
     const inicializarNotificaciones = async () => {
-      // 1. Verificamos que estamos en el celular (no en la web)
+      // Obtenemos el usuario actual
+      const { user, token: authToken } = getAuthData();
+
+      // SI NO HAY USUARIO LOGUEADO, ABORTAMOS SILENCIOSAMENTE
+      if (!user || !authToken) return;
+
       const isNative =
         window.Capacitor && window.Capacitor.getPlatform() !== "web";
 
       if (isNative) {
         try {
-          // 2. Limpiamos escuchadores viejos por seguridad
           await PushNotifications.removeAllListeners();
 
-          // 3. Preparamos la "trampa" para cuando llegue el token
           PushNotifications.addListener("registration", async (token) => {
-            // ACÁ ESTÁ TU ALERT Y TU CONSOLE.LOG NORMALES
-            console.log("🚀 TOKEN CAPTURADO AUTOMÁTICAMENTE:", token.value);
-            alert("¡Token capturado!\n" + token.value.substring(0, 30) + "...");
-
-            // Obtenemos el usuario y el token de sesión usando tu helper
-            const { user } = getAuthData();
+            // Cero alertas, todo silencioso en consola
+            console.log("🚀 TOKEN CAPTURADO SILENCIOSAMENTE");
 
             if (user && user.id) {
               try {
-                // Lo mandamos a tu DB de forma silenciosa
                 await authFetch(UPDATE_FCM_TOKEN_URL, {
                   method: "PUT",
                   body: JSON.stringify({ fcm_token: token.value }),
                 });
-                console.log(
-                  "✅ Token guardado en la Base de Datos exitosamente.",
-                );
+                console.log("✅ Token guardado en la Base de Datos.");
               } catch (e) {
-                console.error(
-                  "❌ Error de red al guardar el token en la DB:",
-                  e,
-                );
+                console.error("❌ Error de red guardando en DB:", e);
               }
             }
           });
 
-          // 4. Escuchador de errores nativos
           PushNotifications.addListener("registrationError", (err) => {
             console.error("❌ Error nativo de Firebase:", err);
-            alert("Error de Firebase: " + JSON.stringify(err));
+            // Eliminado el alert de error
           });
 
-          // 5. Pedimos permisos y disparamos el registro
           const permisos = await PushNotifications.requestPermissions();
           if (permisos.receive === "granted") {
             await PushNotifications.register();
-          } else {
-            console.warn(
-              "⚠️ El usuario denegó los permisos de notificaciones.",
-            );
           }
         } catch (error) {
           console.error("❌ Error general inicializando Push:", error);
@@ -453,7 +476,7 @@ export default function App() {
     };
 
     inicializarNotificaciones();
-  }, []); // El array vacío hace que corra solo una vez al abrir la app
+  }, []);
 
   return (
     <BrowserRouter>
@@ -473,6 +496,17 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/"
+          element={
+            <ProtectedRoute requiredModule="INICIO">
+              <Layout>
+                <Home />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        {/* NUEVA RUTA: Dashboard de Hornos */}
+        <Route
+          path="/hornos"
           element={
             <ProtectedRoute requiredModule="INICIO">
               <Layout>
@@ -637,16 +671,6 @@ export default function App() {
             <ProtectedRoute requiredModule="COMPRAS">
               <Layout>
                 <SugerenciasPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/deposito-despacho"
-          element={
-            <ProtectedRoute requiredModule="DESPACHO">
-              <Layout>
-                <DepositoDespacho />
               </Layout>
             </ProtectedRoute>
           }

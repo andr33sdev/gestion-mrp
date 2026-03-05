@@ -613,7 +613,9 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   const handleToggleEstado = async () => {
-    if (!hasRole("GERENCIA")) return alert("⛔");
+    // 👇 Permitimos tanto a Gerencia como a Jefes
+    if (!hasRole("GERENCIA") && !hasRole("JEFE PRODUCCIÓN")) return alert("⛔");
+
     const estado = currentPlanEstado === "ABIERTO" ? "CERRADO" : "ABIERTO";
     if (confirm("¿Cambiar estado?")) {
       await authFetch(
@@ -2011,7 +2013,7 @@ export default function PlanificacionPage({ onNavigate }) {
                           </td>
 
                           {/* Cantidad (OK) */}
-                          <td className="px-2 py-3 md:px-6 md:py-4 text-right font-black text-emerald-500 text-xs md:text-xs">
+                          <td className="px-2 py-3 md:px-6 md:py-4 text-right font-bold text-emerald-500 text-xs md:text-xs">
                             {reg.cantidad}
                           </td>
                         </tr>

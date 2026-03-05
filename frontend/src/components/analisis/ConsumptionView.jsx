@@ -385,7 +385,7 @@ function SemiDetailModal({ item, onClose }) {
               <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide mb-1">
                 Stock Actual
               </p>
-              <p className="text-3xl font-extrabold text-blue-600">
+              <p className="text-3xl font-bold text-blue-600">
                 {item.stock}
               </p>
             </div>
@@ -393,7 +393,7 @@ function SemiDetailModal({ item, onClose }) {
               <p className="text-[10px] text-gray-400 uppercase font-bold tracking-wide mb-1">
                 Consumo Total
               </p>
-              <p className="text-3xl font-extrabold text-gray-800">
+              <p className="text-3xl font-bold text-gray-800">
                 {chartData.reduce((a, b) => a + b.consumo, 0)}
               </p>
             </div>
@@ -567,7 +567,7 @@ export default function ConsumptionView({ analysisData }) {
             <p className="text-[10px] text-gray-500 font-bold uppercase">
               Críticos (&lt;7d)
             </p>
-            <p className="text-2xl font-extrabold text-gray-900">
+            <p className="text-2xl font-bold text-gray-900">
               {criticalCount}
             </p>
           </div>
@@ -580,7 +580,7 @@ export default function ConsumptionView({ analysisData }) {
             <p className="text-[10px] text-gray-500 font-bold uppercase">
               Alerta (7-30d)
             </p>
-            <p className="text-2xl font-extrabold text-gray-900">
+            <p className="text-2xl font-bold text-gray-900">
               {warningCount}
             </p>
           </div>
@@ -593,7 +593,7 @@ export default function ConsumptionView({ analysisData }) {
             <p className="text-[10px] text-gray-500 font-bold uppercase">
               Saludable
             </p>
-            <p className="text-2xl font-extrabold text-gray-900">{safeCount}</p>
+            <p className="text-2xl font-bold text-gray-900">{safeCount}</p>
           </div>
         </div>
       </div>

@@ -91,18 +91,7 @@ async function leerArchivoPedidos() {
       headers: { "Cache-Control": "no-cache" },
     });
 
-    const tituloArchivo = metaData.data.properties.title; // El nombre del archivo Excel
     const nombreHoja = metaData.data.sheets[0].properties.title; // El nombre de la pestaña 1
-
-    console.log("---------------------------------------------------");
-    console.log("🕵️‍♂️ REPORTE DE IDENTIDAD DEL ARCHIVO");
-    console.log(`🆔 ID Usado:       ${targetId}`);
-    console.log(`📄 Nombre Archivo: "${tituloArchivo}"`); // <--- ¿Coincide con el que ves en Chrome?
-    console.log(`📑 Pestaña Leída:  "${nombreHoja}" (Índice 0)`);
-    console.log(
-      `🔗 Link generado:  https://docs.google.com/spreadsheets/d/${targetId}/edit`
-    );
-    console.log("---------------------------------------------------");
 
     // PASO 2: Leer valores forzando nueva petición
     const response = await sheets.spreadsheets.values.get({
@@ -112,32 +101,6 @@ async function leerArchivoPedidos() {
     });
 
     const rows = response.data.values;
-    // --- 🚨 BLOQUE DE DEBUG SUPREMO ---
-    console.log(
-      `🔍 [DEBUG] Filas crudas descargadas de Drive: ${rows ? rows.length : 0}`
-    );
-    if (rows && rows.length > 0) {
-      // Buscamos "Luparini" en los datos crudos recién bajados
-      const fantasmas = rows.filter((r) =>
-        JSON.stringify(r).toUpperCase().includes("LUPARINI")
-      );
-
-      if (fantasmas.length > 0) {
-        console.log(
-          "❌ MALAS NOTICIAS: Google Drive TODAVÍA está enviando 'Luparini'."
-        );
-        console.log("👀 Ejemplo de fila sucia:", fantasmas[0]);
-        console.log(`🔢 Total de filas infectadas: ${fantasmas.length}`);
-      } else {
-        console.log(
-          "✨ BUENAS NOTICIAS: Los datos de Google Drive vienen LIMPIOS."
-        );
-        console.log(
-          "👉 CONCLUSIÓN: El problema es que NO estás borrando la tabla de tu base de datos antes de insertar."
-        );
-      }
-    }
-    // -----------------------------------
 
     if (!rows || rows.length === 0) return [];
 

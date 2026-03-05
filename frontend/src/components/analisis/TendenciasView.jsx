@@ -316,7 +316,7 @@ export default function TendenciasView() {
               <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1 flex items-center gap-2">
                 <FaCalendarDay /> Progreso Mensual (MTD)
               </h3>
-              <div className="text-4xl font-extrabold text-white flex items-baseline gap-3">
+              <div className="text-4xl font-bold text-white flex items-baseline gap-3">
                 {mtd.actual}{" "}
                 <span className="text-lg font-normal text-gray-500">
                   unidades
@@ -380,7 +380,7 @@ export default function TendenciasView() {
             <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1">
               MercadoLibre
             </h3>
-            <div className="text-3xl font-extrabold text-yellow-400 flex items-center gap-2">
+            <div className="text-3xl font-bold text-yellow-400 flex items-center gap-2">
               {ml_share}% <FaRocket className="text-2xl opacity-50" />
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -391,7 +391,7 @@ export default function TendenciasView() {
             <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1">
               Proyección Total
             </h3>
-            <div className="text-3xl font-extrabold text-blue-400">
+            <div className="text-3xl font-bold text-blue-400">
               {proyeccion_global} u.
             </div>
             <p className="text-xs text-gray-500 mt-1">Estimado cierre de mes</p>

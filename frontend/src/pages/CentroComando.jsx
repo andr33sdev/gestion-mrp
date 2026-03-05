@@ -264,7 +264,7 @@ const ScheduleModal = ({
             <span className="text-sm text-blue-200 font-bold">
               Ciclos de este molde:
             </span>
-            <span className="text-2xl text-blue-400 font-extrabold flex items-center gap-2">
+            <span className="text-2xl text-blue-400 font-bold flex items-center gap-2">
               {ciclosPropios} <FaSync className="text-sm opacity-50" />
             </span>
           </div>
