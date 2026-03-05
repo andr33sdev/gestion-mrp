@@ -33,6 +33,7 @@ import {
   FaLocationArrow,
   FaShoppingCart,
   FaFire,
+  FaHistory,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
@@ -140,6 +141,12 @@ const NAV_LINKS = [
     label: "Compras",
     icon: <FaShoppingCart />,
     moduloReq: "COMPRAS",
+  },
+  {
+    path: "/changelog",
+    label: "Cambios Prod.",
+    icon: <FaHistory />,
+    moduloReq: "INGENIERIA",
   },
   {
     path: "/usuarios",
@@ -616,7 +623,7 @@ export default function App() {
           }
         />
         <Route
-          path="/changelog"
+          path="/changelog/:slug?"
           element={
             <ProtectedRoute requiredModule="INGENIERIA">
               <Layout>
