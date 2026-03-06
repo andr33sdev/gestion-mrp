@@ -161,39 +161,43 @@ async function verificarAlertasMRP(client, planId, nombrePlan) {
 
 // --- RUTAS DE ESCRITURA ---
 
-router.post("/", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
-  const { nombre, items } = req.body;
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    const resPlan = await client.query(
-      "INSERT INTO planes_produccion (nombre, estado) VALUES ($1, 'ABIERTO') RETURNING id",
-      [nombre],
-    );
-    const planId = resPlan.rows[0].id;
-
-    for (const item of items) {
-      await client.query(
-        "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, 'PENDIENTE')",
-        [
-          planId,
-          item.semielaborado.id,
-          item.cantidad,
-          item.ritmo_turno || 50,
-          item.fecha_inicio_estimada || null,
-        ],
+router.post(
+  "/",
+  restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
+  async (req, res) => {
+    const { nombre, items } = req.body;
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      const resPlan = await client.query(
+        "INSERT INTO planes_produccion (nombre, estado) VALUES ($1, 'ABIERTO') RETURNING id",
+        [nombre],
       );
+      const planId = resPlan.rows[0].id;
+
+      for (const item of items) {
+        await client.query(
+          "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, 'PENDIENTE')",
+          [
+            planId,
+            item.semielaborado.id,
+            item.cantidad,
+            item.ritmo_turno || 50,
+            item.fecha_inicio_estimada || null,
+          ],
+        );
+      }
+      await verificarAlertasMRP(client, planId, nombre);
+      await client.query("COMMIT");
+      res.status(201).json({ success: true, planId });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.status(500).send(e.message);
+    } finally {
+      client.release();
     }
-    await verificarAlertasMRP(client, planId, nombre);
-    await client.query("COMMIT");
-    res.status(201).json({ success: true, planId });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).send(e.message);
-  } finally {
-    client.release();
-  }
-});
+  },
+);
 
 // NUEVA RUTA: Actualizar ítem individual desde el Kanban
 router.put("/item/:id", async (req, res) => {
@@ -276,86 +280,190 @@ router.post("/sincronizar-ya", async (req, res) => {
   }
 });
 
-router.put("/:id/estado", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
-  const { estado } = req.body;
-  await db.query("UPDATE planes_produccion SET estado = $1 WHERE id = $2", [
-    estado,
-    req.params.id,
-  ]);
-  res.json({ success: true });
-});
-
-router.put("/:id", restrictTo("GERENCIA", "JEFE PRODUCCIÓN"), async (req, res) => {
-  const { nombre, items } = req.body;
-  const client = await db.connect();
-  try {
-    await client.query("BEGIN");
-    if (nombre)
-      await client.query(
-        "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
-        [nombre, req.params.id],
-      );
-
-    const current = await client.query(
-      "SELECT id FROM planes_items WHERE plan_id = $1",
-      [req.params.id],
-    );
-    const dbIds = current.rows.map((r) => r.id);
-    const incomingIds = [];
-
-    for (const item of items) {
-      // 👇 Tomamos el estado que manda el frontend, o PENDIENTE por defecto
-      const estadoFila = item.estado_kanban || "PENDIENTE";
-
-      if (item.plan_item_id) {
-        await client.query(
-          // 👇 Se agregó "estado = $4"
-          `UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3, estado = $4 WHERE id = $5`,
-          [
-            item.cantidad,
-            item.ritmo_turno || 50,
-            item.fecha_inicio_estimada || null,
-            estadoFila, // 👈 Nuevo
-            item.plan_item_id,
-          ],
-        );
-        incomingIds.push(item.plan_item_id);
-      } else {
-        await client.query(
-          // 👇 Se agregó la columna "estado" al INSERT
-          "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, $6)",
-          [
-            req.params.id,
-            item.semielaborado.id,
-            item.cantidad,
-            item.ritmo_turno || 50,
-            item.fecha_inicio_estimada || null,
-            estadoFila, // 👈 Nuevo
-          ],
-        );
-      }
-    }
-    const toDelete = dbIds.filter((id) => !incomingIds.includes(id));
-    if (toDelete.length)
-      await client.query("DELETE FROM planes_items WHERE id = ANY($1::int[])", [
-        toDelete,
-      ]);
-    if (nombre) await verificarAlertasMRP(client, req.params.id, nombre);
-    await client.query("COMMIT");
+router.put(
+  "/:id/estado",
+  restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
+  async (req, res) => {
+    const { estado } = req.body;
+    await db.query("UPDATE planes_produccion SET estado = $1 WHERE id = $2", [
+      estado,
+      req.params.id,
+    ]);
     res.json({ success: true });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    res.status(500).send(e.message);
-  } finally {
-    client.release();
-  }
-});
+  },
+);
+
+router.put(
+  "/:id",
+  restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
+  async (req, res) => {
+    const { nombre, items } = req.body;
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      if (nombre)
+        await client.query(
+          "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
+          [nombre, req.params.id],
+        );
+
+      const current = await client.query(
+        "SELECT id FROM planes_items WHERE plan_id = $1",
+        [req.params.id],
+      );
+      const dbIds = current.rows.map((r) => r.id);
+      const incomingIds = [];
+
+      for (const item of items) {
+        // 👇 Tomamos el estado que manda el frontend, o PENDIENTE por defecto
+        const estadoFila = item.estado_kanban || "PENDIENTE";
+
+        if (item.plan_item_id) {
+          await client.query(
+            // 👇 Se agregó "estado = $4"
+            `UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3, estado = $4 WHERE id = $5`,
+            [
+              item.cantidad,
+              item.ritmo_turno || 50,
+              item.fecha_inicio_estimada || null,
+              estadoFila, // 👈 Nuevo
+              item.plan_item_id,
+            ],
+          );
+          incomingIds.push(item.plan_item_id);
+        } else {
+          await client.query(
+            // 👇 Se agregó la columna "estado" al INSERT
+            "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, $6)",
+            [
+              req.params.id,
+              item.semielaborado.id,
+              item.cantidad,
+              item.ritmo_turno || 50,
+              item.fecha_inicio_estimada || null,
+              estadoFila, // 👈 Nuevo
+            ],
+          );
+        }
+      }
+      const toDelete = dbIds.filter((id) => !incomingIds.includes(id));
+      if (toDelete.length)
+        await client.query(
+          "DELETE FROM planes_items WHERE id = ANY($1::int[])",
+          [toDelete],
+        );
+      if (nombre) await verificarAlertasMRP(client, req.params.id, nombre);
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.status(500).send(e.message);
+    } finally {
+      client.release();
+    }
+  },
+);
 
 router.delete("/:id", restrictTo("GERENCIA"), async (req, res) => {
   await db.query("DELETE FROM planes_produccion WHERE id = $1", [
     req.params.id,
   ]);
   res.json({ success: true });
+});
+
+// --- ENDPOINT: TORRE DE CONTROL (COCKPIT BLINDADO) ---
+router.get("/cockpit/data", async (req, res) => {
+  try {
+    const radarRes = await db.query(`
+      SELECT 
+        pi.id, pi.cantidad_requerida as cantidad, pi.estado,
+        s.nombre as producto_nombre, s.codigo,
+        p.nombre as plan_nombre,
+        COALESCE((SELECT SUM(cantidad_ok) FROM registros_produccion WHERE plan_item_id = pi.id), 0) as producido,
+        NULL as ultimo_operario
+      FROM planes_items pi
+      JOIN semielaborados s ON pi.semielaborado_id = s.id
+      JOIN planes_produccion p ON pi.plan_id = p.id
+      WHERE pi.estado = 'PROCESO' AND p.estado = 'ABIERTO'
+    `);
+
+    const pedidosRes = await db.query(`
+      SELECT id as op, cliente, modelo, cantidad, fecha 
+      FROM pedidos_clientes 
+      WHERE estado ILIKE '%SIN STOCK%'
+      ORDER BY id DESC
+    `);
+
+    const mrpRes = await db.query(`
+      SELECT 
+          mp.nombre,
+          mp.stock_actual,
+          (mp.stock_actual - SUM(
+              (CASE WHEN CAST(pi.cantidad_requerida AS TEXT) ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(pi.cantidad_requerida AS NUMERIC) ELSE 0 END) 
+              * (CASE WHEN REPLACE(CAST(r.cantidad AS TEXT), ',', '.') ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(REPLACE(CAST(r.cantidad AS TEXT), ',', '.') AS NUMERIC) ELSE 0 END)
+          )) as balance
+      FROM planes_items pi
+      JOIN planes_produccion p ON pi.plan_id = p.id
+      JOIN recetas_semielaborados r ON pi.semielaborado_id = r.semielaborado_id
+      JOIN materias_primas mp ON r.materia_prima_id = mp.id 
+      WHERE p.estado = 'ABIERTO'
+      GROUP BY mp.id, mp.nombre, mp.stock_actual
+      HAVING (mp.stock_actual - SUM(
+              (CASE WHEN CAST(pi.cantidad_requerida AS TEXT) ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(pi.cantidad_requerida AS NUMERIC) ELSE 0 END) 
+              * (CASE WHEN REPLACE(CAST(r.cantidad AS TEXT), ',', '.') ~ '^[0-9]+(\.[0-9]+)?$' THEN CAST(REPLACE(CAST(r.cantidad AS TEXT), ',', '.') AS NUMERIC) ELSE 0 END)
+          )) < 0
+      ORDER BY balance ASC
+    `);
+
+    // NUEVO: Traer las máquinas
+    const maquinasRes = await db.query(
+      `SELECT * FROM maquinas ORDER BY id ASC`,
+    );
+
+    res.json({
+      radar: radarRes.rows,
+      pedidosCriticos: pedidosRes.rows,
+      alertasStock: mrpRes.rows,
+      maquinas: maquinasRes.rows, // Lo inyectamos en la respuesta
+    });
+  } catch (err) {
+    console.error("🔥 Error en Torre de Control:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- GESTIÓN DE MÁQUINAS ---
+router.post("/maquinas", async (req, res) => {
+  try {
+    await db.query(
+      "INSERT INTO maquinas (nombre, semielaborado) VALUES ($1, NULL)",
+      [req.body.nombre],
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put("/maquinas/:id", async (req, res) => {
+  try {
+    await db.query("UPDATE maquinas SET semielaborado = $1 WHERE id = $2", [
+      req.body.semielaborado || null,
+      req.params.id,
+    ]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/maquinas/:id", async (req, res) => {
+  try {
+    await db.query("DELETE FROM maquinas WHERE id = $1", [req.params.id]);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 module.exports = router;

@@ -51,7 +51,7 @@ const formatearFechaHora = (fechaIso) => {
 // --- COMPONENTE: FILA DE LOGÍSTICA CON MENÚ DE 3 PUNTITOS ---
 const LogisticaRow = ({
   req,
-  isBoss,
+  canDelete,
   onOpenDetail,
   onStatusChange,
   onDelete,
@@ -110,7 +110,6 @@ const LogisticaRow = ({
       onClick={() => onOpenDetail(req, "CHAT")}
       className="relative bg-white rounded-2xl md:rounded-xl p-5 md:py-4 md:px-6 border border-stone-100 shadow-sm hover:shadow-[0_4px_15px_-3px_rgba(0,0,0,0.05)] hover:border-stone-200 transition-all duration-300 group flex flex-col md:flex-row md:items-center gap-4 cursor-pointer w-full"
     >
-      {/* Tira de color lateral ultra fina */}
       <div
         className={`absolute left-0 top-0 bottom-0 w-1.5 rounded-l-2xl md:rounded-l-xl transition-colors duration-500 ${leftBorderColor}`}
       />
@@ -186,12 +185,10 @@ const LogisticaRow = ({
         <AnimatePresence>
           {isOpen && (
             <>
-              {/* Fondo invisible para cerrar al hacer clic afuera */}
               <div
                 className="fixed inset-0 z-40"
                 onClick={() => setOpenMenuId(null)}
               />
-
               <motion.div
                 initial={{ opacity: 0, scale: 0.95, y: -10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -205,73 +202,69 @@ const LogisticaRow = ({
                   </span>
                 </div>
 
-                {isBoss ? (
+                {/* TODOS PUEDEN VER Y USAR ESTOS BOTONES */}
+                {req.estado === "PENDIENTE" && (
                   <>
-                    {/* Botones si es Jefe/Gerente */}
-                    {req.estado === "PENDIENTE" && (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            onStatusChange(e, req.id, "APROBADO");
-                            setOpenMenuId(null);
-                          }}
-                          className="w-full text-left px-4 py-3 text-xs font-bold text-[#2196f3] hover:bg-[#e3f2fd] flex items-center gap-3 transition-colors"
-                        >
-                          <FaCheckCircle size={14} /> Aprobar Solicitud
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            onStatusChange(e, req.id, "RECHAZADO");
-                            setOpenMenuId(null);
-                          }}
-                          className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
-                        >
-                          <FaTimes size={14} /> Rechazar Solicitud
-                        </button>
-                      </>
-                    )}
-
-                    {req.estado === "APROBADO" && (
-                      <button
-                        onClick={(e) => {
-                          onStatusChange(e, req.id, "PREPARADO");
-                          setOpenMenuId(null);
-                        }}
-                        className="w-full text-left px-4 py-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-3 transition-colors"
-                      >
-                        <FaBoxOpen size={14} /> Marcar como Preparado
-                      </button>
-                    )}
-
-                    {req.estado === "PREPARADO" && (
-                      <button
-                        onClick={(e) => {
-                          onStatusChange(e, req.id, "ENTREGADO");
-                          setOpenMenuId(null);
-                        }}
-                        className="w-full text-left px-4 py-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
-                      >
-                        <FaCheckDouble size={14} /> Marcar como Entregado
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        onStatusChange(e, req.id, "APROBADO");
+                        setOpenMenuId(null);
+                      }}
+                      className="w-full text-left px-4 py-3 text-xs font-bold text-[#2196f3] hover:bg-[#e3f2fd] flex items-center gap-3 transition-colors"
+                    >
+                      <FaCheckCircle size={14} /> Aprobar Solicitud
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        onStatusChange(e, req.id, "RECHAZADO");
+                        setOpenMenuId(null);
+                      }}
+                      className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                    >
+                      <FaTimes size={14} /> Rechazar Solicitud
+                    </button>
                   </>
-                ) : (
-                  <div className="px-4 py-3 text-xs text-stone-400 font-medium italic">
-                    Sin permisos de edición.
-                  </div>
                 )}
 
-                <div className="h-px bg-stone-100 my-1 mx-2" />
+                {req.estado === "APROBADO" && (
+                  <button
+                    onClick={(e) => {
+                      onStatusChange(e, req.id, "PREPARADO");
+                      setOpenMenuId(null);
+                    }}
+                    className="w-full text-left px-4 py-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-3 transition-colors"
+                  >
+                    <FaBoxOpen size={14} /> Marcar como Preparado
+                  </button>
+                )}
 
-                <button
-                  onClick={(e) => {
-                    onDelete(e, req.id);
-                    setOpenMenuId(null);
-                  }}
-                  className="w-full text-left px-4 py-3 text-xs font-bold text-stone-500 hover:text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
-                >
-                  <FaTrash size={12} /> Eliminar Registro
-                </button>
+                {req.estado === "PREPARADO" && (
+                  <button
+                    onClick={(e) => {
+                      onStatusChange(e, req.id, "ENTREGADO");
+                      setOpenMenuId(null);
+                    }}
+                    className="w-full text-left px-4 py-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
+                  >
+                    <FaCheckDouble size={14} /> Marcar como Entregado
+                  </button>
+                )}
+
+                {/* SOLO JEFES PUEDEN ELIMINAR */}
+                {canDelete && (
+                  <>
+                    <div className="h-px bg-stone-100 my-1 mx-2" />
+                    <button
+                      onClick={(e) => {
+                        onDelete(e, req.id);
+                        setOpenMenuId(null);
+                      }}
+                      className="w-full text-left px-4 py-3 text-xs font-bold text-stone-500 hover:text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                    >
+                      <FaTrash size={12} /> Eliminar Registro
+                    </button>
+                  </>
+                )}
               </motion.div>
             </>
           )}
@@ -332,16 +325,8 @@ export default function LogisticaPage() {
     currentUser = "Mauro";
   }
 
-  // Lista de roles autorizados (¡Asegura incluir al jefe!)
-  const isBoss = [
-    "GERENCIA",
-    "PLANIFICACION",
-    "EXPEDICION",
-    "DEPOSITO",
-    "OPERARIO",
-    "PANEL",
-    "JEFE PRODUCCION",
-  ].includes(rolNormalizado);
+  // Ahora TODOS pueden cambiar estados. Solo Gerencia y Jefatura pueden eliminar.
+  const canDelete = ["GERENCIA", "JEFE PRODUCCION"].includes(rolNormalizado);
 
   const [form, setForm] = useState({
     producto: "",
@@ -661,7 +646,7 @@ export default function LogisticaPage() {
                   <LogisticaRow
                     key={req.id}
                     req={req}
-                    isBoss={isBoss}
+                    canDelete={canDelete} // <-- ACÁ ESTÁ EL CAMBIO
                     onOpenDetail={openDetailModal}
                     onDelete={handleDelete}
                     onStatusChange={handleStatusChange}
@@ -763,6 +748,8 @@ export default function LogisticaPage() {
                       <AutoCompleteInput
                         key={resetKey}
                         items={allSemis}
+                        value={form.producto} // <-- ESTO CONECTA EL TEXTO VISUAL AL ESTADO
+                        onChange={(val) => setForm({ ...form, producto: val })} // <-- ESTO ACTUALIZA MIENTRAS ESCRIBÍS
                         onSelect={(item) =>
                           setForm({ ...form, producto: item.nombre })
                         }

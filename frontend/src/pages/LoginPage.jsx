@@ -36,8 +36,12 @@ export default function LoginPage() {
     setLoading(true);
     setErrorMsg(null);
 
+    // 1. ELEGIR LA RUTA CORRECTA
+    const endpoint = isLogin ? "/auth/login" : "/auth/register";
+
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      // 2. ENVIAR LA PETICIÓN
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -47,19 +51,24 @@ export default function LoginPage() {
 
       if (!response.ok) throw new Error(data.msg || "Error");
 
-      // 1. GUARDAR DATOS (Esto es lo único que importa para entrar)
-      localStorage.setItem("mrp_token", data.token);
-      localStorage.setItem("mrp_user", JSON.stringify(data.usuario));
+      if (isLogin) {
+        // 3. SI ES LOGIN, ENTRAR AL SISTEMA
+        localStorage.setItem("mrp_token", data.token);
+        localStorage.setItem("mrp_user", JSON.stringify(data.usuario));
 
-      // 2. DISPARAR REGISTRO DE TOKEN (Sin 'await', que corra de fondo)
-      if (Capacitor.isNativePlatform()) {
-        iniciarRegistroPush(data.token);
+        if (Capacitor.isNativePlatform()) {
+          iniciarRegistroPush(data.token);
+        }
+        window.location.href = "/";
+      } else {
+        // 4. SI ES REGISTRO, MOSTRAR ÉXITO Y PASAR A LOGIN
+        setSuccessMsg("¡Cuenta creada con éxito! Ahora podés iniciar sesión.");
+        setIsLogin(true); // Lo pasamos a la pestaña de login automáticamente
+        setFormData({ ...formData, password: "" }); // Borramos la contraseña por seguridad
       }
-
-      // 3. ENTRAR AL SISTEMA YA MISMO
-      window.location.href = "/";
     } catch (error) {
       setErrorMsg(error.message);
+    } finally {
       setLoading(false);
     }
   };
