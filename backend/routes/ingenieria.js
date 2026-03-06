@@ -27,7 +27,21 @@ router.get("/semielaborados", async (req, res) => {
            ), 0), 
            s.costo_usd, 
            0
-         ) AS costo
+         ) AS costo,
+         -- 👇 ACÁ ESTÁ LA MAGIA: Empaquetamos las variantes en un array JSON
+         COALESCE(
+           (SELECT json_agg(
+              json_build_object(
+                'id', v.id,
+                'nombre', v.nombre,
+                'especificaciones', v.especificaciones,
+                'fotos', v.fotos
+              )
+            )
+            FROM variantes_semielaborados v
+            WHERE v.semielaborado_id = s.id
+           ), '[]'::json
+         ) AS variantes
        FROM semielaborados s 
        ORDER BY s.nombre ASC`,
     );
@@ -36,6 +50,49 @@ router.get("/semielaborados", async (req, res) => {
     res.status(500).send(err.message);
   }
 });
+
+// --- GESTIÓN DE VARIANTES DE SEMIELABORADOS (GUARDADO MASIVO) ---
+router.put(
+  "/semielaborados/:id/variantes",
+  restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
+  async (req, res) => {
+    const { variantes } = req.body; // Recibe el array completo desde el frontend
+    const client = await db.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      // 1. Limpiamos las variantes viejas de este producto
+      await client.query(
+        "DELETE FROM variantes_semielaborados WHERE semielaborado_id = $1",
+        [req.params.id],
+      );
+
+      // 2. Insertamos la lista nueva
+      if (variantes && variantes.length > 0) {
+        for (const v of variantes) {
+          await client.query(
+            "INSERT INTO variantes_semielaborados (semielaborado_id, nombre, especificaciones, fotos) VALUES ($1, $2, $3, $4)",
+            [
+              req.params.id,
+              v.nombre,
+              v.especificaciones || "",
+              JSON.stringify(v.fotos || []),
+            ],
+          );
+        }
+      }
+
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.status(500).send(e.message);
+    } finally {
+      client.release();
+    }
+  },
+);
 
 // NUEVO: GUARDAR COSTO DIRECTO (IMPORTADOS)
 router.put("/semielaborados/:id/costo", async (req, res) => {
@@ -50,6 +107,52 @@ router.put("/semielaborados/:id/costo", async (req, res) => {
     res.status(500).send(e.message);
   }
 });
+
+// --- GESTIÓN DE VARIANTES DE SEMIELABORADOS (GUARDADO MASIVO) ---
+router.put(
+  "/semielaborados/:id/variantes",
+  restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
+  async (req, res) => {
+    const { variantes } = req.body;
+    const client = await db.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      // 1. Limpiamos las variantes viejas
+      await client.query(
+        "DELETE FROM variantes_semielaborados WHERE semielaborado_id = $1",
+        [req.params.id],
+      );
+
+      // 2. Insertamos la lista nueva
+      if (variantes && variantes.length > 0) {
+        for (const v of variantes) {
+          await client.query(
+            "INSERT INTO variantes_semielaborados (semielaborado_id, nombre, especificaciones, fotos) VALUES ($1, $2, $3, $4)",
+            [
+              req.params.id,
+              v.nombre,
+              v.especificaciones || "",
+              JSON.stringify(v.fotos || []),
+            ],
+          );
+        }
+      }
+
+      await client.query("COMMIT");
+      res.json({ success: true });
+    } catch (e) {
+      await client.query("ROLLBACK");
+      res.status(500).send(e.message);
+    } finally {
+      client.release();
+    }
+  },
+);
+
+// ¡TIENE QUE ESTAR ARRIBA DE ESTA LÍNEA! 👇
+module.exports = router;
 
 // ACTUALIZAR DATOS TÉCNICOS (PROCESO Y PARÁMETROS)
 router.put("/semielaborados/:id/tecnica", async (req, res) => {

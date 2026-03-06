@@ -161,7 +161,7 @@ const NoteDetailView = ({ note, onBack, onDelete, onEdit }) => {
 
       // 1. CABECERA PRINCIPAL Y LOGO
       try {
-        // Asegurate de tener importado tu logo arriba: import logoConoflex from "../assets/logo-conoflex.png";
+        // Asegurate de tener importado tu logo arriba: import logoConoflex from "../assets/LogoConoflex.png";
         doc.addImage(logoConoflex, "PNG", 14, yPos - 2, 40, 12);
       } catch (e) {
         doc.setFont("helvetica", "bold");

@@ -160,18 +160,19 @@ async function verificarAlertasMRP(client, planId, nombrePlan) {
 }
 
 // --- RUTAS DE ESCRITURA ---
-
 router.post(
   "/",
   restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
   async (req, res) => {
-    const { nombre, items } = req.body;
+    // 👇 1. Agregamos tareas_armado al req.body
+    const { nombre, items, tareas_armado } = req.body;
     const client = await db.connect();
     try {
       await client.query("BEGIN");
       const resPlan = await client.query(
-        "INSERT INTO planes_produccion (nombre, estado) VALUES ($1, 'ABIERTO') RETURNING id",
-        [nombre],
+        // 👇 2. Agregamos tareas_armado al INSERT
+        "INSERT INTO planes_produccion (nombre, estado, tareas_armado) VALUES ($1, 'ABIERTO', $2) RETURNING id",
+        [nombre, JSON.stringify(tareas_armado || [])],
       );
       const planId = resPlan.rows[0].id;
 
@@ -297,14 +298,16 @@ router.put(
   "/:id",
   restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
   async (req, res) => {
-    const { nombre, items } = req.body;
+    // 👇 1. Agregamos tareas_armado al req.body
+    const { nombre, items, tareas_armado } = req.body;
     const client = await db.connect();
     try {
       await client.query("BEGIN");
       if (nombre)
         await client.query(
-          "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
-          [nombre, req.params.id],
+          // 👇 2. Agregamos tareas_armado al UPDATE
+          "UPDATE planes_produccion SET nombre = $1, tareas_armado = $2 WHERE id = $3",
+          [nombre, JSON.stringify(tareas_armado || []), req.params.id],
         );
 
       const current = await client.query(
@@ -315,25 +318,22 @@ router.put(
       const incomingIds = [];
 
       for (const item of items) {
-        // 👇 Tomamos el estado que manda el frontend, o PENDIENTE por defecto
         const estadoFila = item.estado_kanban || "PENDIENTE";
 
         if (item.plan_item_id) {
           await client.query(
-            // 👇 Se agregó "estado = $4"
             `UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3, estado = $4 WHERE id = $5`,
             [
               item.cantidad,
               item.ritmo_turno || 50,
               item.fecha_inicio_estimada || null,
-              estadoFila, // 👈 Nuevo
+              estadoFila,
               item.plan_item_id,
             ],
           );
           incomingIds.push(item.plan_item_id);
         } else {
           await client.query(
-            // 👇 Se agregó la columna "estado" al INSERT
             "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, $6)",
             [
               req.params.id,
@@ -341,7 +341,7 @@ router.put(
               item.cantidad,
               item.ritmo_turno || 50,
               item.fecha_inicio_estimada || null,
-              estadoFila, // 👈 Nuevo
+              estadoFila,
             ],
           );
         }
@@ -371,7 +371,7 @@ router.delete("/:id", restrictTo("GERENCIA"), async (req, res) => {
   res.json({ success: true });
 });
 
-// --- ENDPOINT: TORRE DE CONTROL (COCKPIT BLINDADO) ---
+// --- ENDPOINT: TORRE DE CONTROL (ACTUALIZADO CON ARMADO Y PEDIDOS) ---
 router.get("/cockpit/data", async (req, res) => {
   try {
     const radarRes = await db.query(`
@@ -415,7 +415,30 @@ router.get("/cockpit/data", async (req, res) => {
       ORDER BY balance ASC
     `);
 
-    // NUEVO: Traer las máquinas
+    // NUEVO: Traer Tareas de Armado Pendientes de planes abiertos
+    const planesRes = await db.query(
+      "SELECT nombre, tareas_armado FROM planes_produccion WHERE estado = 'ABIERTO'",
+    );
+    const tareasArmadoPendientes = [];
+    planesRes.rows.forEach((p) => {
+      const tareas =
+        typeof p.tareas_armado === "string"
+          ? JSON.parse(p.tareas_armado)
+          : p.tareas_armado || [];
+      tareas.forEach((t) => {
+        if (Number(t.realizado || 0) < Number(t.meta)) {
+          tareasArmadoPendientes.push({ ...t, plan_nombre: p.nombre });
+        }
+      });
+    });
+
+    // NUEVO: Traer Pedidos de los últimos 2 meses para enlazar a las máquinas
+    const historialPedidos = await db.query(`
+      SELECT id as op_real, op, cliente, modelo, cantidad, fecha, estado, detalles 
+      FROM pedidos_clientes 
+      ORDER BY id DESC LIMIT 2000
+    `);
+
     const maquinasRes = await db.query(
       `SELECT * FROM maquinas ORDER BY id ASC`,
     );
@@ -424,7 +447,9 @@ router.get("/cockpit/data", async (req, res) => {
       radar: radarRes.rows,
       pedidosCriticos: pedidosRes.rows,
       alertasStock: mrpRes.rows,
-      maquinas: maquinasRes.rows, // Lo inyectamos en la respuesta
+      maquinas: maquinasRes.rows,
+      tareasArmado: tareasArmadoPendientes, // Agregado
+      pedidosHistorial: historialPedidos.rows, // Agregado
     });
   } catch (err) {
     console.error("🔥 Error en Torre de Control:", err.message);
@@ -432,11 +457,11 @@ router.get("/cockpit/data", async (req, res) => {
   }
 });
 
-// --- GESTIÓN DE MÁQUINAS ---
+// --- GESTIÓN DE MÁQUINAS (ACTUALIZADO) ---
 router.post("/maquinas", async (req, res) => {
   try {
     await db.query(
-      "INSERT INTO maquinas (nombre, semielaborado) VALUES ($1, NULL)",
+      "INSERT INTO maquinas (nombre, semielaborado, destino) VALUES ($1, NULL, 'STOCK')",
       [req.body.nombre],
     );
     res.json({ success: true });
@@ -447,10 +472,22 @@ router.post("/maquinas", async (req, res) => {
 
 router.put("/maquinas/:id", async (req, res) => {
   try {
-    await db.query("UPDATE maquinas SET semielaborado = $1 WHERE id = $2", [
-      req.body.semielaborado || null,
-      req.params.id,
-    ]);
+    const { configuracion } = req.body;
+
+    // Guardamos el array completo en la nueva columna JSONB
+    await db.query(
+      "UPDATE maquinas SET configuracion = $1, semielaborado = NULL, destino = 'STOCK', op = NULL, cliente = NULL WHERE id = $2",
+      [JSON.stringify(configuracion || []), req.params.id],
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/maquinas/:id", async (req, res) => {
+  try {
+    await db.query("DELETE FROM maquinas WHERE id = $1", [req.params.id]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

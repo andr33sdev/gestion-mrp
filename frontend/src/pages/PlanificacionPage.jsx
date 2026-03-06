@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE_URL, authFetch } from "../utils.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import QRCode from "qrcode";
 import { hasRole } from "../auth/authHelper";
 import toast from "react-hot-toast";
 import SignatureCanvas from "react-signature-canvas";
+import logoConoflex from "../assets/LogoConoflex.png";
 
 // Componentes
 import AutoCompleteInput from "../components/planificacion/AutoCompleteInput";
@@ -151,40 +151,222 @@ function VisualTaskModal({ allSemis, onClose, onSave }) {
   );
 }
 
-// --- FUNCIÓN EXPORTAR PDF ---
-const generarOrdenTerminacionPDF = (task) => {
-  const doc = new jsPDF();
-  const grisFuerte = [51, 65, 85]; // slate-700
-  doc.setFillColor(...grisFuerte);
-  doc.rect(0, 0, 210, 25, "F");
-  doc.setTextColor(255);
-  doc.setFontSize(18);
-  doc.setFont("helvetica", "bold");
-  doc.text("ORDEN DE TERMINACIÓN / ARMADO", 14, 12);
-  doc.setFontSize(10);
-  doc.text(
-    `PLANTA DE TERMINACIÓN - ${new Date().toLocaleDateString("es-AR")}`,
-    14,
-    19,
-  );
-  doc.setTextColor(0);
-  doc.text(task.titulo, 14, 40);
-  doc.text(`PRODUCTO: ${task.producto_origen} (${task.codigo_origen})`, 14, 50);
-  doc.text(`VARIANTE: ${task.variante} | META: ${task.meta}`, 14, 56);
-  doc.setFillColor(245, 245, 245);
-  doc.rect(14, 65, 182, 40, "F");
-  doc.text("INSTRUCCIONES:", 18, 73);
-  doc.setFont("helvetica", "normal");
-  doc.text(doc.splitTextToSize(task.instrucciones || "N/A", 174), 18, 80);
-  (task.fotos || []).forEach((f, i) => {
-    if (f) {
-      try {
-        doc.addImage(f, "JPEG", 14 + i * 65, 125, 60, 60);
-        doc.rect(14 + i * 65, 125, 60, 60);
-      } catch (e) {}
-    }
+// --- HELPER ACTUALIZADO: CONEXIÓN DIRECTA (SIN PROXY) ---
+const obtenerImagenBase64ConDimensiones = async (url) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      resolve({
+        base64: canvas.toDataURL("image/jpeg", 0.8),
+        width: img.width,
+        height: img.height,
+      });
+    };
+    img.onerror = () => reject(new Error("No se pudo cargar la imagen"));
+    img.src = `${url}${url.includes("?") ? "&" : "?"}cb=${new Date().getTime()}`;
   });
-  doc.save(`OT_${task.titulo.replace(/\s+/g, "_")}.pdf`);
+};
+
+// --- FUNCIÓN EXPORTAR PDF ---
+const generarOrdenTerminacionPDF = async (
+  task,
+  sigData,
+  nombreFirma,
+  planNombre,
+) => {
+  const toastId = toast.loading("Generando OT con imágenes...");
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  // Definición de Colores (Para evitar el error de ReferenceError)
+  const slate900 = [15, 23, 42];
+  const slate800 = [30, 41, 59];
+  const slate500 = [100, 116, 139];
+  const slate400 = [148, 163, 184];
+  const slate200 = [226, 232, 240];
+  const blue600 = [37, 99, 235];
+
+  let yPos = 16;
+
+  // 1. CABECERA PRINCIPAL Y LOGO
+  try {
+    doc.addImage(logoConoflex, "PNG", 14, yPos - 2, 40, 12);
+  } catch (e) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(...slate900);
+    doc.text("CONOFLEX", 14, yPos + 6);
+  }
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...slate900);
+  doc.text("DOCUMENTO OFICIAL", pageWidth - 14, yPos + 4, { align: "right" });
+
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...blue600);
+  doc.text("ORDEN DE TERMINACIÓN", pageWidth - 14, yPos + 9, {
+    align: "right",
+  });
+
+  yPos += 16;
+  doc.setDrawColor(...slate200);
+  doc.setLineWidth(0.5);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 6;
+
+  // 2. METADATOS
+  autoTable(doc, {
+    startY: yPos,
+    body: [
+      [
+        "PLAN DE PRODUCCIÓN",
+        (planNombre || "PLAN NO ESPECIFICADO").toUpperCase(),
+        "FECHA",
+        new Date().toLocaleDateString("es-AR"),
+      ],
+      [
+        "PRODUCTO BASE",
+        `${task.producto_origen.toUpperCase()} (${task.codigo_origen})`,
+        "META ASIGNADA",
+        `${task.meta} UNIDADES`,
+      ],
+      ["VARIANTE A APLICAR", task.variante.toUpperCase(), "", ""],
+    ],
+    theme: "plain",
+    styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak" },
+    columnStyles: {
+      0: { fontStyle: "bold", textColor: slate500, cellWidth: 38 },
+      1: { fontStyle: "bold", textColor: slate900 },
+      2: {
+        fontStyle: "bold",
+        textColor: slate500,
+        cellWidth: 30,
+        halign: "right",
+      },
+      3: {
+        fontStyle: "bold",
+        textColor: slate900,
+        halign: "left",
+        cellWidth: 35,
+      },
+    },
+  });
+
+  yPos = doc.lastAutoTable.finalY + 8;
+  doc.setDrawColor(...slate200);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 8;
+
+  // 3. INSTRUCCIONES
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...slate900);
+  doc.text("INSTRUCCIONES OPERATIVAS", 14, yPos);
+  yPos += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...slate800);
+  doc.setFontSize(8);
+  const instruccionesText = (
+    task.instrucciones || "SIN INSTRUCCIONES ESPECÍFICAS."
+  ).toUpperCase();
+  const splitInst = doc.splitTextToSize(instruccionesText, 182);
+  doc.text(splitInst, 14, yPos);
+
+  yPos += splitInst.length * 4 + 8;
+  doc.setDrawColor(...slate200);
+  doc.line(14, yPos, pageWidth - 14, yPos);
+  yPos += 10;
+
+  // 4. IMÁGENES
+  if (task.fotos && task.fotos.some((f) => f)) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...slate900);
+    doc.text("ESTÁNDAR VISUAL (REFERENCIAS)", 14, yPos);
+    yPos += 6;
+
+    let xOffset = 14;
+    const targetBoxSize = 56;
+    const paddingInside = 2;
+    const innerSize = targetBoxSize - paddingInside * 2;
+
+    for (const f of task.fotos) {
+      if (f) {
+        try {
+          const imgInfo = await obtenerImagenBase64ConDimensiones(f);
+          const { base64, width: imgW, height: imgH } = imgInfo;
+          doc.setDrawColor(...slate200);
+          doc.setLineWidth(0.3);
+          doc.rect(xOffset, yPos, targetBoxSize, targetBoxSize);
+
+          const aspectRatio = imgW / imgH;
+          let finalW, finalH;
+          if (aspectRatio > 1) {
+            finalW = innerSize;
+            finalH = innerSize / aspectRatio;
+          } else {
+            finalH = innerSize;
+            finalW = innerSize * aspectRatio;
+          }
+
+          const xCentering = (innerSize - finalW) / 2;
+          const yCentering = (innerSize - finalH) / 2;
+
+          doc.addImage(
+            base64,
+            "JPEG",
+            xOffset + paddingInside + xCentering,
+            yPos + paddingInside + yCentering,
+            finalW,
+            finalH,
+          );
+        } catch (e) {
+          doc.setDrawColor(252, 165, 165);
+          doc.rect(xOffset, yPos, targetBoxSize, targetBoxSize);
+        }
+        xOffset += targetBoxSize + 6;
+      }
+    }
+  }
+
+  // 5. FIRMA Y QR AL PIE
+  const SIGNATURE_Y = 265;
+  if (yPos > 240) doc.addPage();
+
+  if (sigData) {
+    doc.addImage(sigData, "PNG", 14, SIGNATURE_Y - 18, 40, 20);
+  }
+
+  doc.setDrawColor(...slate500);
+  doc.setLineWidth(0.5);
+  doc.line(14, SIGNATURE_Y, 74, SIGNATURE_Y);
+  doc.setTextColor(...slate500);
+  doc.setFontSize(8);
+  doc.text("Aprobado por:", 14, SIGNATURE_Y + 5);
+  doc.setTextColor(...slate900);
+  doc.setFont("helvetica", "bold");
+  doc.text(nombreFirma || "Responsable", 34, SIGNATURE_Y + 5);
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(...slate400);
+  doc.text(
+    "Documento generado automáticamente por el Sistema MRP.",
+    pageWidth / 2,
+    285,
+    { align: "center" },
+  );
+
+  doc.save(`OT_${task.producto_origen.replace(/\s+/g, "_")}.pdf`);
+  toast.dismiss(toastId);
+  toast.success("Orden de Terminación generada");
 };
 
 // --- COMPONENTE PRINCIPAL ---
@@ -209,6 +391,7 @@ export default function PlanificacionPage({ onNavigate }) {
   const [mobileKanbanTab, setMobileKanbanTab] = useState("PENDIENTE");
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [manualTasks, setManualTasks] = useState([]);
+  const [savedManualTasks, setSavedManualTasks] = useState([]);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
 
@@ -225,14 +408,14 @@ export default function PlanificacionPage({ onNavigate }) {
   const [originalPlanItems, setOriginalPlanItems] = useState([]);
   const [savedPlanItems, setSavedPlanItems] = useState([]);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [pdfTypeToGenerate, setPdfTypeToGenerate] = useState(null); // "ORIGINAL" o "CAMBIOS"
+  const [pdfTypeToGenerate, setPdfTypeToGenerate] = useState(null); // "ORIGINAL", "CAMBIOS" o "OT"
+  const [taskToPrint, setTaskToPrint] = useState(null); // <--- NUEVO ESTADO PARA LA TAREA
   const [signerName, setSignerName] = useState("");
   const sigCanvas = useRef({});
 
   const isPlanCerrado = currentPlanEstado === "CERRADO";
   const isPlanNuevo = selectedPlanId === "NEW";
 
-  // 👇 Ahora es Admin si es de GERENCIA "O" si es JEFE PRODUCCIÓN
   const esAdmin = hasRole("GERENCIA") || hasRole("JEFE PRODUCCIÓN");
 
   // --- DETECCIÓN DE CAMBIOS EN EL PLAN ---
@@ -252,7 +435,6 @@ export default function PlanificacionPage({ onNavigate }) {
     const deleted = [];
     const unchanged = [];
 
-    // Revisar agregados y modificados
     currentPlanItems.forEach((curr) => {
       const orig = originalPlanItems.find(
         (o) => o.semielaborado.id === curr.semielaborado.id,
@@ -268,7 +450,6 @@ export default function PlanificacionPage({ onNavigate }) {
       }
     });
 
-    // Revisar eliminados
     originalPlanItems.forEach((orig) => {
       const exists = currentPlanItems.find(
         (c) => c.semielaborado.id === orig.semielaborado.id,
@@ -284,7 +465,8 @@ export default function PlanificacionPage({ onNavigate }) {
 
   const hasChangesToSave =
     selectedPlanId === "NEW" ||
-    JSON.stringify(currentPlanItems) !== JSON.stringify(savedPlanItems);
+    JSON.stringify(currentPlanItems) !== JSON.stringify(savedPlanItems) ||
+    JSON.stringify(manualTasks) !== JSON.stringify(savedManualTasks); // <--- AHORA DETECTA TAREAS NUEVAS O CARGADAS
 
   const explosion = useMemo(() => {
     const totalNecesario = {};
@@ -318,7 +500,6 @@ export default function PlanificacionPage({ onNavigate }) {
       .sort((a, b) => a.balance - b.balance);
   }, [currentPlanItems, recetasMap, allMPs]);
 
-  // Precargar el nombre del usuario logueado
   useEffect(() => {
     try {
       const userStorage = localStorage.getItem("mrp_user");
@@ -347,7 +528,6 @@ export default function PlanificacionPage({ onNavigate }) {
     cargarDatosMaestros();
   }, []);
 
-  // Cargar comentarios
   useEffect(() => {
     const idReal = itemEnFicha?.plan_item_id || itemEnFicha?.id;
     if (idReal) {
@@ -467,11 +647,12 @@ export default function PlanificacionPage({ onNavigate }) {
           estado_kanban: i.estado || i.estado_kanban || "PENDIENTE",
         }));
         setCurrentPlanItems(mappedItems);
-
-        // Actualizamos la copia de "Guardados"
         setSavedPlanItems(JSON.parse(JSON.stringify(mappedItems)));
+        setManualTasks(data.tareas_armado || []);
+        setSavedManualTasks(
+          JSON.parse(JSON.stringify(data.tareas_armado || [])),
+        );
 
-        // Solo sobrescribimos la "Foto Original" si es la primera vez que abrimos el plan
         if (!preserveOriginals) {
           setOriginalPlanItems(JSON.parse(JSON.stringify(mappedItems)));
         }
@@ -484,7 +665,6 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   const handleCreateNew = () => {
-    // 👇 Validamos usando la variable esAdmin que ya incluye al Jefe de Producción
     if (!esAdmin) {
       return toast.error("No tenés permisos para crear planes.");
     }
@@ -538,7 +718,6 @@ export default function PlanificacionPage({ onNavigate }) {
       `${item.semielaborado.codigo} movido ${estadoLabel[nuevoEstado] || ""}`,
     );
 
-    // 👇 AUTO-GUARDADO SILENCIOSO EN BASE DE DATOS
     if (selectedPlanId !== "NEW") {
       try {
         await authFetch(`${API_BASE_URL}/planificacion/${selectedPlanId}`, {
@@ -557,7 +736,6 @@ export default function PlanificacionPage({ onNavigate }) {
     const oldQty = n[idx].cantidad;
     n[idx].cantidad = qty;
     setCurrentPlanItems(n);
-    // 👇 Toast simple de confirmación
     toast.success(`Meta actualizada: de ${oldQty} a ${qty}`);
   };
 
@@ -568,11 +746,14 @@ export default function PlanificacionPage({ onNavigate }) {
   const handleSavePlan = async () => {
     if (!currentPlanNombre.trim())
       return toast.error("El plan necesita un nombre");
-    // Usamos toast.promise para que muestre "Guardando..." y luego éxito o error automáticamente
     setIsSaving(true);
     const savePromise = new Promise(async (resolve, reject) => {
       try {
-        const body = { nombre: currentPlanNombre, items: currentPlanItems };
+        const body = {
+          nombre: currentPlanNombre,
+          items: currentPlanItems,
+          tareas_armado: manualTasks,
+        };
         const isNew = selectedPlanId === "NEW";
         const url = isNew
           ? `${API_BASE_URL}/planificacion`
@@ -591,15 +772,15 @@ export default function PlanificacionPage({ onNavigate }) {
             ),
           );
           if (!isNew) {
-            // 👇 Le pasamos "true" para que recargue sin borrar el historial original
             await handleSelectPlan(selectedPlanId, true);
           }
-          resolve(); // Éxito
+          setSavedManualTasks(JSON.parse(JSON.stringify(manualTasks)));
+          resolve();
         } else {
-          reject(); // Error del servidor
+          reject();
         }
       } catch (e) {
-        reject(e); // Error de red
+        reject(e);
       } finally {
         setIsSaving(false);
       }
@@ -613,7 +794,6 @@ export default function PlanificacionPage({ onNavigate }) {
   };
 
   const handleToggleEstado = async () => {
-    // 👇 Permitimos tanto a Gerencia como a Jefes
     if (!hasRole("GERENCIA") && !hasRole("JEFE PRODUCCIÓN")) return alert("⛔");
 
     const estado = currentPlanEstado === "ABIERTO" ? "CERRADO" : "ABIERTO";
@@ -654,7 +834,15 @@ export default function PlanificacionPage({ onNavigate }) {
     }
   };
 
-  // Abre el modal pidiendo la firma según el tipo de PDF
+  const handleSaveTask = (newTask) => {
+    setManualTasks([
+      ...manualTasks,
+      { ...newTask, id: Date.now(), realizado: 0 },
+    ]);
+    setShowTaskModal(false);
+    toast.success("Tarea de armado agregada");
+  };
+
   const handleRequestPDF = (type) => {
     setPdfTypeToGenerate(type);
     setShowSignatureModal(true);
@@ -662,14 +850,22 @@ export default function PlanificacionPage({ onNavigate }) {
 
   const handleConfirmSignature = () => {
     const isCanvasEmpty = sigCanvas.current.isEmpty();
-
-    // 👇 CAMBIO ACÁ: Usamos getCanvas() en lugar de getTrimmedCanvas()
     const sigData = isCanvasEmpty
       ? null
       : sigCanvas.current.getCanvas().toDataURL("image/png");
 
     if (pdfTypeToGenerate === "ORIGINAL") generarPDFOrden(sigData, signerName);
     if (pdfTypeToGenerate === "CAMBIOS") generarPDFCambios(sigData, signerName);
+
+    // 👇 REVISAR ESTA LÍNEA: Debe tener los 4 parámetros
+    if (pdfTypeToGenerate === "OT" && taskToPrint) {
+      generarOrdenTerminacionPDF(
+        taskToPrint,
+        sigData,
+        signerName,
+        currentPlanNombre, // <--- Este es el 4to argumento
+      );
+    }
 
     setShowSignatureModal(false);
   };
@@ -830,7 +1026,6 @@ export default function PlanificacionPage({ onNavigate }) {
         fontStyle: "bold",
       },
       didParseCell: function (data) {
-        // Pinta de verde el texto AGREGADO y naranja el MODIFICADA
         if (data.section === "body" && data.column.index === 3) {
           if (data.cell.raw === "AGREGADO")
             data.cell.styles.textColor = [16, 185, 129];
@@ -842,7 +1037,6 @@ export default function PlanificacionPage({ onNavigate }) {
 
     let finalY = doc.lastAutoTable.finalY + 15;
 
-    // ÍTEMS ELIMINADOS (Se listan abajo)
     if (planChanges.deleted.length > 0) {
       if (finalY > 260) {
         doc.addPage();
@@ -866,7 +1060,6 @@ export default function PlanificacionPage({ onNavigate }) {
       finalY += 10;
     }
 
-    // BLOQUE DE FIRMA
     if (sigData) {
       if (finalY > 250) {
         doc.addPage();
@@ -919,8 +1112,6 @@ export default function PlanificacionPage({ onNavigate }) {
           {items.map((item, i) => {
             const realIdx = currentPlanItems.findIndex((orig) => orig === item);
             const isDone = item.producido >= item.cantidad;
-
-            // 👇 NUEVO: Detecta si la tarjeta es una de las últimas dos de la columna
             const isNearBottom = items.length > 2 && i >= items.length - 2;
 
             return (
@@ -969,7 +1160,6 @@ export default function PlanificacionPage({ onNavigate }) {
                           animate={{ opacity: 1, scale: 1 }}
                           exit={{ opacity: 0, scale: 0.95 }}
                           transition={{ duration: 0.1 }}
-                          // 👇 NUEVO: Si está al fondo usa "bottom-full", si no, usa "top-full"
                           className={`absolute right-0 w-44 bg-white border border-slate-100 shadow-xl rounded-xl overflow-hidden py-1 z-[70] ${isNearBottom ? "bottom-full mb-1 origin-bottom-right" : "top-full mt-1 origin-top-right"}`}
                         >
                           <div className="px-3 py-1.5 border-b border-slate-50 mb-1">
@@ -1924,14 +2114,36 @@ export default function PlanificacionPage({ onNavigate }) {
                               </div>
                               <div className="flex gap-2">
                                 <button
-                                  onClick={() =>
-                                    generarOrdenTerminacionPDF(task)
-                                  }
+                                  onClick={() => {
+                                    setTaskToPrint(task);
+                                    handleRequestPDF("OT");
+                                  }}
                                   className="p-2.5 bg-slate-50 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all"
                                 >
                                   <FaPrint size={12} />
                                 </button>
-                                <button className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all">
+                                {/* 👇 BOTÓN CARGAR ARREGLADO 👇 */}
+                                <button
+                                  onClick={() => {
+                                    const val = prompt(
+                                      `¿Cuántas unidades de "${task.titulo}" realizaste? (Total actual: ${task.realizado || 0})`,
+                                      task.realizado || 0,
+                                    );
+                                    if (val !== null && !isNaN(val)) {
+                                      const nuevasTareas = manualTasks.map(
+                                        (t) =>
+                                          t.id === task.id
+                                            ? { ...t, realizado: Number(val) }
+                                            : t,
+                                      );
+                                      setManualTasks(nuevasTareas);
+                                      toast.success(
+                                        "Cantidad actualizada. ¡Recordá presionar Guardar Plan!",
+                                      );
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-[9px] font-bold uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all"
+                                >
                                   Cargar
                                 </button>
                               </div>
@@ -2404,6 +2616,16 @@ export default function PlanificacionPage({ onNavigate }) {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+      {/* MODAL: NUEVA TAREA DE ARMADO */}
+      <AnimatePresence>
+        {showTaskModal && (
+          <VisualTaskModal
+            allSemis={allSemis}
+            onClose={() => setShowTaskModal(false)}
+            onSave={handleSaveTask}
+          />
         )}
       </AnimatePresence>
     </>

@@ -34,6 +34,7 @@ import {
   FaShoppingCart,
   FaFire,
   FaHistory,
+  FaIndustry, // <- Ícono importado para Torre de Control
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
@@ -70,7 +71,19 @@ import { getAuthData, logout } from "./auth/authHelper";
 const NAV_LINKS = [
   { path: "/", label: "Inicio", icon: <FaChartPie />, moduloReq: "INICIO" },
   {
-    path: "/hornos", // Nueva ruta para el Dashboard
+    path: "/calendario", // Ruta del Centro Comando (Torre de Control)
+    label: "Centro de Datos",
+    icon: <FaIndustry />,
+    moduloReq: "PLANIFICACION", // MISMO MÓDULO QUE PLANIFICACIÓN
+  },
+  {
+    path: "/planificacion",
+    label: "Planificación",
+    icon: <FaClipboardList />,
+    moduloReq: "PLANIFICACION",
+  },
+  {
+    path: "/hornos",
     label: "Horno N°2",
     icon: <FaFire />,
     moduloReq: "INICIO",
@@ -80,12 +93,6 @@ const NAV_LINKS = [
     label: "Métricas",
     icon: <FaChartBar />,
     moduloReq: "METRICAS",
-  },
-  {
-    path: "/planificacion",
-    label: "Planificación",
-    icon: <FaClipboardList />,
-    moduloReq: "PLANIFICACION",
   },
   {
     path: "/registrar-produccion",
@@ -394,7 +401,6 @@ const Layout = ({ children }) => {
                 ))}
               </nav>
 
-              {/* 👇 AGREGAR ESTE BLOQUE DESDE ACÁ 👇 */}
               <div className="p-4 border-t border-stone-100">
                 <div className="flex items-center gap-3 px-4 py-3 mb-2 bg-slate-50 rounded-xl">
                   <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-sm font-bold uppercase">
@@ -420,7 +426,6 @@ const Layout = ({ children }) => {
                   Cerrar Sesión
                 </button>
               </div>
-              {/* 👆 HASTA ACÁ 👆 */}
             </motion.div>
           </>
         )}
@@ -437,10 +442,8 @@ const Layout = ({ children }) => {
 export default function App() {
   useEffect(() => {
     const inicializarNotificaciones = async () => {
-      // Obtenemos el usuario actual
       const { user, token: authToken } = getAuthData();
 
-      // SI NO HAY USUARIO LOGUEADO, ABORTAMOS SILENCIOSAMENTE
       if (!user || !authToken) return;
 
       const isNative =
@@ -451,7 +454,6 @@ export default function App() {
           await PushNotifications.removeAllListeners();
 
           PushNotifications.addListener("registration", async (token) => {
-            // Cero alertas, todo silencioso en consola
             console.log("🚀 TOKEN CAPTURADO SILENCIOSAMENTE");
 
             if (user && user.id) {
@@ -469,7 +471,6 @@ export default function App() {
 
           PushNotifications.addListener("registrationError", (err) => {
             console.error("❌ Error nativo de Firebase:", err);
-            // Eliminado el alert de error
           });
 
           const permisos = await PushNotifications.requestPermissions();
@@ -511,7 +512,6 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        {/* NUEVA RUTA: Dashboard de Hornos */}
         <Route
           path="/hornos"
           element={
@@ -602,10 +602,11 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* RUTA PROTEGIDA DE LA TORRE DE CONTROL - REQUIERE: PLANIFICACION */}
         <Route
           path="/calendario"
           element={
-            <ProtectedRoute requiredModule="INICIO">
+            <ProtectedRoute requiredModule="PLANIFICACION">
               <Layout>
                 <CentroComando />
               </Layout>

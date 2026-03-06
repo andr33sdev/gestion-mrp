@@ -2259,6 +2259,32 @@ export default function IngenieriaProductos() {
     }
   };
 
+  const handleSaveVariantes = async (productoId, variantesLista) => {
+    try {
+      const res = await authFetch(
+        `${API_BASE_URL}/ingenieria/semielaborados/${productoId}/variantes`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ variantes: variantesLista }),
+        },
+      );
+
+      if (res.ok) {
+        showToast("Variantes guardadas en la base de datos.", "success");
+        // 👇 CRUCIAL: Recargamos los semielaborados para que la memoria visual se actualice
+        const resSemis = await authFetch(
+          `${API_BASE_URL}/ingenieria/semielaborados`,
+        );
+        if (resSemis.ok) setSemielaborados(await resSemis.json());
+      } else {
+        showToast("Error al guardar las variantes en DB.", "error");
+      }
+    } catch (error) {
+      showToast("Error de conexión al guardar.", "error");
+    }
+  };
+
   const crearNuevoProducto = () => {
     if (modo !== "PRODUCTO" || !filtroIzq.trim()) return;
     const nuevoNombre = filtroIzq.trim().toUpperCase();
@@ -2488,7 +2514,9 @@ export default function IngenieriaProductos() {
           <GestorVariantesModal
             producto={productoParaVariantes}
             onClose={() => setProductoParaVariantes(null)}
-            onSave={() => {}}
+            onSave={
+              handleSaveVariantes
+            } /* <--- AHORA SÍ LE PASAMOS LA FUNCIÓN REAL */
             showToast={showToast}
           />
         )}
