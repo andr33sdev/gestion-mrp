@@ -749,12 +749,22 @@ export default function PlanificacionPage({ onNavigate }) {
     setIsSaving(true);
     const savePromise = new Promise(async (resolve, reject) => {
       try {
+        const isNew = selectedPlanId === "NEW";
+
+        // 👇 ARMAMOS EL BODY EXACTAMENTE COMO LO ESPERA TU BACKEND 👇
         const body = {
           nombre: currentPlanNombre,
-          items: currentPlanItems,
-          tareas_armado: manualTasks,
+          // El backend espera item.semielaborado.id y item.cantidad
+          items: currentPlanItems.map((i) => ({
+            semielaborado: { id: i.semielaborado.id },
+            cantidad: i.cantidad,
+            // Agregamos defaults por si acaso los usas
+            ritmo_turno: i.ritmo_turno || 50,
+            fecha_inicio_estimada: i.fecha_inicio_estimada || null,
+          })),
+          tareas_armado: manualTasks, // <--- ACÁ SE ENVÍAN LAS TAREAS
         };
-        const isNew = selectedPlanId === "NEW";
+
         const url = isNew
           ? `${API_BASE_URL}/planificacion`
           : `${API_BASE_URL}/planificacion/${selectedPlanId}`;
@@ -773,11 +783,17 @@ export default function PlanificacionPage({ onNavigate }) {
           );
           if (!isNew) {
             await handleSelectPlan(selectedPlanId, true);
+          } else {
+            // Si es nuevo, el backend devuelve { id: planId }, lo capturamos
+            const respData = await res.json();
+            if (respData.id || respData.planId) {
+              await handleSelectPlan(respData.id || respData.planId, true);
+            }
           }
           setSavedManualTasks(JSON.parse(JSON.stringify(manualTasks)));
           resolve();
         } else {
-          reject();
+          reject(new Error("Falló la petición al servidor"));
         }
       } catch (e) {
         reject(e);
