@@ -720,10 +720,23 @@ export default function PlanificacionPage({ onNavigate }) {
 
     if (selectedPlanId !== "NEW") {
       try {
+        // 👇 ARMAMOS EL PAQUETE COMPLETO CON LAS TAREAS INCLUIDAS 👇
+        const bodyPayload = {
+          nombre: currentPlanNombre,
+          items: n.map((i) => ({
+            semielaborado: { id: i.semielaborado.id },
+            cantidad: i.cantidad,
+            estado_kanban: i.estado_kanban, // Enviamos el nuevo estado
+            ritmo_turno: i.ritmo_turno || 50,
+            fecha_inicio_estimada: i.fecha_inicio_estimada || null,
+          })),
+          tareas_armado: manualTasks, // <--- ¡EL ESCUDO! Ahora nunca se olvidan.
+        };
+
         await authFetch(`${API_BASE_URL}/planificacion/${selectedPlanId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nombre: currentPlanNombre, items: n }),
+          body: JSON.stringify(bodyPayload),
         });
       } catch (error) {
         console.error("Error auto-guardando kanban", error);
