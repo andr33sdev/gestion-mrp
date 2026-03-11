@@ -294,70 +294,81 @@ router.put(
   },
 );
 
+// --- EDITAR / ACTUALIZAR PLAN (VERSIÓN SEGURA) ---
 router.put(
   "/:id",
   restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
   async (req, res) => {
-    // 👇 1. Agregamos tareas_armado al req.body
     const { nombre, items, tareas_armado } = req.body;
+    const planId = req.params.id;
     const client = await db.connect();
+
     try {
       await client.query("BEGIN");
-      if (nombre)
+
+      // 1. Actualizamos datos generales del plan
+      await client.query(
+        "UPDATE planes_produccion SET nombre = $1, tareas_armado = $2 WHERE id = $3",
+        [nombre, JSON.stringify(tareas_armado || []), planId],
+      );
+
+      // 2. Extraemos los IDs de los semielaborados que llegaron desde React
+      const semiIdsToKeep = items.map((item) => item.semielaborado.id);
+
+      // 3. Borramos SOLO los ítems que el usuario eliminó explícitamente usando el tacho de basura en el Kanban
+      if (semiIdsToKeep.length > 0) {
         await client.query(
-          // 👇 2. Agregamos tareas_armado al UPDATE
-          "UPDATE planes_produccion SET nombre = $1, tareas_armado = $2 WHERE id = $3",
-          [nombre, JSON.stringify(tareas_armado || []), req.params.id],
+          "DELETE FROM planes_items WHERE plan_id = $1 AND semielaborado_id != ALL($2::int[])",
+          [planId, semiIdsToKeep],
+        );
+      } else {
+        await client.query("DELETE FROM planes_items WHERE plan_id = $1", [
+          planId,
+        ]);
+      }
+
+      // 4. Actualizamos o Insertamos sin tocar el progreso ('producido') ni el 'estado'
+      for (const item of items) {
+        const semiId = item.semielaborado.id;
+
+        // Verificamos si este ítem ya existía en el plan
+        const checkResult = await client.query(
+          "SELECT id FROM planes_items WHERE plan_id = $1 AND semielaborado_id = $2",
+          [planId, semiId],
         );
 
-      const current = await client.query(
-        "SELECT id FROM planes_items WHERE plan_id = $1",
-        [req.params.id],
-      );
-      const dbIds = current.rows.map((r) => r.id);
-      const incomingIds = [];
-
-      for (const item of items) {
-        const estadoFila = item.estado_kanban || "PENDIENTE";
-
-        if (item.plan_item_id) {
+        if (checkResult.rows.length > 0) {
+          // SI EXISTE: Solo le actualizamos la cantidad meta y el ritmo. (No tocamos el estado ni lo producido)
           await client.query(
-            `UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3, estado = $4 WHERE id = $5`,
+            "UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3 WHERE id = $4",
             [
               item.cantidad,
               item.ritmo_turno || 50,
               item.fecha_inicio_estimada || null,
-              estadoFila,
-              item.plan_item_id,
+              checkResult.rows[0].id,
             ],
           );
-          incomingIds.push(item.plan_item_id);
         } else {
+          // SI ES NUEVO: Lo insertamos de cero
           await client.query(
-            "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, 'PENDIENTE')",
             [
-              req.params.id,
-              item.semielaborado.id,
+              planId,
+              semiId,
               item.cantidad,
               item.ritmo_turno || 50,
               item.fecha_inicio_estimada || null,
-              estadoFila,
             ],
           );
         }
       }
-      const toDelete = dbIds.filter((id) => !incomingIds.includes(id));
-      if (toDelete.length)
-        await client.query(
-          "DELETE FROM planes_items WHERE id = ANY($1::int[])",
-          [toDelete],
-        );
-      if (nombre) await verificarAlertasMRP(client, req.params.id, nombre);
+
       await client.query("COMMIT");
       res.json({ success: true });
-    } catch (e) {
+    } catch (err) {
       await client.query("ROLLBACK");
-      res.status(500).send(e.message);
+      console.error(err);
+      res.status(500).json({ error: err.message });
     } finally {
       client.release();
     }
