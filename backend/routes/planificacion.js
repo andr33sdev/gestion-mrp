@@ -295,6 +295,7 @@ router.put(
 );
 
 // --- EDITAR / ACTUALIZAR PLAN (VERSIÓN SEGURA) ---
+// --- EDITAR / ACTUALIZAR PLAN (VERSIÓN DEFINITIVA Y BLINDADA) ---
 router.put(
   "/:id",
   restrictTo("GERENCIA", "JEFE PRODUCCIÓN"),
@@ -306,16 +307,23 @@ router.put(
     try {
       await client.query("BEGIN");
 
-      // 1. Actualizamos datos generales del plan
-      await client.query(
-        "UPDATE planes_produccion SET nombre = $1, tareas_armado = $2 WHERE id = $3",
-        [nombre, JSON.stringify(tareas_armado || []), planId],
-      );
+      // 1. BLINDAJE: Si tareas_armado viene "undefined", lo ignora y no lo borra.
+      if (tareas_armado !== undefined) {
+        await client.query(
+          "UPDATE planes_produccion SET nombre = $1, tareas_armado = $2 WHERE id = $3",
+          [nombre, JSON.stringify(tareas_armado), planId],
+        );
+      } else {
+        await client.query(
+          "UPDATE planes_produccion SET nombre = $1 WHERE id = $2",
+          [nombre, planId],
+        );
+      }
 
       // 2. Extraemos los IDs de los semielaborados que llegaron desde React
       const semiIdsToKeep = items.map((item) => item.semielaborado.id);
 
-      // 3. Borramos SOLO los ítems que el usuario eliminó explícitamente usando el tacho de basura en el Kanban
+      // 3. Borramos SOLO los ítems que el usuario eliminó explícitamente
       if (semiIdsToKeep.length > 0) {
         await client.query(
           "DELETE FROM planes_items WHERE plan_id = $1 AND semielaborado_id != ALL($2::int[])",
@@ -327,37 +335,40 @@ router.put(
         ]);
       }
 
-      // 4. Actualizamos o Insertamos sin tocar el progreso ('producido') ni el 'estado'
+      // 4. Actualizamos respetando el progreso y guardando los cambios de estado del Kanban
       for (const item of items) {
         const semiId = item.semielaborado.id;
+        // Capturamos el nuevo estado que mandó el auto-guardado
+        const nuevoEstado = item.estado_kanban || item.estado || null;
 
-        // Verificamos si este ítem ya existía en el plan
         const checkResult = await client.query(
           "SELECT id FROM planes_items WHERE plan_id = $1 AND semielaborado_id = $2",
           [planId, semiId],
         );
 
         if (checkResult.rows.length > 0) {
-          // SI EXISTE: Solo le actualizamos la cantidad meta y el ritmo. (No tocamos el estado ni lo producido)
+          // SI EXISTE: Actualizamos meta y estado, pero NO tocamos lo "producido"
           await client.query(
-            "UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3 WHERE id = $4",
+            "UPDATE planes_items SET cantidad_requerida = $1, ritmo_turno = $2, fecha_inicio_estimada = $3, estado = COALESCE($4, estado) WHERE id = $5",
             [
               item.cantidad,
               item.ritmo_turno || 50,
               item.fecha_inicio_estimada || null,
+              nuevoEstado,
               checkResult.rows[0].id,
             ],
           );
         } else {
-          // SI ES NUEVO: Lo insertamos de cero
+          // SI ES NUEVO: Lo insertamos
           await client.query(
-            "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, 'PENDIENTE')",
+            "INSERT INTO planes_items (plan_id, semielaborado_id, cantidad_requerida, ritmo_turno, fecha_inicio_estimada, estado) VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'PENDIENTE'))",
             [
               planId,
               semiId,
               item.cantidad,
               item.ritmo_turno || 50,
               item.fecha_inicio_estimada || null,
+              nuevoEstado,
             ],
           );
         }
