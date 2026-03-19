@@ -105,39 +105,41 @@ router.put("/:id/estado", async (req, res) => {
     notas_revision,
     solucion_notas,
   } = req.body;
+
   try {
     let query =
       "UPDATE tickets_mantenimiento SET estado = $1, resuelto_por = $2";
     let params = [estado, resuelto_por];
-    let queryCount = 3;
+    let counter = 3;
 
-    if (fecha_inicio_revision) {
-      query += `, fecha_inicio_revision = $${queryCount}`;
+    if (fecha_inicio_revision !== undefined) {
+      query += `, fecha_inicio_revision = $${counter}`;
       params.push(fecha_inicio_revision);
-      queryCount++;
+      counter++;
     }
-    if (fecha_solucion) {
-      query += `, fecha_solucion = $${queryCount}`;
+    if (fecha_solucion !== undefined) {
+      query += `, fecha_solucion = $${counter}`;
       params.push(fecha_solucion);
-      queryCount++;
+      counter++;
     }
     if (notas_revision !== undefined) {
-      query += `, notas_revision = $${queryCount}`;
+      query += `, notas_revision = $${counter}`;
       params.push(notas_revision);
-      queryCount++;
+      counter++;
     }
     if (solucion_notas !== undefined) {
-      query += `, solucion_notas = $${queryCount}`;
+      query += `, solucion_notas = $${counter}`;
       params.push(solucion_notas);
-      queryCount++;
+      counter++;
     }
 
-    query += ` WHERE id = $${queryCount}`;
+    query += ` WHERE id = $${counter}`;
     params.push(req.params.id);
 
     await db.query(query, params);
     res.json({ success: true, msg: "Estado actualizado" });
   } catch (err) {
+    console.error("Error al actualizar ticket:", err);
     res.status(500).send(err.message);
   }
 });
