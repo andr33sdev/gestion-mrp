@@ -12,6 +12,7 @@ import {
   FaChartPie,
   FaSignOutAlt,
   FaClipboardList,
+  FaCube,
   FaPlus,
   FaUsers,
   FaTruck,
@@ -63,6 +64,7 @@ import DetalleProducto from "./pages/DetalleProducto";
 import DepositoPage from "./pages/DepositoPage.jsx";
 import SugerenciasPage from "./pages/SugerenciasPage.jsx";
 import GestorUsuarios from "./pages/GestorUsuarios.jsx";
+import SimuladorCarga3D from "./pages/SimuladorCarga3D.jsx";
 import Home from "./pages/Home.jsx";
 
 import { getAuthData, logout } from "./auth/authHelper";
@@ -111,6 +113,12 @@ const NAV_LINKS = [
     label: "Stock Iglú",
     icon: <FaWarehouse />,
     moduloReq: "STOCK",
+  },
+  {
+    path: "/simulador-3d",
+    label: "Cubicaje 3D",
+    icon: <FaCube />,
+    moduloReq: "LOGISTICA", // Le damos el mismo permiso que a logística
   },
   {
     path: "/sugerencias",
@@ -588,6 +596,16 @@ export default function App() {
             <ProtectedRoute requiredModule="LOGISTICA">
               <Layout>
                 <LogisticaPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/simulador-3d"
+          element={
+            <ProtectedRoute requiredModule="LOGISTICA">
+              <Layout>
+                <SimuladorCarga3D />
               </Layout>
             </ProtectedRoute>
           }

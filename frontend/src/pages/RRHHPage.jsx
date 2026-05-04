@@ -45,13 +45,13 @@ import { API_BASE_URL, authFetch } from "../utils";
 
 // --- FUNCIÓN AUXILIAR PARA COLOR DE TAGS ---
 const getCategoryColor = (catName) => {
-  if (!catName) return "bg-slate-800 text-gray-400 border-slate-700";
+  if (!catName) return "bg-slate-100 text-slate-500 border-slate-200";
   const colors = [
-    "bg-blue-100 text-blue-800 border-blue-200",
-    "bg-purple-100 text-purple-800 border-purple-200",
-    "bg-teal-100 text-teal-800 border-teal-200",
-    "bg-orange-100 text-orange-800 border-orange-200",
-    "bg-pink-100 text-pink-800 border-pink-200",
+    "bg-blue-50 text-blue-700 border-blue-200",
+    "bg-purple-50 text-purple-700 border-purple-200",
+    "bg-teal-50 text-teal-700 border-teal-200",
+    "bg-orange-50 text-orange-700 border-orange-200",
+    "bg-pink-50 text-pink-700 border-pink-200",
   ];
   const index = catName.length % colors.length;
   return colors[index];
@@ -73,12 +73,14 @@ function DraggableEmployee({ name, categoryId }) {
       style={style}
       {...listeners}
       {...attributes}
-      className={`bg-slate-700 hover:bg-slate-600 p-1.5 rounded mb-1 text-xs text-white flex items-center gap-2 cursor-grab active:cursor-grabbing shadow-sm border border-slate-600 ${
-        isDragging ? "opacity-50 ring-2 ring-blue-500" : ""
+      className={`bg-white hover:bg-slate-50 p-2 rounded mb-1 text-[11px] text-slate-700 flex items-center gap-2 cursor-grab active:cursor-grabbing shadow-sm border border-slate-200 transition-all ${
+        isDragging
+          ? "opacity-90 ring-2 ring-blue-100 border-blue-300 scale-[1.02]"
+          : ""
       }`}
     >
-      <FaGripVertical className="text-slate-500" />{" "}
-      <span className="truncate">{name}</span>
+      <FaGripVertical className="text-slate-400" />{" "}
+      <span className="truncate font-medium">{name}</span>
     </div>
   );
 }
@@ -91,57 +93,57 @@ function DroppableCategory({ category, employees, onEdit, onDelete }) {
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col h-64 bg-slate-800 rounded-lg border-2 transition-all shadow-md overflow-hidden ${
+      className={`flex flex-col h-56 bg-slate-50 rounded-xl border transition-all shadow-sm overflow-hidden ${
         isOver
-          ? "border-blue-500 bg-blue-900/10 ring-2 ring-blue-500/50"
-          : "border-slate-700 hover:border-slate-600"
+          ? "border-blue-400 bg-blue-50 ring-2 ring-blue-50"
+          : "border-slate-200 hover:border-slate-300"
       }`}
     >
-      <div className="px-3 py-2 border-b border-slate-700 bg-slate-900 flex justify-between items-center shrink-0">
+      <div className="px-3 py-2 border-b border-slate-200 bg-white flex justify-between items-center shrink-0">
         <div className="min-w-0">
           <h4
-            className="font-bold text-white text-xs truncate uppercase"
+            className="font-bold text-slate-700 text-[11px] truncate uppercase tracking-wider"
             title={category.nombre}
           >
             {category.nombre}
           </h4>
-          <span className="text-[10px] text-green-400 font-mono flex items-center gap-1">
-            <FaDollarSign size={8} /> {category.valor_hora}
+          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1 mt-0.5">
+            <FaDollarSign size={10} /> {category.valor_hora} / hr
           </span>
         </div>
         <div className="flex gap-1 ml-2">
           <button
             onClick={() => onEdit(category)}
-            className="p-1 text-gray-500 hover:text-blue-400 hover:bg-slate-800 rounded"
+            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
           >
-            <FaEdit size={10} />
+            <FaEdit size={11} />
           </button>
           <button
             onClick={() => onDelete(category.id)}
-            className="p-1 text-gray-500 hover:text-red-400 hover:bg-slate-800 rounded"
+            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
           >
-            <FaTrash size={10} />
+            <FaTrash size={11} />
           </button>
         </div>
       </div>
-      <div className="p-2 overflow-y-auto custom-scrollbar flex-1 bg-slate-800/50">
+      <div className="p-2 overflow-y-auto custom-scrollbar flex-1">
         {employees.map((emp) => (
           <DraggableEmployee key={emp} name={emp} categoryId={category.id} />
         ))}
         {employees.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-gray-600 text-[10px] italic opacity-60">
-            <span>Arrastra aquí</span>
+          <div className="h-full flex flex-col items-center justify-center text-slate-400 text-[10px] italic opacity-80 uppercase tracking-widest font-medium">
+            <span>Vacío</span>
           </div>
         )}
       </div>
-      <div className="px-2 py-1 bg-slate-900/50 border-t border-slate-700 text-[9px] text-gray-500 text-center">
+      <div className="px-3 py-1.5 bg-slate-100 border-t border-slate-200 text-[9px] font-bold uppercase tracking-widest text-slate-500 text-center">
         {employees.length} Operarios
       </div>
     </div>
   );
 }
 
-// --- MODAL GESTION PERSONAL ---
+// --- MODALES (COMPACTADOS) ---
 function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
   const [categorias, setCategorias] = useState([]);
   const [asignaciones, setAsignaciones] = useState({});
@@ -207,7 +209,7 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
       loadData();
       onUpdate();
     } catch (e) {
-      alert("Error");
+      alert("Error al guardar categoría");
     }
   };
 
@@ -223,41 +225,45 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
   const unassigned = empleadosExcel.filter((name) => !asignaciones[name]);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-7xl h-[85vh] flex flex-col overflow-hidden"
+        className="bg-white border border-slate-200 rounded-2xl shadow-xl w-full max-w-5xl h-[80vh] flex flex-col overflow-hidden"
       >
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-white flex items-center gap-3">
+        <div className="px-6 py-4 border-b border-slate-100 bg-white flex justify-between items-center z-20">
+          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-3">
             <FaUsersCog className="text-blue-500" /> Asignación de Personal
           </h2>
-          <button onClick={onClose}>
-            <FaTimes className="text-gray-400 hover:text-white" />
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-slate-100 rounded text-slate-500 transition-colors"
+          >
+            <FaTimes />
           </button>
         </div>
-        <div className="px-6 py-3 bg-slate-900 border-b border-slate-800 flex gap-3 items-end shadow-sm z-10">
+
+        <div className="px-6 py-3 bg-slate-50 border-b border-slate-200 flex gap-3 items-end z-10">
           <div>
-            <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">
-              Categoría
+            <label className="text-[9px] text-slate-500 font-bold uppercase tracking-widest block mb-1">
+              Nueva Categoría
             </label>
             <input
-              className="block w-48 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+              className="w-48 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 text-xs outline-none focus:border-blue-400"
               value={formCat.nombre}
               onChange={(e) =>
                 setFormCat({ ...formCat, nombre: e.target.value })
               }
-              placeholder="Ej: Oficial"
+              placeholder="Ej: Oficial Múltiple"
             />
           </div>
           <div>
-            <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">
-              Valor ($)
+            <label className="text-[9px] text-slate-500 font-bold uppercase tracking-widest block mb-1">
+              Valor Hora ($)
             </label>
             <input
               type="number"
-              className="block w-28 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+              className="w-28 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 text-xs outline-none focus:border-blue-400"
               value={formCat.valor_hora}
               onChange={(e) =>
                 setFormCat({ ...formCat, valor_hora: e.target.value })
@@ -267,9 +273,10 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
           </div>
           <button
             onClick={handleSaveCat}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-lg h-[38px]"
+            className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-1.5 rounded-lg font-bold text-[11px] flex items-center gap-2 transition-all shadow-sm"
           >
-            {editCat ? <FaEdit /> : <FaPlus />} {editCat ? "Guardar" : "Crear"}
+            {editCat ? <FaEdit /> : <FaPlus />}{" "}
+            {editCat ? "Actualizar" : "Añadir"}
           </button>
           {editCat && (
             <button
@@ -277,23 +284,24 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
                 setEditCat(null);
                 setFormCat({ nombre: "", valor_hora: "" });
               }}
-              className="text-gray-500 hover:text-white underline text-xs h-[38px] flex items-center"
+              className="text-slate-500 hover:text-slate-800 text-[10px] font-bold px-2 py-1.5 underline"
             >
               Cancelar
             </button>
           )}
         </div>
+
         <DndContext
           onDragStart={(e) => setActiveId(e.active.id)}
           onDragEnd={handleDragEnd}
         >
-          <div className="flex-1 flex overflow-hidden bg-slate-950">
-            <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col p-4 shrink-0 shadow-xl z-10">
-              <h3 className="text-xs font-bold text-gray-400 uppercase mb-3 flex items-center justify-between">
-                <span>
-                  <FaUsers className="inline mr-2" /> Sin Categoría
+          <div className="flex-1 flex overflow-hidden bg-white">
+            <div className="w-56 bg-slate-50 border-r border-slate-200 flex flex-col p-4 shrink-0 shadow-inner z-10">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <FaUsers className="text-slate-400" /> Sin Asignar
                 </span>
-                <span className="bg-slate-800 px-2 py-0.5 rounded text-white">
+                <span className="bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
                   {unassigned.length}
                 </span>
               </h3>
@@ -305,8 +313,8 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
                 </div>
               </div>
             </div>
-            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-10">
+            <div className="flex-1 p-6 overflow-y-auto custom-scrollbar bg-[#f8fafc]">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-8">
                 {categorias.map((cat) => (
                   <DroppableCategory
                     key={cat.id}
@@ -329,8 +337,8 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
           </div>
           <DragOverlay>
             {activeId ? (
-              <div className="bg-blue-600 p-2 rounded-lg text-white text-xs shadow-2xl font-bold border border-white/20 transform rotate-2 cursor-grabbing w-48 truncate flex items-center gap-2">
-                <FaGripVertical /> {activeId}
+              <div className="bg-slate-800 p-2 rounded-lg text-white text-[11px] shadow-lg font-bold transform rotate-2 w-48 truncate flex items-center gap-2">
+                <FaGripVertical className="opacity-50" /> {activeId}
               </div>
             ) : null}
           </DragOverlay>
@@ -340,7 +348,6 @@ function GestionPersonalModal({ onClose, empleadosExcel, onUpdate }) {
   );
 }
 
-// --- MODAL CALENDARIO ---
 function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
@@ -367,56 +374,52 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
       <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 20 }}
+        initial={{ scale: 0.95, opacity: 0, y: 10 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
-        className="bg-slate-900/90 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative"
+        className="bg-white border border-slate-200 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden relative"
       >
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 via-purple-500 to-blue-500"></div>
-        <div className="p-5 border-b border-white/5 flex justify-between items-center">
-          <h3 className="text-white font-bold flex items-center gap-3 text-lg">
-            <div className="p-2 bg-red-500/20 rounded-lg text-red-500">
-              <FaCalendarCheck />
-            </div>{" "}
-            Gestionar Feriados
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="text-slate-800 font-bold flex items-center gap-2 text-sm">
+            <FaCalendarCheck className="text-red-500" /> Gestionar Feriados
           </h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
           >
-            <FaTimes size={18} />
+            <FaTimes />
           </button>
         </div>
-        <div className="p-6">
-          <div className="flex justify-between items-center mb-6">
+        <div className="p-5">
+          <div className="flex justify-between items-center mb-5">
             <button
               onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
-              className="p-2 hover:bg-white/10 rounded-lg text-white transition-all"
+              className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-all"
             >
-              <FaChevronLeft />
+              <FaChevronLeft size={12} />
             </button>
-            <span className="font-bold text-white uppercase tracking-widest text-sm">
+            <span className="font-bold text-slate-700 uppercase tracking-widest text-xs">
               {monthNames[month]} {year}
             </span>
             <button
               onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
-              className="p-2 hover:bg-white/10 rounded-lg text-white transition-all"
+              className="p-1.5 hover:bg-slate-100 rounded text-slate-600 transition-all"
             >
-              <FaChevronRight />
+              <FaChevronRight size={12} />
             </button>
           </div>
-          <div className="grid grid-cols-7 gap-2 text-center mb-2">
+          <div className="grid grid-cols-7 gap-1 text-center mb-2">
             {["Do", "Lu", "Ma", "Mi", "Ju", "Vi", "Sa"].map((d) => (
               <span
                 key={d}
-                className="text-[10px] font-bold text-gray-500 uppercase"
+                className="text-[9px] font-bold text-slate-400 uppercase tracking-widest"
               >
                 {d}
               </span>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-2">
+          <div className="grid grid-cols-7 gap-1.5">
             {blanks.map((_, i) => (
               <div key={`blank-${i}`} />
             ))}
@@ -426,29 +429,31 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
               const dayOfWeek = new Date(year, month, d).getDay();
               const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
               return (
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
+                <button
                   key={d}
                   onClick={() => onToggleDate(dateStr)}
-                  className={`h-9 rounded-lg text-xs font-bold transition-all relative flex items-center justify-center ${
+                  className={`h-8 rounded-lg text-[11px] font-bold transition-all flex items-center justify-center border ${
                     isFeriado
-                      ? "bg-gradient-to-br from-red-600 to-red-800 text-white shadow-lg shadow-red-900/50 ring-1 ring-red-400"
-                      : "bg-slate-800/50 text-gray-400 hover:bg-slate-700 hover:text-white"
-                  } ${
-                    !isFeriado && isWeekend
-                      ? "text-orange-400 bg-orange-900/10 border border-orange-500/20"
-                      : ""
+                      ? "bg-red-500 text-white border-red-600 shadow-sm"
+                      : isWeekend
+                        ? "bg-orange-50 text-orange-600 border-orange-200"
+                        : "bg-white border-slate-200 text-slate-600 hover:border-blue-400 hover:text-blue-600"
                   }`}
                 >
                   {d}
-                </motion.button>
+                </button>
               );
             })}
           </div>
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-gray-500 bg-white/5 p-3 rounded-lg border border-white/5">
-            <FaInfoCircle /> Rojo = Feriado (100%). Naranja = Fin de Semana
-            (Extra).
+          <div className="mt-5 flex flex-col gap-1.5 text-[9px] text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200 font-medium">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded bg-red-500"></span> Feriado
+              (Paga 100%)
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded bg-orange-100 border border-orange-200"></span>{" "}
+              Fin de Semana (Horas Extras)
+            </div>
           </div>
         </div>
       </motion.div>
@@ -456,7 +461,6 @@ function FeriadosModal({ onClose, feriadosSet, onToggleDate }) {
   );
 }
 
-// --- MODAL HISTORIAL ---
 function HistorialModal({ onClose, onPrint }) {
   const [cierres, setCierres] = useState([]);
   useEffect(() => {
@@ -467,12 +471,7 @@ function HistorialModal({ onClose, onPrint }) {
   }, []);
 
   const handleDelete = async (id) => {
-    if (
-      !confirm(
-        "¿Estás seguro de que deseas eliminar este cierre? Esta acción no se puede deshacer.",
-      )
-    )
-      return;
+    if (!confirm("¿Eliminar este cierre histórico?")) return;
     try {
       await authFetch(`${API_BASE_URL}/rrhh/cierres/${id}`, {
         method: "DELETE",
@@ -489,62 +488,76 @@ function HistorialModal({ onClose, onPrint }) {
       const data = await res.json();
       onPrint(data.datos_snapshot, data.nombre_periodo);
     } catch (e) {
-      alert("Error");
+      alert("Error al generar PDF");
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden relative"
+        className="bg-white border border-slate-200 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden relative"
       >
-        <div className="p-5 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
-          <h3 className="text-white font-bold flex items-center gap-3 text-lg">
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+          <h3 className="text-slate-800 font-bold flex items-center gap-2 text-sm">
             <FaHistory className="text-purple-500" /> Historial de Cierres
           </h3>
-          <button onClick={onClose}>
-            <FaTimes className="text-gray-400 hover:text-white" />
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-slate-200 rounded text-slate-500 transition-colors"
+          >
+            <FaTimes />
           </button>
         </div>
-        <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+        <div className="p-5 max-h-[60vh] overflow-y-auto custom-scrollbar">
           {cierres.length === 0 ? (
-            <p className="text-center text-gray-500 italic">
-              No hay cierres guardados.
-            </p>
+            <div className="text-center py-8 flex flex-col items-center gap-2">
+              <FaHistory className="text-3xl text-slate-200" />
+              <p className="text-slate-400 text-xs">
+                No hay cierres guardados.
+              </p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {cierres.map((c) => (
                 <div
                   key={c.id}
-                  className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center hover:bg-slate-750 transition-colors"
+                  className="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center hover:border-slate-300 transition-colors"
                 >
                   <div>
-                    <h4 className="text-white font-bold">{c.nombre_periodo}</h4>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Guardado:{" "}
-                      {new Date(c.fecha_creacion).toLocaleDateString()} | Total:{" "}
-                      <span className="text-emerald-400 font-bold">
-                        ${Number(c.total_pagado).toLocaleString()}
-                      </span>
+                    <h4 className="text-slate-700 font-bold text-sm">
+                      {c.nombre_periodo}
+                    </h4>
+                    <p className="text-[9px] text-slate-400 mt-0.5 uppercase tracking-widest">
+                      {new Date(c.fecha_creacion).toLocaleDateString()}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handlePrint(c.id)}
-                      className="bg-purple-600 hover:bg-purple-500 text-white p-2 rounded-lg text-sm flex items-center gap-2 shadow transition-colors"
-                    >
-                      <FaPrint /> Recibos
-                    </button>
-                    {/* BOTÓN ELIMINAR ACTUALIZADO CON TEXTO */}
-                    <button
-                      onClick={() => handleDelete(c.id)}
-                      className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-lg text-sm flex items-center gap-2 shadow transition-colors"
-                      title="Eliminar Cierre"
-                    >
-                      <FaTrash /> Eliminar
-                    </button>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-[9px] text-slate-400 uppercase tracking-widest">
+                        Liquidado
+                      </p>
+                      <p className="text-emerald-600 font-bold text-sm">
+                        ${Number(c.total_pagado).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => handlePrint(c.id)}
+                        className="bg-slate-50 hover:bg-slate-100 text-slate-600 p-2 rounded-lg border border-slate-200 transition-colors"
+                        title="Imprimir Recibos"
+                      >
+                        <FaPrint size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(c.id)}
+                        className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                        title="Eliminar"
+                      >
+                        <FaTrash size={12} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -555,6 +568,26 @@ function HistorialModal({ onClose, onPrint }) {
     </div>
   );
 }
+
+// --- LÓGICA DE TOLERANCIA MATEMÁTICA ---
+const aplicarTolerancia = (fechaObj) => {
+  if (!fechaObj) return null;
+  const d = new Date(fechaObj.getTime());
+  const min = d.getMinutes();
+
+  d.setSeconds(0);
+  d.setMilliseconds(0);
+
+  if (min <= 14) {
+    d.setMinutes(0);
+  } else if (min >= 15 && min <= 44) {
+    d.setMinutes(30);
+  } else if (min >= 45) {
+    d.setHours(d.getHours() + 1);
+    d.setMinutes(0);
+  }
+  return d;
+};
 
 // --- COMPONENTE PRINCIPAL ---
 export default function RRHHPage() {
@@ -627,7 +660,24 @@ export default function RRHHPage() {
       const wb = XLSX.read(bstr, { type: "binary" });
       const wsname = wb.SheetNames[0];
       const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
+
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      let headerRowIndex = 0;
+      for (let i = 0; i < aoa.length; i++) {
+        if (
+          aoa[i].some(
+            (cell) =>
+              typeof cell === "string" &&
+              (cell.includes("Nombre Completo") ||
+                cell.includes("Nº de Empleado")),
+          )
+        ) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      const data = XLSX.utils.sheet_to_json(ws, { range: headerRowIndex });
       setRawDataCache(data);
     };
     reader.readAsBinaryString(file);
@@ -639,19 +689,54 @@ export default function RRHHPage() {
 
   const procesarDatos = (rawData) => {
     const porPersona = {};
+
     rawData.forEach((row) => {
       const nombre =
-        row["Nombre"] || row["Name"] || row["Person Name"] || row["nombre"];
+        row["Nombre Completo"] ||
+        row["Nombre"] ||
+        row["Name"] ||
+        row["Person Name"] ||
+        row["nombre"];
       const tiempoStr =
-        row["Tiempo"] || row["Time"] || row["tiempo"] || row["Fecha/Hora"];
+        row["Fecha"] ||
+        row["Tiempo"] ||
+        row["Time"] ||
+        row["tiempo"] ||
+        row["Fecha/Hora"];
       const eventoRaw =
-        row["Evento de Asistencia"] || row["Estado"] || row["Tipo"] || "";
+        row["Tipo grabación"] ||
+        row["Evento de Asistencia"] ||
+        row["Estado"] ||
+        row["Tipo"] ||
+        "Desconocido";
+
       if (!nombre || !tiempoStr) return;
-      let fechaObj =
-        typeof tiempoStr === "number"
-          ? new Date((tiempoStr - (25567 + 2)) * 86400 * 1000)
-          : new Date(tiempoStr);
+
+      let fechaObj;
+      if (typeof tiempoStr === "number") {
+        const utcDate = new Date((tiempoStr - (25567 + 2)) * 86400 * 1000);
+        fechaObj = new Date(
+          utcDate.getTime() + utcDate.getTimezoneOffset() * 60000,
+        );
+      } else {
+        const str = String(tiempoStr).trim();
+        const partes = str.split(/[- :T/]/);
+        if (partes.length >= 5) {
+          fechaObj = new Date(
+            partes[0],
+            partes[1] - 1,
+            partes[2],
+            partes[3],
+            partes[4],
+            partes[5] || 0,
+          );
+        } else {
+          fechaObj = new Date(str.replace(" ", "T"));
+        }
+      }
+
       if (!fechaObj || isNaN(fechaObj.getTime())) return;
+
       if (!porPersona[nombre]) porPersona[nombre] = [];
       porPersona[nombre].push({
         fecha: fechaObj,
@@ -662,28 +747,40 @@ export default function RRHHPage() {
     const resultados = [];
     Object.keys(porPersona).forEach((nombre) => {
       let fichadas = porPersona[nombre].sort((a, b) => a.fecha - b.fecha);
+
       const fichadasLimpias = [];
       if (fichadas.length > 0) {
         fichadasLimpias.push(fichadas[0]);
         for (let i = 1; i < fichadas.length; i++) {
           const prev = fichadasLimpias[fichadasLimpias.length - 1];
-          if ((fichadas[i].fecha - prev.fecha) / (1000 * 60) > 5)
+          if ((fichadas[i].fecha - prev.fecha) / (1000 * 60) > 5) {
             fichadasLimpias.push(fichadas[i]);
+          }
         }
       }
-      fichadas = fichadasLimpias;
 
       let i = 0;
-      while (i < fichadas.length) {
-        const entrada = fichadas[i];
+      while (i < fichadasLimpias.length) {
+        const registroActual = fichadasLimpias[i];
+
+        if (!registroActual.evento.includes("INGRESO")) {
+          i++;
+          continue;
+        }
+
+        const entrada = registroActual;
         let salida = null;
         let proximoIndice = i + 1;
-        if (i + 1 < fichadas.length) {
-          const posible = fichadas[i + 1];
-          const diff = (posible.fecha - entrada.fecha) / 36e5;
-          if (diff < 24) {
-            salida = posible;
-            proximoIndice = i + 2;
+
+        if (proximoIndice < fichadasLimpias.length) {
+          const posibleSalida = fichadasLimpias[proximoIndice];
+
+          if (posibleSalida.evento.includes("SALIDA")) {
+            const diff = (posibleSalida.fecha - entrada.fecha) / 36e5;
+            if (diff <= 24) {
+              salida = posibleSalida;
+              proximoIndice++;
+            }
           }
         }
 
@@ -699,6 +796,7 @@ export default function RRHHPage() {
         const month = String(entrada.fecha.getMonth() + 1).padStart(2, "0");
         const day = String(entrada.fecha.getDate()).padStart(2, "0");
         const fechaISO = `${year}-${month}-${day}`;
+
         const esFeriado = feriadosSet.has(fechaISO);
         const dayOfWeek = entrada.fecha.getDay();
         const esFinDeSemana = dayOfWeek === 0 || dayOfWeek === 6;
@@ -717,6 +815,7 @@ export default function RRHHPage() {
           entrada.fecha.getMonth(),
           entrada.fecha.getDate(),
         );
+
         const entradaStr = entrada.fecha.toLocaleTimeString("es-AR", {
           hour: "2-digit",
           minute: "2-digit",
@@ -732,26 +831,28 @@ export default function RRHHPage() {
           });
           if (salida.fecha.getDate() !== entrada.fecha.getDate())
             esNocturno = true;
-          horasTotales = (salida.fecha - entrada.fecha) / 36e5;
+
+          const entradaTolerada = aplicarTolerancia(entrada.fecha);
+          const salidaTolerada = aplicarTolerancia(salida.fecha);
+          horasTotales = (salidaTolerada - entradaTolerada) / 36e5;
 
           if (dia100) {
             if (horasTotales > jornadaLaboral) {
               hsFeriado100 = jornadaLaboral;
               const rawExtra = horasTotales - jornadaLaboral;
-              if (rawExtra > 0) hsExtras100 = Math.floor(rawExtra * 2) / 2;
+              if (rawExtra > 0) hsExtras100 = rawExtra;
             } else {
               hsFeriado100 = horasTotales;
               hsExtras100 = 0;
             }
           } else if (esFinDeSemana) {
-            const rawExtra = horasTotales;
-            if (rawExtra > 0) hsExtras = Math.floor(rawExtra * 2) / 2;
+            if (horasTotales > 0) hsExtras = horasTotales;
             hsNormales = 0;
           } else {
             if (horasTotales > jornadaLaboral) {
               hsNormales = jornadaLaboral;
               const rawExtra = horasTotales - jornadaLaboral;
-              if (rawExtra > 0) hsExtras = Math.floor(rawExtra * 2) / 2;
+              if (rawExtra > 0) hsExtras = rawExtra;
             } else {
               hsNormales = horasTotales;
               hsExtras = 0;
@@ -796,6 +897,7 @@ export default function RRHHPage() {
           estado,
           esNocturno,
         });
+
         i = proximoIndice;
       }
     });
@@ -855,190 +957,89 @@ export default function RRHHPage() {
 
   // --- REPORTES PDF ---
   const generarReportePDF = () => {
-    const doc = new jsPDF("l", "mm", "a4");
-    const fecha = new Date().toLocaleDateString("es-AR");
-    const hora = new Date().toLocaleTimeString("es-AR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
+    try {
+      const doc = new jsPDF("l", "mm", "a4");
+      const fecha = new Date().toLocaleDateString("es-AR");
 
-    doc.setFillColor(15, 23, 42);
-    doc.rect(0, 0, 297, 30, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("REPORTE DE ASISTENCIA Y LIQUIDACIÓN", 14, 18);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(148, 163, 184);
-    doc.text(`Generado: ${fecha} ${hora}`, 14, 25);
-    doc.text("Gestión MRP - Módulo RRHH", 280, 18, { align: "right" });
+      const textDark = [30, 41, 59];
+      const textMuted = [100, 116, 139];
+      const borderLight = [226, 232, 240];
 
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("Resumen de Totales", 14, 40);
-
-    const isSingle = !!filtroOperario;
-    const pInfo = isSingle ? personalMap[filtroOperario] : null;
-    const valBase = pInfo ? pInfo.valorHora : 0;
-
-    const hNorm = isSingle
-      ? `Hs Normales\n(Base: ${formatCurrency(valBase)})`
-      : "Hs Normales";
-    const hExtra = isSingle
-      ? `Hs Extras\n(x1.5: ${formatCurrency(valBase * 1.5)})`
-      : "Hs Extras";
-    const hFer = isSingle
-      ? `Feriado 100%\n(x2: ${formatCurrency(valBase * 2)})`
-      : "Feriado 100%";
-
-    autoTable(doc, {
-      startY: 42,
-      head: [[hNorm, hExtra, hFer, "Extra 100%", "Total a Liquidar ($)"]],
-      body: [
-        [
-          resumen.norm.toFixed(2),
-          resumen.extra.toFixed(2),
-          resumen.fer100.toFixed(2),
-          resumen.ex100.toFixed(2),
-          formatCurrency(resumen.totalPesos),
-        ],
-      ],
-      theme: "grid",
-      headStyles: {
-        fillColor: [241, 245, 249],
-        textColor: [0, 0, 0],
-        fontStyle: "bold",
-        halign: "center",
-      },
-      bodyStyles: { fontStyle: "bold", halign: "center" },
-      columnStyles: {
-        4: { fontStyle: "bold", fontSize: 11, textColor: [30, 41, 59] },
-      },
-    });
-
-    doc.text(
-      `Detalle de Movimientos (${datosFiltrados.length} registros)`,
-      14,
-      doc.lastAutoTable.finalY + 15,
-    );
-    const bodyData = datosFiltrados.map((r) => [
-      r.nombre,
-      r.categoria || "-",
-      `${r.fechaVisual} ${r.esFeriado ? "(FER)" : ""}`,
-      `${r.entrada} - ${r.salida}`,
-      r.hsNormales || "-",
-      r.hsExtras || "-",
-      r.hsFeriado100 || "-",
-      r.hsExtras100 || "-",
-      formatCurrency(r.totalLiquidacion),
-    ]);
-
-    autoTable(doc, {
-      startY: doc.lastAutoTable.finalY + 17,
-      head: [
-        [
-          "Empleado",
-          "Cat",
-          "Fecha",
-          "Horario",
-          "Norm",
-          "Extra",
-          "100%",
-          "Ex 100%",
-          "Total $",
-        ],
-      ],
-      body: bodyData,
-      theme: "striped",
-      styles: { fontSize: 8, cellPadding: 2, valign: "middle" },
-      headStyles: {
-        fillColor: [30, 41, 59],
-        textColor: 255,
-        halign: "center",
-      },
-      columnStyles: {
-        4: { halign: "center" },
-        5: { halign: "center", fontStyle: "bold", textColor: [22, 163, 74] },
-        6: { halign: "center", fontStyle: "bold", textColor: [234, 88, 12] },
-        7: { halign: "center", fontStyle: "bold", textColor: [220, 38, 38] },
-        8: { fontStyle: "bold", halign: "right", fontSize: 9 },
-      },
-    });
-    doc.save(`Liquidacion_${fecha.replace(/\//g, "-")}.pdf`);
-  };
-
-  const generarRecibosPDF = (dataToPrint = datosFiltrados, titulo = null) => {
-    const doc = new jsPDF("p", "mm", "a4");
-    const fechaGen = new Date().toLocaleDateString("es-AR");
-
-    const dataNormalizada = dataToPrint.map((r) => ({
-      ...r,
-      categoria: r.categoria || personalMap[r.nombre]?.categoria || "-",
-      valorHora: r.valorHora || personalMap[r.nombre]?.valorHora || 0,
-    }));
-
-    const empleados = {};
-    dataNormalizada.forEach((row) => {
-      if (!empleados[row.nombre]) empleados[row.nombre] = [];
-      empleados[row.nombre].push(row);
-    });
-    const nombres = Object.keys(empleados);
-
-    nombres.forEach((nombre, index) => {
-      if (index > 0) doc.addPage();
-      const regs = empleados[nombre];
-      const info = {
-        categoria: regs[0].categoria,
-        valorHora: regs[0].valorHora,
-      };
-
-      const totalNorm = regs.reduce((a, b) => a + b.hsNormales, 0);
-      const totalExtra = regs.reduce((a, b) => a + b.hsExtras, 0);
-      const totalFer = regs.reduce((a, b) => a + b.hsFeriado100, 0);
-      const totalEx100 = regs.reduce((a, b) => a + b.hsExtras100, 0);
-      const totalPlata = regs.reduce((a, b) => a + b.totalLiquidacion, 0);
-
-      doc.setFillColor(30, 41, 59);
-      doc.rect(0, 0, 210, 25, "F");
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(255);
+      doc.setTextColor(59, 130, 246);
+      doc.text("CONOFLEX", 15, 20);
+
+      doc.setFontSize(12);
+      doc.setTextColor(...textDark);
+      doc.text("REPORTE DE ASISTENCIA Y LIQUIDACIÓN", 55, 20);
+
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...textMuted);
+      doc.text(`Generado: ${fecha}`, 280, 20, { align: "right" });
+
+      doc.setDrawColor(...borderLight);
+      doc.setLineWidth(0.2);
+      doc.line(15, 25, 282, 25);
+
+      const isSingle = !!filtroOperario;
+      const pInfo = isSingle ? personalMap[filtroOperario] : null;
+      const valBase = pInfo ? pInfo.valorHora : 0;
+
+      const hNorm = isSingle
+        ? `Hs Normales\n(Base: ${formatCurrency(valBase)})`
+        : "Hs Normales";
+      const hExtra = isSingle
+        ? `Hs Extras\n(x1.5: ${formatCurrency(valBase * 1.5)})`
+        : "Hs Extras";
+      const hFer = isSingle
+        ? `Feriado 100%\n(x2: ${formatCurrency(valBase * 2)})`
+        : "Feriado 100%";
+
+      autoTable(doc, {
+        startY: 30,
+        head: [[hNorm, hExtra, hFer, "Extra 100%", "Total a Liquidar ($)"]],
+        body: [
+          [
+            resumen.norm.toFixed(2),
+            resumen.extra.toFixed(2),
+            resumen.fer100.toFixed(2),
+            resumen.ex100.toFixed(2),
+            formatCurrency(resumen.totalPesos),
+          ],
+        ],
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: {
+          fillColor: [248, 250, 252],
+          textColor: [100, 116, 139],
+          fontStyle: "bold",
+          halign: "center",
+          lineColor: [226, 232, 240],
+        },
+        bodyStyles: {
+          fontStyle: "bold",
+          halign: "center",
+          textColor: [30, 41, 59],
+        },
+        columnStyles: { 4: { textColor: [5, 150, 105], fontSize: 9 } },
+      });
+
+      const finalY = doc.lastAutoTable.finalY + 8;
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...textMuted);
       doc.text(
-        titulo
-          ? `RECIBO HISTÓRICO: ${titulo}`
-          : "DETALLE DE LIQUIDACIÓN PROVISORIA",
-        10,
-        16,
+        `DETALLE DE MOVIMIENTOS (${datosFiltrados.length} registros)`,
+        15,
+        finalY,
       );
-      doc.setFontSize(9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(148, 163, 184);
-      doc.text(`FECHA EMISIÓN: ${fechaGen}`, 195, 16, { align: "right" });
 
-      doc.setDrawColor(200);
-      doc.setFillColor(248, 250, 252);
-      doc.rect(10, 35, 190, 20, "F");
-      doc.rect(10, 35, 190, 20, "S");
-      doc.setTextColor(0);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "bold");
-      doc.text("EMPLEADO:", 15, 42);
-      doc.setFont("helvetica", "normal");
-      doc.text(nombre.toUpperCase(), 45, 42);
-      doc.setFont("helvetica", "bold");
-      doc.text("CATEGORÍA:", 15, 50);
-      doc.setFont("helvetica", "normal");
-      doc.text(info.categoria, 45, 50);
-      doc.setFont("helvetica", "bold");
-      doc.text("VALOR HORA:", 120, 50);
-      doc.setFont("helvetica", "normal");
-      doc.text(formatCurrency(info.valorHora), 150, 50);
-
-      const bodyRecibo = regs.map((r) => [
-        r.fechaVisual,
+      const bodyData = datosFiltrados.map((r) => [
+        r.nombre,
+        r.categoria || "-",
+        `${r.fechaVisual} ${r.esFeriado ? "(FER)" : ""}`,
         `${r.entrada} - ${r.salida}`,
         r.hsNormales || "-",
         r.hsExtras || "-",
@@ -1048,67 +1049,225 @@ export default function RRHHPage() {
       ]);
 
       autoTable(doc, {
-        startY: 65,
+        startY: finalY + 3,
         head: [
-          ["Fecha", "Horario", "Norm", "Extra", "100%", "Ex 100%", "Total"],
+          [
+            "Empleado",
+            "Categoría",
+            "Fecha",
+            "Horario",
+            "Norm",
+            "Extra",
+            "100%",
+            "Ex 100%",
+            "Total $",
+          ],
         ],
-        body: bodyRecibo,
+        body: bodyData,
         theme: "striped",
-        styles: { fontSize: 9, cellPadding: 2, valign: "middle" },
-        headStyles: { fillColor: [51, 65, 85], textColor: 255 },
-        columnStyles: { 6: { halign: "right", fontStyle: "bold" } },
-      });
-
-      const finalY = doc.lastAutoTable.finalY + 10;
-      autoTable(doc, {
-        startY: finalY,
-        head: [["Concepto", "Cant.", "Subtotal"]],
-        body: [
-          ["Horas Normales", totalNorm.toFixed(2), "-"],
-          [
-            "Extras (50%)",
-            totalExtra.toFixed(2),
-            formatCurrency(totalExtra * info.valorHora * 1.5),
-          ],
-          [
-            "Feriados (100%)",
-            totalFer.toFixed(2),
-            formatCurrency(totalFer * info.valorHora * 2),
-          ],
-          [
-            "Extras 100%",
-            totalEx100.toFixed(2),
-            formatCurrency(totalEx100 * info.valorHora * 2),
-          ],
-        ],
-        theme: "plain",
-        styles: { fontSize: 9, cellPadding: 1.5 },
-        columnStyles: {
-          0: { cellWidth: 40 },
-          1: { cellWidth: 20, halign: "center" },
-          2: { cellWidth: 30, halign: "right" },
+        styles: { fontSize: 7.5, cellPadding: 2, valign: "middle" },
+        headStyles: {
+          fillColor: [248, 250, 252],
+          textColor: [100, 116, 139],
+          fontStyle: "bold",
+          halign: "center",
+          lineColor: [226, 232, 240],
         },
-        margin: { left: 110 },
+        columnStyles: {
+          4: { halign: "center" },
+          5: { halign: "center", fontStyle: "bold", textColor: [22, 163, 74] },
+          6: { halign: "center", fontStyle: "bold", textColor: [217, 119, 6] },
+          7: { halign: "center", fontStyle: "bold", textColor: [225, 29, 72] },
+          8: { fontStyle: "bold", halign: "right", textColor: [30, 41, 59] },
+        },
       });
 
-      const totalY = doc.lastAutoTable.finalY + 5;
-      doc.setFillColor(30, 41, 59);
-      doc.rect(110, totalY, 90, 10, "F");
-      doc.setTextColor(255);
-      doc.setFontSize(11);
-      doc.setFont("helvetica", "bold");
-      doc.text("TOTAL A PERCIBIR", 115, totalY + 7);
-      doc.text(formatCurrency(totalPlata), 195, totalY + 7, { align: "right" });
-    });
-    const fName = titulo
-      ? `Recibos_${titulo.replace(/\s+/g, "_")}.pdf`
-      : `Recibos_Individuales_${fechaGen.replace(/\//g, "-")}.pdf`;
-    doc.save(fName);
+      doc.save(`Liquidacion_${fecha.replace(/\//g, "-")}.pdf`);
+    } catch (e) {
+      alert("Error al generar PDF");
+    }
+  };
+
+  const generarRecibosPDF = (dataToPrint = datosFiltrados, titulo = null) => {
+    try {
+      const doc = new jsPDF("p", "mm", "a4");
+      const fechaGen = new Date().toLocaleDateString("es-AR");
+
+      const dataNormalizada = dataToPrint.map((r) => ({
+        ...r,
+        categoria: r.categoria || personalMap[r.nombre]?.categoria || "-",
+        valorHora: r.valorHora || personalMap[r.nombre]?.valorHora || 0,
+      }));
+
+      const empleados = {};
+      dataNormalizada.forEach((row) => {
+        if (!empleados[row.nombre]) empleados[row.nombre] = [];
+        empleados[row.nombre].push(row);
+      });
+      const nombres = Object.keys(empleados);
+
+      nombres.forEach((nombre, index) => {
+        if (index > 0) doc.addPage();
+        const regs = empleados[nombre];
+        const info = {
+          categoria: regs[0].categoria,
+          valorHora: regs[0].valorHora,
+        };
+
+        const totalNorm = regs.reduce((a, b) => a + b.hsNormales, 0);
+        const totalExtra = regs.reduce((a, b) => a + b.hsExtras, 0);
+        const totalFer = regs.reduce((a, b) => a + b.hsFeriado100, 0);
+        const totalEx100 = regs.reduce((a, b) => a + b.hsExtras100, 0);
+        const totalPlata = regs.reduce((a, b) => a + b.totalLiquidacion, 0);
+
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(59, 130, 246);
+        doc.text("CONOFLEX", 15, 20);
+
+        doc.setFontSize(12);
+        doc.setTextColor(30, 41, 59);
+        doc.text(
+          titulo ? `RECIBO HISTÓRICO: ${titulo}` : "LIQUIDACIÓN DE ADICIONALES",
+          50,
+          20,
+        );
+
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(`EMISIÓN: ${fechaGen}`, 195, 20, { align: "right" });
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.2);
+        doc.line(15, 24, 195, 24);
+
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(15, 28, 180, 16, 2, 2, "F");
+        doc.roundedRect(15, 28, 180, 16, 2, 2, "S");
+
+        doc.setTextColor(30, 41, 59);
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text("EMPLEADO:", 20, 34);
+        doc.setFont("helvetica", "normal");
+        doc.text(nombre.toUpperCase(), 45, 34);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("CATEGORÍA:", 20, 40);
+        doc.setFont("helvetica", "normal");
+        doc.text(info.categoria, 45, 40);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("VALOR HORA:", 130, 37);
+        doc.setFont("helvetica", "normal");
+        doc.text(formatCurrency(info.valorHora), 155, 37);
+
+        const bodyRecibo = regs.map((r) => [
+          r.fechaVisual,
+          `${r.entrada} - ${r.salida}`,
+          r.hsNormales || "-",
+          r.hsExtras || "-",
+          r.hsFeriado100 || "-",
+          r.hsExtras100 || "-",
+          formatCurrency(r.totalLiquidacion),
+        ]);
+
+        autoTable(doc, {
+          startY: 48,
+          head: [
+            [
+              "Fecha",
+              "Horario",
+              "Norm",
+              "Extra",
+              "100%",
+              "Ex 100%",
+              "Subtotal",
+            ],
+          ],
+          body: bodyRecibo,
+          theme: "striped",
+          styles: {
+            fontSize: 7.5,
+            cellPadding: 2,
+            valign: "middle",
+            textColor: [71, 85, 105],
+            lineColor: [241, 245, 249],
+          },
+          headStyles: {
+            fillColor: [248, 250, 252],
+            textColor: [100, 116, 139],
+            fontStyle: "bold",
+          },
+          columnStyles: {
+            6: { halign: "right", fontStyle: "bold", textColor: [30, 41, 59] },
+          },
+        });
+
+        const finalY = doc.lastAutoTable.finalY + 6;
+
+        autoTable(doc, {
+          startY: finalY,
+          head: [["Concepto", "Cant.", "Subtotal"]],
+          body: [
+            ["Horas Normales", totalNorm.toFixed(2), "-"],
+            [
+              "Extras (50%)",
+              totalExtra.toFixed(2),
+              formatCurrency(totalExtra * info.valorHora * 1.5),
+            ],
+            [
+              "Feriados (100%)",
+              totalFer.toFixed(2),
+              formatCurrency(totalFer * info.valorHora * 2),
+            ],
+            [
+              "Extras 100%",
+              totalEx100.toFixed(2),
+              formatCurrency(totalEx100 * info.valorHora * 2),
+            ],
+          ],
+          theme: "plain",
+          styles: { fontSize: 8, cellPadding: 1.5, textColor: [30, 41, 59] },
+          headStyles: { fontStyle: "bold", textColor: [100, 116, 139] },
+          columnStyles: {
+            0: { cellWidth: 40 },
+            1: { cellWidth: 20, halign: "center" },
+            2: { cellWidth: 30, halign: "right" },
+          },
+          margin: { left: 105 },
+        });
+
+        const totalY = doc.lastAutoTable.finalY + 4;
+        doc.setFillColor(5, 150, 105);
+        doc.roundedRect(105, totalY, 90, 10, 1, 1, "F");
+        doc.setTextColor(255);
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "bold");
+        doc.text("TOTAL ADICIONALES", 110, totalY + 7);
+        doc.text(formatCurrency(totalPlata), 190, totalY + 7, {
+          align: "right",
+        });
+
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.setFont("helvetica", "normal");
+        doc.text("Firma Empleado: ________________________", 15, totalY + 7);
+      });
+
+      const fName = titulo
+        ? `Recibos_${titulo.replace(/\s+/g, "_")}.pdf`
+        : `Recibos_Individuales_${fechaGen.replace(/\//g, "-")}.pdf`;
+      doc.save(fName);
+    } catch (e) {
+      alert("Error al generar recibos");
+    }
   };
 
   const handleGuardarCierre = async () => {
     const nombrePeriodo = prompt(
-      "Nombre para este cierre (Ej: Enero 1ra Quincena):",
+      "Nombre para este cierre (Ej: Marzo 1ra Quincena):",
     );
     if (!nombrePeriodo) return;
     try {
@@ -1123,14 +1282,14 @@ export default function RRHHPage() {
           datos_snapshot: datosProcesados,
         }),
       });
-      alert("¡Cierre guardado exitosamente!");
+      alert("¡Cierre guardado en el historial!");
     } catch (e) {
       alert("Error al guardar cierre");
     }
   };
 
   return (
-    <div className="animate-in fade-in space-y-6 pb-20 p-4 md:p-8">
+    <div className="animate-in fade-in space-y-4 pb-10 p-4 md:p-6 min-h-screen bg-[#f4f7f9] font-sans text-slate-800">
       <AnimatePresence>
         {showFeriadosModal && (
           <FeriadosModal
@@ -1154,135 +1313,124 @@ export default function RRHHPage() {
         )}
       </AnimatePresence>
 
-      {/* HEADER PRINCIPAL */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-4 rounded-2xl border border-slate-700/50 shadow-2xl relative overflow-hidden flex flex-col gap-4">
-        {/* Glow de fondo */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mt-20 -mr-20"></div>
-
-        {/* FILA 1: TÍTULO COMPACTO */}
-        <div className="z-10 flex items-center justify-between w-full border-b border-white/5 pb-2">
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden flex flex-col gap-4 z-10">
+        <div className="flex items-center justify-between w-full border-b border-slate-100 pb-3">
           <div className="flex items-center gap-3">
-            <div className="p-1.5 bg-gradient-to-br from-emerald-500 to-teal-700 rounded-lg shadow-sm">
-              <FaUserClock className="text-white text-sm" />
+            <div className="p-2.5 bg-blue-50 rounded-xl text-blue-600 shadow-sm border border-blue-100">
+              <FaUserClock size={18} />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-white tracking-wide uppercase">
-                Gestión RRHH
+              <h1 className="text-lg font-bold text-slate-800 tracking-tight leading-none mb-1 flex items-center gap-2">
+                Recursos Humanos
+                <span className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-sm uppercase tracking-widest">
+                  Enterprise
+                </span>
               </h1>
-              <p className="text-[10px] text-gray-400 font-mono">
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
                 Control de Asistencia & Liquidación
               </p>
             </div>
           </div>
         </div>
 
-        {/* FILA 2: CONTROLES & TOOLBAR - ESTRUCTURA IZQUIERDA | CENTRO | DERECHA */}
-        <div className="flex flex-col xl:flex-row gap-4 w-full items-end xl:items-center justify-between z-10">
-          {/* 1. IZQUIERDA: FILTROS (Buscador y Fechas) */}
-          <div className="flex flex-col md:flex-row gap-2 bg-white/5 p-1.5 rounded-xl border border-white/10 backdrop-blur-sm shadow-inner w-full xl:w-auto">
-            <div className="flex items-center bg-slate-950/50 rounded-lg border border-slate-700 px-3 py-1 flex-1">
-              <FaSearch className="text-gray-500 mr-2" />
+        <div className="flex flex-col xl:flex-row gap-3 w-full items-end xl:items-center justify-between">
+          <div className="flex flex-col md:flex-row gap-2 w-full xl:w-auto">
+            <div className="flex items-center bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 flex-1 shadow-sm">
+              <FaSearch className="text-slate-400 mr-2 text-[10px]" />
               <select
                 value={filtroOperario}
                 onChange={(e) => setFiltroOperario(e.target.value)}
-                className="bg-transparent text-white text-xs p-1.5 outline-none cursor-pointer w-full md:w-40 appearance-none font-medium"
+                className="bg-transparent text-slate-700 text-xs font-bold outline-none cursor-pointer w-full md:w-40 appearance-none"
                 disabled={datosProcesados.length === 0}
               >
-                <option value="" className="bg-slate-900">
-                  Todos
-                </option>
+                <option value="">Todos los empleados</option>
                 {listaEmpleados.map((emp) => (
-                  <option
-                    className="bg-slate-900 text-gray-200"
-                    key={emp}
-                    value={emp}
-                  >
+                  <option key={emp} value={emp}>
                     {emp}
                   </option>
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 shadow-sm">
               <input
                 type="date"
                 value={fechaInicio}
                 onChange={(e) => setFechaInicio(e.target.value)}
-                className="bg-slate-950/50 border border-slate-700 text-white text-[10px] rounded-lg px-2 py-1.5 outline-none cursor-pointer hover:border-slate-500 transition-colors"
+                className="bg-transparent text-slate-600 font-bold text-[10px] uppercase px-1 py-1.5 outline-none cursor-pointer"
               />
-              <span className="text-gray-600 font-bold">→</span>
+              <span className="text-slate-300 font-bold text-xs">→</span>
               <input
                 type="date"
                 value={fechaFin}
                 onChange={(e) => setFechaFin(e.target.value)}
-                className="bg-slate-950/50 border border-slate-700 text-white text-[10px] rounded-lg px-2 py-1.5 outline-none cursor-pointer hover:border-slate-500 transition-colors"
+                className="bg-transparent text-slate-600 font-bold text-[10px] uppercase px-1 py-1.5 outline-none cursor-pointer"
               />
             </div>
             {(filtroOperario || fechaInicio || fechaFin) && (
               <button
                 onClick={limpiarFiltros}
-                className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-all border border-red-500/20"
+                className="p-2 bg-red-50 text-red-500 hover:bg-red-100 hover:text-red-600 rounded-lg transition-all border border-red-100 shadow-sm"
                 title="Limpiar filtros"
               >
-                <FaEraser />
+                <FaEraser size={12} />
               </button>
             )}
           </div>
 
-          {/* 2. CENTRO: BOTONES DE ACCIÓN (Grupo central) */}
-          <div className="flex items-center bg-slate-900/80 backdrop-blur-sm border border-slate-700 p-1.5 rounded-xl shadow-lg gap-3">
-            <div className="flex gap-1">
+          <div className="flex items-center bg-slate-50 border border-slate-200 p-1 rounded-xl shadow-sm gap-1">
+            <div className="flex gap-0.5">
               <button
                 onClick={() => setShowGestionModal(true)}
-                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-blue-400 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase"
+                className="px-3 py-1.5 hover:bg-white text-slate-500 hover:text-blue-600 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider"
               >
-                <FaUsersCog className="text-sm" /> Personal
+                <FaUsersCog size={12} /> Personal
               </button>
               <button
                 onClick={() => setShowFeriadosModal(true)}
-                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-red-400 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase"
+                className="px-3 py-1.5 hover:bg-white text-slate-500 hover:text-red-500 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider"
               >
-                <FaCalendarCheck className="text-sm" /> Feriados
+                <FaCalendarCheck size={12} /> Feriados
               </button>
             </div>
-            <div className="w-px h-6 bg-slate-700 hidden md:block"></div>
-            <div className="flex gap-1">
+            <div className="w-px h-4 bg-slate-200 hidden md:block mx-1"></div>
+            <div className="flex gap-0.5">
               <button
                 onClick={() => setShowHistorialModal(true)}
-                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-purple-400 rounded-lg transition-colors flex items-center gap-2 text-[10px] font-bold uppercase"
+                className="px-3 py-1.5 hover:bg-white text-slate-500 hover:text-purple-600 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider"
               >
-                <FaHistory className="text-sm" /> Historial
+                <FaHistory size={12} /> Historial
               </button>
               <button
                 onClick={handleGuardarCierre}
                 disabled={datosProcesados.length === 0}
-                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-emerald-400 rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2 text-[10px] font-bold uppercase"
+                className="px-3 py-1.5 hover:bg-white text-slate-500 hover:text-emerald-600 rounded-lg transition-all shadow-sm disabled:opacity-30 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider"
               >
-                <FaSave className="text-sm" /> Guardar
+                <FaSave size={12} /> Guardar
               </button>
             </div>
-            <div className="w-px h-6 bg-slate-700 hidden md:block"></div>
-            <div className="flex gap-1">
+            <div className="w-px h-4 bg-slate-200 hidden md:block mx-1"></div>
+            <div className="flex gap-0.5">
               <button
                 onClick={generarReportePDF}
                 disabled={datosProcesados.length === 0}
-                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2 text-[10px] font-bold uppercase"
+                className="px-3 py-1.5 hover:bg-white text-slate-500 hover:text-slate-800 rounded-lg transition-all shadow-sm disabled:opacity-30 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider"
               >
-                <FaFilePdf className="text-sm" /> Lista
+                <FaFilePdf size={12} /> Lista
               </button>
               <button
                 onClick={() => generarRecibosPDF()}
                 disabled={datosProcesados.length === 0}
-                className="px-3 py-2 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2 text-[10px] font-bold uppercase"
+                className="px-3 py-1.5 hover:bg-white text-slate-500 hover:text-slate-800 rounded-lg transition-all shadow-sm disabled:opacity-30 flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider"
               >
-                <FaFileInvoiceDollar className="text-sm" /> Recibos
+                <FaFileInvoiceDollar size={12} /> Recibos
               </button>
             </div>
           </div>
 
-          {/* 3. DERECHA: BOTÓN IMPORTAR (Separado) */}
           <div>
-            <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-900/30 transition-all active:scale-95 whitespace-nowrap border border-white/10 text-[10px] uppercase">
-              <FaUpload /> <span className="hidden md:inline">Importar</span>
+            <label className="cursor-pointer bg-slate-800 hover:bg-blue-600 text-white px-4 py-2 rounded-xl font-bold flex items-center justify-center gap-2 shadow transition-all active:scale-95 whitespace-nowrap text-[9px] uppercase tracking-widest">
+              <FaUpload size={12} />{" "}
+              <span className="hidden md:inline">Importar Fichero</span>
               <input
                 type="file"
                 accept=".xls,.xlsx,.csv"
@@ -1295,67 +1443,62 @@ export default function RRHHPage() {
       </div>
 
       {datosProcesados.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {[
             {
               label: "Hs Normales",
               val: resumen.norm,
-              color: "text-white",
-              border: "border-slate-600",
-              bg: "from-slate-800 to-slate-900",
+              color: "text-slate-700",
+              iconColor: "text-slate-300",
               icon: <FaUserClock />,
             },
             {
               label: "Hs Extras",
               val: resumen.extra,
-              color: "text-emerald-400",
-              border: "border-emerald-500/50",
-              bg: "from-emerald-900/20 to-slate-900",
+              color: "text-emerald-600",
+              iconColor: "text-emerald-100",
               icon: <FaStopwatch />,
             },
             {
               label: "Feriado 100%",
               val: resumen.fer100,
-              color: "text-orange-400",
-              border: "border-orange-500/50",
-              bg: "from-orange-900/20 to-slate-900",
+              color: "text-orange-500",
+              iconColor: "text-orange-100",
               icon: <FaStar />,
             },
             {
               label: "Extra 100%",
               val: resumen.ex100,
-              color: "text-red-400",
-              border: "border-red-500/50",
-              bg: "from-red-900/20 to-slate-900",
+              color: "text-red-500",
+              iconColor: "text-red-100",
               icon: <FaFire />,
             },
             {
-              label: "Total Liquidación",
+              label: "Total a Liquidar",
               val: resumen.totalPesos,
               isMoney: true,
-              color: "text-blue-300",
-              border: "border-blue-500/50",
-              bg: "from-blue-900/30 to-slate-900",
+              color: "text-blue-600",
+              iconColor: "text-blue-100",
               icon: <FaMoneyBillWave />,
             },
           ].map((kpi, idx) => (
             <motion.div
               key={idx}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              className={`bg-gradient-to-br ${kpi.bg} p-5 rounded-2xl border ${kpi.border} shadow-xl relative overflow-hidden`}
+              transition={{ delay: idx * 0.05 }}
+              className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden"
             >
               <div
-                className={`absolute top-3 right-3 text-2xl opacity-20 ${kpi.color}`}
+                className={`absolute top-3 right-3 text-2xl opacity-40 ${kpi.iconColor}`}
               >
                 {kpi.icon}
               </div>
-              <p className="text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1">
+              <p className="text-slate-500 text-[9px] font-bold uppercase tracking-widest mb-1 relative z-10">
                 {kpi.label}
               </p>
               <p
-                className={`text-2xl md:text-3xl font-bold ${kpi.color} font-mono truncate`}
+                className={`text-xl font-black ${kpi.color} tracking-tight relative z-10 truncate`}
               >
                 {kpi.isMoney ? formatCurrency(kpi.val) : kpi.val.toFixed(2)}
               </p>
@@ -1364,122 +1507,101 @@ export default function RRHHPage() {
         </div>
       )}
 
-      <div className="bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden">
-        <div className="p-5 border-b border-slate-700 bg-slate-800/80 backdrop-blur flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h3 className="font-bold text-white flex items-center gap-2">
-              <FaFileExcel className="text-green-500" /> Nómina Detallada
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm tracking-tight">
+              <FaFileExcel className="text-emerald-500" /> Nómina Detallada
             </h3>
-            <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-500 uppercase font-bold bg-slate-950 px-3 py-1 rounded-full border border-slate-800">
-              <span className="w-2 h-2 rounded-full bg-green-500"></span> Live
-              Data
-            </div>
           </div>
-          <span className="text-xs text-gray-400 font-mono bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest bg-white px-2.5 py-1 rounded-md border border-slate-200 shadow-sm">
             {datosFiltrados.length} Registros
           </span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-gray-300">
-            <thead className="bg-slate-950 text-gray-400 uppercase text-[10px] font-bold tracking-wider border-b border-slate-800">
+          <table className="w-full text-left text-xs text-slate-600">
+            <thead className="bg-white text-slate-400 uppercase text-[9px] font-bold tracking-widest border-b border-slate-200">
               <tr>
-                <th className="p-5">Empleado</th>
-                <th className="p-5">Fecha</th>
-                <th className="p-5 text-center">Fichada (E / S)</th>
-                <th className="p-5 text-center bg-slate-900/50">Normales</th>
-                <th className="p-5 text-center bg-emerald-900/10 text-emerald-500">
-                  Hs Extras
+                <th className="px-4 py-3">Empleado</th>
+                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3 text-center">Fichada</th>
+                <th className="px-4 py-3 text-center">Norm</th>
+                <th className="px-4 py-3 text-center text-emerald-500">
+                  Extra
                 </th>
-                <th className="p-5 text-center bg-orange-900/10 text-orange-400">
-                  100% (Base)
+                <th className="px-4 py-3 text-center text-orange-400">
+                  Fer (100%)
                 </th>
-                <th className="p-5 text-center bg-red-900/10 text-red-400">
-                  Extra 100%
-                </th>
-                <th className="p-5 text-right text-white bg-blue-900/20">
-                  Liquidación
+                <th className="px-4 py-3 text-center text-red-400">Ex 100%</th>
+                <th className="px-4 py-3 text-right text-slate-700 bg-slate-50">
+                  Total
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              {datosFiltrados.map((row, idx) => (
+            <tbody className="divide-y divide-slate-100">
+              {datosFiltrados.map((row) => (
                 <tr
                   key={row.id}
-                  className={`transition-all hover:bg-slate-800/60 ${idx % 2 === 0 ? "bg-transparent" : "bg-slate-800/20"}`}
+                  className="transition-colors hover:bg-slate-50/50"
                 >
-                  <td className="p-5 font-bold text-white">
+                  <td className="px-4 py-2.5 font-bold text-slate-800">
                     <div>{row.nombre}</div>
                     {row.categoria && (
                       <span
-                        className={`inline-flex items-center gap-1 mt-1 text-[10px] px-2 py-0.5 rounded border uppercase tracking-wider font-bold ${getCategoryColor(row.categoria)}`}
+                        className={`inline-flex items-center gap-1 mt-1 text-[8px] px-1.5 py-0.5 rounded border uppercase tracking-widest font-black ${getCategoryColor(row.categoria)}`}
                       >
                         <FaTag size={8} /> {row.categoria}
                       </span>
                     )}
                   </td>
-                  <td className="p-5 font-mono text-gray-400">
-                    <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-2">
-                        <FaCalendarAlt className="text-slate-600 text-xs" />{" "}
+                  <td className="px-4 py-2.5 font-medium">
+                    <div className="flex flex-col gap-1 items-start">
+                      <span className="flex items-center gap-1.5">
+                        <FaCalendarAlt className="text-slate-300" />{" "}
                         {row.fechaVisual}
                       </span>
-                      {row.esFeriado && (
-                        <span className="text-[9px] w-fit bg-red-500/20 text-red-400 border border-red-500/30 px-1.5 py-0.5 rounded font-bold tracking-wide">
-                          FERIADO
+                      {row.esFeriado ? (
+                        <span className="text-[8px] bg-red-50 text-red-600 border border-red-100 px-1.5 py-[1px] rounded uppercase font-bold tracking-widest">
+                          Feriado
                         </span>
-                      )}
-                      {!row.esFeriado && row.esFinDeSemana && (
-                        <span className="text-[9px] w-fit bg-orange-500/20 text-orange-400 border border-orange-500/30 px-1.5 py-0.5 rounded font-bold">
+                      ) : row.esFinDeSemana ? (
+                        <span className="text-[8px] bg-orange-50 text-orange-600 border border-orange-100 px-1.5 py-[1px] rounded uppercase font-bold tracking-widest">
                           {row.nombreDia}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </td>
-                  <td className="p-5 text-center text-xs">
+                  <td className="px-4 py-2.5 text-center">
                     {row.estado === "INCOMPLETO" ? (
-                      <span className="text-red-400 bg-red-900/20 px-3 py-1 rounded-full border border-red-500/20 flex items-center justify-center gap-2 font-bold w-fit mx-auto">
-                        <FaExclamationTriangle /> ERROR
+                      <span className="text-red-500 bg-red-50 px-2 py-1 rounded-md border border-red-100 flex items-center justify-center gap-1 font-bold w-fit mx-auto text-[10px]">
+                        <FaExclamationTriangle /> Omitida
                       </span>
                     ) : (
-                      <div className="flex flex-col items-center gap-1 font-mono">
-                        <span className="text-emerald-400 bg-emerald-900/10 px-2 rounded">
-                          {row.entrada}
-                        </span>
-                        <span className="text-gray-500 text-[10px]">▼</span>
-                        <span className="text-blue-300 bg-blue-900/10 px-2 rounded flex items-center gap-1">
+                      <div className="flex flex-col items-center gap-0.5 font-mono font-bold text-slate-500">
+                        <span>{row.entrada}</span>
+                        <span className="text-slate-300 text-[8px]">▼</span>
+                        <span className="flex items-center gap-1">
                           {row.salida}{" "}
                           {row.esNocturno && (
-                            <FaMoon className="text-[9px] text-yellow-400" />
+                            <FaMoon className="text-[8px] text-blue-400" />
                           )}
                         </span>
                       </div>
                     )}
                   </td>
-                  <td className="p-5 text-center font-mono font-bold bg-slate-900/30 border-x border-slate-800/50">
+                  <td className="px-4 py-2.5 text-center font-bold text-slate-500 bg-slate-50/30 border-x border-slate-100">
                     {row.hsNormales || "-"}
                   </td>
-                  <td className="p-5 text-center font-mono font-bold text-emerald-400 bg-emerald-900/5 border-r border-slate-800/50">
+                  <td className="px-4 py-2.5 text-center font-black text-emerald-600 bg-emerald-50/20 border-r border-slate-100">
                     {row.hsExtras || "-"}
                   </td>
-                  <td className="p-5 text-center font-mono font-bold text-orange-400 bg-orange-900/5 border-r border-slate-800/50">
-                    {row.hsFeriado100 ? (
-                      <div className="flex flex-col items-center">
-                        <span>{row.hsFeriado100}</span>
-                      </div>
-                    ) : (
-                      "-"
-                    )}
+                  <td className="px-4 py-2.5 text-center font-black text-orange-500 bg-orange-50/20 border-r border-slate-100">
+                    {row.hsFeriado100 || "-"}
                   </td>
-                  <td className="p-5 text-center font-mono font-bold text-red-400 bg-red-900/5 border-r border-slate-800/50">
-                    {row.hsExtras100 ? (
-                      <div className="flex flex-col items-center">
-                        <span>{row.hsExtras100}</span>
-                      </div>
-                    ) : (
-                      "-"
-                    )}
+                  <td className="px-4 py-2.5 text-center font-black text-red-500 bg-red-50/20 border-r border-slate-100">
+                    {row.hsExtras100 || "-"}
                   </td>
-                  <td className="p-5 text-right font-bold text-white bg-blue-900/10 border-l border-blue-500/20 text-sm">
+                  <td className="px-4 py-2.5 text-right font-black text-blue-600 bg-slate-50/50">
                     {formatCurrency(row.totalLiquidacion)}
                   </td>
                 </tr>

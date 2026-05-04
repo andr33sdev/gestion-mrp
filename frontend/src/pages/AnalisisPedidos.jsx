@@ -28,7 +28,11 @@ import {
   FaUserTie,
   FaTag,
   FaChevronDown,
+  FaEraser,
   FaSync,
+  FaSearchDollar,
+  FaBoxOpen,
+  FaExternalLinkAlt,
 } from "react-icons/fa";
 import {
   ResponsiveContainer,
@@ -67,7 +71,6 @@ const parseDate = (dateStr) => {
   }
   if (str.includes("/")) {
     const parts = str.split("/");
-    // Soportar fechas cortas como "19/2"
     if (parts.length === 2) {
       const day = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10) - 1;
@@ -113,7 +116,6 @@ const formatDateForInput = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-// HELPER PARA MONEDA ROBUSTO (Cubre cualquier formato de $ o texto)
 const parseCurrency = (val) => {
   if (val === undefined || val === null || val === "") return 0;
   if (typeof val === "number") return val;
@@ -481,7 +483,395 @@ const ParetoModal = ({ isOpen, onClose, data, isCli }) => {
 };
 
 // ==========================================
-// VISTA: FINANCIERO (Dashboard Dinámico con Cotización USD)
+// NUEVO MODAL: ANÁLISIS DE PRODUCTO FINANCIERO CON FILTRO MELI
+// ==========================================
+const ProductFinancialModal = ({
+  isOpen,
+  onClose,
+  datosPedidos,
+  datosRecetas,
+  datosStock,
+  valorDolar,
+}) => {
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  // NUEVO ESTADO: Filtro de canal
+  const [filtroCanal, setFiltroCanal] = useState("TODOS"); // "TODOS" | "SIN_ML" | "SOLO_ML"
+
+  const productos = useMemo(() => {
+    const set = new Set();
+    datosPedidos.forEach((p) => {
+      const prod = (p.modelo || p.MODELO || "").trim();
+      if (prod && prod !== "Desconocido") set.add(prod);
+    });
+    return Array.from(set).sort();
+  }, [datosPedidos]);
+
+  const metrics = useMemo(() => {
+    if (!selectedProduct) return null;
+
+    const mapCostosSemis = {};
+    if (datosStock) {
+      datosStock.forEach(
+        (s) => (mapCostosSemis[s.id] = Number(s.costo || s.costo_usd || 0)),
+      );
+    }
+
+    const prodKey = normalizeKey(selectedProduct);
+    let costoUnitarioUSD = 0;
+
+    if (datosRecetas) {
+      const recetaKey = Object.keys(datosRecetas).find(
+        (k) => normalizeKey(k) === prodKey,
+      );
+      if (recetaKey) {
+        datosRecetas[recetaKey].forEach((it) => {
+          costoUnitarioUSD +=
+            Number(it.cantidad) * (mapCostosSemis[it.semielaborado_id] || 0);
+        });
+      }
+    }
+
+    const dCotizacion = Number(valorDolar) || 1;
+    const dDesde = fechaDesde ? new Date(fechaDesde + "T00:00:00") : null;
+    const dHasta = fechaHasta ? new Date(fechaHasta + "T23:59:59") : null;
+
+    let facturacion = 0;
+    let costo = 0;
+    let unidades = 0;
+    const clientesMap = {};
+
+    datosPedidos.forEach((r) => {
+      const prod = (r.modelo || r.MODELO || "").trim();
+      if (normalizeKey(prod) !== prodKey) return;
+      const estado = (r.estado || r.ESTADO || "").toUpperCase();
+      if (estado.includes("CANCELADO")) return;
+
+      const d = parseDate(r.fecha || r.FECHA);
+      if (dDesde && d && d < dDesde) return;
+      if (dHasta && d && d > dHasta) return;
+
+      // 👇 NUEVO FILTRO DE CANAL (MERCADOLIBRE) 👇
+      const detallesStr = (r.detalles || r.DETALLES || "")
+        .toString()
+        .toLowerCase();
+      const isML =
+        detallesStr.includes("mercadolibre") ||
+        detallesStr.includes("mercado libre");
+
+      if (filtroCanal === "SOLO_ML" && !isML) return; // Saltearlo si buscamos solo ML y no es ML
+      if (filtroCanal === "SIN_ML" && isML) return; // Saltearlo si buscamos sin ML y sí es ML
+
+      const punisiva = parseCurrency(
+        r.punisiva ||
+          r.PUNISIVA ||
+          r.precio ||
+          r.PRECIO ||
+          r.valor ||
+          r.VALOR ||
+          r.total_linea ||
+          0,
+      );
+      const cantidad = parseCantidad(r.cantidad || r.CANTIDAD || 1);
+      const cli = (r.cliente || r.CLIENTE || "Desconocido").trim();
+
+      facturacion += punisiva;
+      unidades += cantidad;
+      costo += costoUnitarioUSD * dCotizacion * cantidad;
+
+      clientesMap[cli] = (clientesMap[cli] || 0) + punisiva;
+    });
+
+    const topClientes = Object.entries(clientesMap)
+      .map(([name, val]) => ({ name, val }))
+      .sort((a, b) => b.val - a.val)
+      .slice(0, 10);
+
+    const rentabilidad = facturacion - costo;
+    const margen = facturacion > 0 ? (rentabilidad / facturacion) * 100 : 0;
+
+    return {
+      facturacion,
+      costo,
+      rentabilidad,
+      margen,
+      unidades,
+      topClientes,
+      costoUnitarioUSD,
+    };
+  }, [
+    selectedProduct,
+    fechaDesde,
+    fechaHasta,
+    filtroCanal,
+    datosPedidos,
+    datosRecetas,
+    datosStock,
+    valorDolar,
+  ]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white border border-slate-200 rounded-[2rem] w-full max-w-5xl flex flex-col shadow-2xl overflow-hidden max-h-[95vh]">
+        {/* HEADER MODAL */}
+        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+          <div className="flex items-center gap-5">
+            <div className="p-4 bg-blue-50 rounded-2xl text-blue-600 border border-blue-100 shadow-sm">
+              <FaSearchDollar size={24} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 tracking-tight leading-none mb-1">
+                Análisis Financiero de Producto
+              </h2>
+              <p className="text-sm text-slate-500 font-medium">
+                Desglose de rentabilidad y facturación filtrado por producto y
+                fecha.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-rose-500 transition-colors p-3 rounded-full hover:bg-slate-50"
+          >
+            <FaTimes size={18} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto custom-scrollbar p-8 bg-[#f8fafc] flex flex-col gap-8">
+          {/* BARRA DE FILTROS REESTRUCTURADA */}
+          <div className="flex flex-col lg:flex-row gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm items-end">
+            <div className="flex-1 w-full lg:w-auto">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">
+                Seleccionar Producto
+              </label>
+              <div className="relative">
+                <FaBoxOpen className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  list="productos-lista"
+                  value={selectedProduct}
+                  onChange={(e) => setSelectedProduct(e.target.value)}
+                  placeholder="Escribí para buscar un producto..."
+                  className="w-full text-sm font-bold border border-slate-200 rounded-xl py-2 pl-10 pr-4 text-slate-700 outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50 transition-all shadow-sm"
+                />
+                <datalist id="productos-lista">
+                  {productos.map((p) => (
+                    <option key={p} value={p} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+
+            {/* 👇 NUEVO SELECTOR DE CANAL (MERCADOLIBRE) 👇 */}
+            <div className="flex flex-col w-full lg:w-auto">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">
+                Canal de Venta
+              </label>
+              <div className="flex bg-slate-50 p-1 rounded-xl w-fit border border-slate-100 shadow-inner">
+                <button
+                  onClick={() => setFiltroCanal("TODOS")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${filtroCanal === "TODOS" ? "bg-white text-blue-600 shadow-sm border border-slate-200" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Todos
+                </button>
+                <button
+                  onClick={() => setFiltroCanal("SIN_ML")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${filtroCanal === "SIN_ML" ? "bg-white text-blue-600 shadow-sm border border-slate-200" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  Directo
+                </button>
+                <button
+                  onClick={() => setFiltroCanal("SOLO_ML")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${filtroCanal === "SOLO_ML" ? "bg-white text-blue-600 shadow-sm border border-slate-200" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                  MercadoLibre
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-end gap-2 w-full lg:w-auto">
+              <div className="flex-1 lg:flex-none">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">
+                  Desde
+                </label>
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={(e) => setFechaDesde(e.target.value)}
+                  className="w-full lg:w-36 text-xs font-bold border border-slate-200 rounded-xl p-2 text-slate-700 outline-none focus:border-blue-400 bg-slate-50 shadow-sm"
+                />
+              </div>
+              <span className="text-slate-300 font-bold mb-2">-</span>
+              <div className="flex-1 lg:flex-none">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 block">
+                  Hasta
+                </label>
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                  className="w-full lg:w-36 text-xs font-bold border border-slate-200 rounded-xl p-2 text-slate-700 outline-none focus:border-blue-400 bg-slate-50 shadow-sm"
+                />
+              </div>
+              {(fechaDesde || fechaHasta) && (
+                <button
+                  onClick={() => {
+                    setFechaDesde("");
+                    setFechaHasta("");
+                  }}
+                  className="h-[38px] px-3 bg-red-50 text-red-500 rounded-xl border border-red-100 hover:bg-red-100 transition-colors shadow-sm shrink-0"
+                  title="Limpiar Fechas"
+                >
+                  <FaEraser />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* RESULTADOS */}
+          {metrics ? (
+            <div className="flex flex-col gap-6 animate-in fade-in zoom-in-95">
+              {/* KPIS */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <FaCubes className="text-blue-500" /> Unidades Vendidas
+                  </div>
+                  <div className="text-3xl font-black text-slate-800">
+                    {metrics.unidades.toLocaleString()}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 mt-2 bg-slate-50 px-2 py-1 rounded w-fit border border-slate-100">
+                    En el período seleccionado
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <FaMoneyBillWave className="text-emerald-500" /> Facturación
+                    Bruta
+                  </div>
+                  <div
+                    className="text-2xl font-black text-emerald-600 truncate"
+                    title={formatCurrency(metrics.facturacion)}
+                  >
+                    {formatCurrency(metrics.facturacion)}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 mt-2 bg-slate-50 px-2 py-1 rounded w-fit border border-slate-100">
+                    Ingresos Totales (ARS)
+                  </div>
+                </div>
+
+                {/* TARJETA DE COSTO INTERACTIVA */}
+                <div
+                  onClick={() => {
+                    const paramProd = encodeURIComponent(selectedProduct);
+                    window.open(`/ingenieria?producto=${paramProd}`, "_blank");
+                  }}
+                  className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm cursor-pointer hover:border-rose-400 hover:shadow-md hover:ring-4 hover:ring-rose-50 transition-all group relative"
+                  title="Hacer clic para revisar y modificar la receta en Ingeniería"
+                >
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <FaMinus className="text-rose-500" /> Costo Fabricación
+                    </span>
+                    <FaExternalLinkAlt className="text-slate-300 group-hover:text-rose-400 transition-colors" />
+                  </div>
+                  <div
+                    className="text-2xl font-black text-rose-600 truncate"
+                    title={formatCurrency(metrics.costo)}
+                  >
+                    {formatCurrency(metrics.costo)}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 mt-2 bg-slate-50 px-2 py-1 rounded w-fit border border-slate-100 group-hover:bg-rose-50 group-hover:text-rose-600 group-hover:border-rose-200 transition-colors">
+                    U$D {metrics.costoUnitarioUSD.toFixed(2)} c/u aprox
+                  </div>
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2 relative z-10">
+                    <FaChartPie className="text-indigo-500" /> Rentabilidad Neta
+                  </div>
+                  <div
+                    className={`text-2xl font-black truncate relative z-10 ${metrics.rentabilidad >= 0 ? "text-indigo-600" : "text-red-600"}`}
+                    title={formatCurrency(metrics.rentabilidad)}
+                  >
+                    {formatCurrency(metrics.rentabilidad)}
+                  </div>
+                  <div
+                    className={`text-[11px] font-black mt-2 px-2 py-1 rounded w-fit border relative z-10 ${metrics.margen >= 0 ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-red-50 text-red-700 border-red-200"}`}
+                  >
+                    Margen: {metrics.margen.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+
+              {/* TABLA CLIENTES */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                  <FaUserTie className="text-blue-600" />
+                  <h3 className="font-bold text-slate-700 text-sm">
+                    Top 10 Compradores en este Período
+                  </h3>
+                </div>
+                {metrics.topClientes.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-600">
+                      <thead className="bg-white border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400 tracking-widest">
+                        <tr>
+                          <th className="px-6 py-3 w-16 text-center">Rnk</th>
+                          <th className="px-6 py-3">Cliente</th>
+                          <th className="px-6 py-3 text-right">
+                            Facturación ($)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {metrics.topClientes.map((cli, idx) => (
+                          <tr
+                            key={idx}
+                            className="hover:bg-slate-50 transition-colors"
+                          >
+                            <td className="px-6 py-2.5 text-center">
+                              <RankIcon index={idx} />
+                            </td>
+                            <td className="px-6 py-2.5 font-bold text-slate-700 uppercase text-xs">
+                              {cli.name}
+                            </td>
+                            <td className="px-6 py-2.5 text-right font-mono font-bold text-emerald-600">
+                              {formatCurrency(cli.val)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-slate-400 font-medium text-sm">
+                    No se registraron ventas con estos filtros en las fechas
+                    seleccionadas.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-center bg-white rounded-2xl border border-slate-200 shadow-sm border-dashed">
+              <FaBoxOpen className="text-5xl text-slate-200 mb-3" />
+              <p className="text-slate-500 font-medium">
+                Buscá y seleccioná un producto de la lista para ver su análisis
+                financiero detallado.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// VISTA: FINANCIERO (Dashboard Dinámico)
 // ==========================================
 const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
   const hoy = new Date();
@@ -492,8 +882,8 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
   );
   const [fechaHasta, setFechaHasta] = useState(formatDateForInput(hoy));
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
 
-  // NUEVO: Estado del Dólar persistente en el navegador
   const [valorDolar, setValorDolar] = useState(
     () => Number(localStorage.getItem("mrp_valor_dolar")) || 1050,
   );
@@ -513,9 +903,9 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
     tops,
   } = useMemo(() => {
     let fRango = 0;
-    let cRango = 0; // Costo total del rango en ARS
+    let cRango = 0;
 
-    const dCotizacion = Number(valorDolar) || 1; // Previene divisiones por cero o errores
+    const dCotizacion = Number(valorDolar) || 1;
 
     const weeklyCliMap = {};
     const weeklyProdMap = {};
@@ -527,7 +917,6 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
     const mapCostosSemis = {};
     if (datosStock) {
       datosStock.forEach((s) => {
-        // La Base de Datos ya hizo el trabajo: si tiene receta usa la suma, si no usa costo_usd
         mapCostosSemis[s.id] = Number(s.costo || s.costo_usd || 0);
       });
     }
@@ -601,7 +990,6 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
       const cli = (r.cliente || r.CLIENTE || "Desconocido").trim();
       const prod = (r.modelo || r.MODELO || "Desconocido").trim();
 
-      // CÁLCULO CRÍTICO: Costo (USD) * Cotización * Cantidad Vendida = Costo Final en Pesos
       const costoUnitarioUSD = mapCostoProducto[normalizeKey(prod)] || 0;
       const costoLineaARS = costoUnitarioUSD * dCotizacion * cantidad;
 
@@ -609,7 +997,6 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
         globalCliMap[cli] = (globalCliMap[cli] || 0) + punisiva;
 
         if (d) {
-          // Rango de Calendario (Facturación y Costo)
           if ((!dDesde || d >= dDesde) && (!dHasta || d <= dHasta)) {
             fRango += punisiva;
             cRango += costoLineaARS;
@@ -666,6 +1053,16 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
 
   return (
     <div className="flex flex-col gap-6 h-full animate-in fade-in max-w-[1600px] w-full mx-auto min-h-0">
+      {/* MODAL NUEVO */}
+      <ProductFinancialModal
+        isOpen={showProductModal}
+        onClose={() => setShowProductModal(false)}
+        datosPedidos={datosPedidos}
+        datosRecetas={datosRecetas}
+        datosStock={datosStock}
+        valorDolar={valorDolar}
+      />
+
       {/* HEADER DE ALERTAS Y WIDGET DE COTIZACIÓN */}
       <div className="flex justify-between items-center shrink-0 mb-[-12px]">
         <div className="flex-1">
@@ -677,24 +1074,35 @@ const FinancieroView = ({ datosPedidos, datosRecetas, datosStock }) => {
           )}
         </div>
 
-        {/* WIDGET DÓLAR (SaaS Premium) */}
-        <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl border border-slate-200 shadow-sm transition-all hover:border-emerald-300">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-[9px]">
-              U$S
-            </span>
-            Cotización Dólar
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs">
-              $
-            </span>
-            <input
-              type="number"
-              value={valorDolar}
-              onChange={handleDolarChange}
-              className="w-24 pl-7 pr-2 py-1.5 bg-slate-50 border border-transparent rounded-xl text-sm font-bold text-emerald-700 outline-none focus:bg-white focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 transition-all shadow-inner"
-            />
+        <div className="flex items-center gap-3">
+          {/* BOTON ANALISIS INDIVIDUAL */}
+          <button
+            onClick={() => setShowProductModal(true)}
+            className="bg-slate-800 hover:bg-slate-700 text-white px-5 py-2.5 rounded-2xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-md transition-all active:scale-95"
+          >
+            <FaSearchDollar size={14} className="text-blue-400" /> Análisis de
+            Producto
+          </button>
+
+          {/* WIDGET DÓLAR */}
+          <div className="flex items-center gap-3 bg-white px-4 py-2.5 rounded-2xl border border-slate-200 shadow-sm transition-all hover:border-emerald-300">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-[9px]">
+                U$S
+              </span>
+              Dólar
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-bold text-xs">
+                $
+              </span>
+              <input
+                type="number"
+                value={valorDolar}
+                onChange={handleDolarChange}
+                className="w-24 pl-7 pr-2 py-1.5 bg-slate-50 border border-transparent rounded-xl text-sm font-bold text-emerald-700 outline-none focus:bg-white focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 transition-all shadow-inner"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1794,7 +2202,6 @@ export default function AnalisisPedidos() {
             datosPedidos={datosPedidos}
             datosRecetas={datosRecetas}
             datosStock={datosStock}
-            datosProductos={datosProductos}
           />
         )}
 
