@@ -48,6 +48,7 @@ const rrhhRoutes = require("./routes/rrhh");
 const changelogRoutes = require("./routes/changelog");
 const sugerenciasRoutes = require("./routes/sugerencias");
 const depositoRoutes = require("./routes/deposito");
+const tableroRouter = require("./routes/tablero");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -107,6 +108,7 @@ app.use("/api/rrhh", protect, rrhhRoutes);
 app.use("/api/changelog", protect, changelogRoutes);
 app.use("/api/sugerencias", protect, sugerenciasRoutes);
 app.use("/api/deposito", protect, depositoRoutes);
+app.use("/api/tablero", protect,tableroRouter);
 
 // ==========================================
 // INICIO DE SERVICIOS

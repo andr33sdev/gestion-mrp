@@ -18,6 +18,7 @@ import {
   FaChevronRight,
   FaSearch,
   FaEllipsisV,
+  FaEdit,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -52,9 +53,11 @@ const formatearFechaHora = (fechaIso) => {
 const LogisticaRow = ({
   req,
   canDelete,
+  currentUser,
   onOpenDetail,
   onStatusChange,
   onDelete,
+  onEdit,
   openMenuId,
   setOpenMenuId,
 }) => {
@@ -202,31 +205,51 @@ const LogisticaRow = ({
                   </span>
                 </div>
 
+                {/* BOTÓN EDITAR SOLICITUD (Controlado por Creador Original) */}
+                {(() => {
+                  const isCreator = req.solicitante === currentUser;
+                  return (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isCreator) {
+                          onEdit(req);
+                          setOpenMenuId(null);
+                        }
+                      }}
+                      title={
+                        !isCreator
+                          ? `El creador (${req.solicitante}) es quien puede editar`
+                          : "Editar artículo o cantidad"
+                      }
+                      className={`w-full text-left px-4 py-3 text-xs font-bold flex items-center gap-3 transition-colors ${
+                        isCreator
+                          ? "text-amber-600 hover:bg-amber-50 cursor-pointer"
+                          : "text-stone-300 bg-stone-50/60 cursor-not-allowed opacity-50"
+                      }`}
+                    >
+                      <FaEdit size={14} /> Editar Solicitud
+                    </button>
+                  );
+                })()}
+
+                <div className="h-px bg-stone-100 my-1 mx-2" />
+
                 {/* TODOS PUEDEN VER Y USAR ESTOS BOTONES */}
                 {req.estado === "PENDIENTE" && (
-                  <>
-                    <button
-                      onClick={(e) => {
-                        onStatusChange(e, req.id, "APROBADO");
-                        setOpenMenuId(null);
-                      }}
-                      className="w-full text-left px-4 py-3 text-xs font-bold text-[#2196f3] hover:bg-[#e3f2fd] flex items-center gap-3 transition-colors"
-                    >
-                      <FaCheckCircle size={14} /> Aprobar Solicitud
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        onStatusChange(e, req.id, "RECHAZADO");
-                        setOpenMenuId(null);
-                      }}
-                      className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
-                    >
-                      <FaTimes size={14} /> Rechazar Solicitud
-                    </button>
-                  </>
+                  <button
+                    onClick={(e) => {
+                      onStatusChange(e, req.id, "APROBADO");
+                      setOpenMenuId(null);
+                    }}
+                    className="w-full text-left px-4 py-3 text-xs font-bold text-[#2196f3] hover:bg-[#e3f2fd] flex items-center gap-3 transition-colors"
+                  >
+                    <FaCheckCircle size={14} /> Aprobar Solicitud
+                  </button>
                 )}
 
-                {req.estado === "APROBADO" && (
+                {/* Aparece en PENDIENTE y APROBADO */}
+                {(req.estado === "PENDIENTE" || req.estado === "APROBADO") && (
                   <button
                     onClick={(e) => {
                       onStatusChange(e, req.id, "PREPARADO");
@@ -238,7 +261,10 @@ const LogisticaRow = ({
                   </button>
                 )}
 
-                {req.estado === "PREPARADO" && (
+                {/* Aparece en PENDIENTE, APROBADO y PREPARADO. Permite saltar directo a ENTREGADO */}
+                {(req.estado === "PENDIENTE" ||
+                  req.estado === "APROBADO" ||
+                  req.estado === "PREPARADO") && (
                   <button
                     onClick={(e) => {
                       onStatusChange(e, req.id, "ENTREGADO");
@@ -247,6 +273,18 @@ const LogisticaRow = ({
                     className="w-full text-left px-4 py-3 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
                   >
                     <FaCheckDouble size={14} /> Marcar como Entregado
+                  </button>
+                )}
+
+                {req.estado === "PENDIENTE" && (
+                  <button
+                    onClick={(e) => {
+                      onStatusChange(e, req.id, "RECHAZADO");
+                      setOpenMenuId(null);
+                    }}
+                    className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-3 transition-colors"
+                  >
+                    <FaTimes size={14} /> Rechazar Solicitud
                   </button>
                 )}
 
@@ -293,6 +331,9 @@ export default function LogisticaPage() {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
+  // NUEVO: Estado para rastrear si se está editando un registro específico
+  const [editingRequest, setEditingRequest] = useState(null);
+
   // Datos Detalle
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [historyTimeline, setHistoryTimeline] = useState([]);
@@ -316,7 +357,7 @@ export default function LogisticaPage() {
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
 
-  // Opcional: Alias visuales hardcodeados
+  // Alias visuales hardcodeados
   if (rolNormalizado === "GERENCIA") {
     currentUser = "Andrés";
   } else if (rolNormalizado === "OPERARIO" || rolNormalizado === "PANEL") {
@@ -412,27 +453,62 @@ export default function LogisticaPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [comments, activeTab]);
 
+  // NUEVO: Manejador para abrir el modal rellenando los datos actuales
+  const handleOpenEditModal = (req) => {
+    setEditingRequest(req);
+    setForm({
+      producto: req.producto,
+      cantidad: req.cantidad,
+      prioridad: req.prioridad,
+      notas: req.notas || "",
+    });
+    setIsNewModalOpen(true);
+  };
+
+  // ACTUALIZADO: Envía POST para crear o PUT para editar según corresponda
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.producto || !form.cantidad)
       return toast.error("Completa el producto y la cantidad.");
 
-    const toastId = toast.loading("Enviando solicitud...");
+    const toastId = toast.loading(
+      editingRequest ? "Guardando cambios..." : "Enviando solicitud...",
+    );
     try {
-      await authFetch(`${API_BASE_URL}/logistica`, {
-        method: "POST",
+      const url = editingRequest
+        ? `${API_BASE_URL}/logistica/${editingRequest.id}`
+        : `${API_BASE_URL}/logistica`;
+
+      const method = editingRequest ? "PUT" : "POST";
+
+      await authFetch(url, {
+        method: method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, solicitante: currentUser }),
+        body: JSON.stringify({
+          ...form,
+          usuario: currentUser,
+          // Conservamos el creador original si estamos editando
+          solicitante: editingRequest
+            ? editingRequest.solicitante
+            : currentUser,
+        }),
       });
 
       setForm({ producto: "", cantidad: "", prioridad: "MEDIA", notas: "" });
+      setEditingRequest(null);
       setResetKey((prev) => prev + 1);
       setIsNewModalOpen(false);
       loadRequests();
       setCurrentPage(1);
-      toast.success("Solicitud creada", { id: toastId });
+      toast.success(
+        editingRequest ? "Solicitud modificada" : "Solicitud creada",
+        { id: toastId },
+      );
     } catch (e) {
-      toast.error("Error al crear solicitud", { id: toastId });
+      toast.error(
+        editingRequest ? "Error al editar" : "Error al crear solicitud",
+        { id: toastId },
+      );
     }
   };
 
@@ -536,7 +612,6 @@ export default function LogisticaPage() {
   if (loading && requests.length === 0) {
     return (
       <div className="min-h-full bg-[#fcfbf9] flex flex-col font-sans animate-in fade-in">
-        {/* Simulación del Header para que la pantalla no salte */}
         <header className="bg-white border-b border-stone-100 px-6 py-5 md:px-10 md:py-6 shrink-0 z-20">
           <div className="max-w-[1200px] mx-auto flex justify-between items-center">
             <div className="flex items-center gap-4">
@@ -550,15 +625,12 @@ export default function LogisticaPage() {
         </header>
 
         <main className="flex-1 w-full max-w-[1200px] mx-auto p-4 md:p-8 mt-2 space-y-4">
-          {/* Generamos 5 filas de "fantasma" (Skeletons) */}
           {[...Array(5)].map((_, i) => (
             <div
               key={i}
               className="w-full h-20 bg-white rounded-2xl border border-stone-100 flex items-center px-6 gap-6 overflow-hidden relative"
             >
-              {/* Efecto de brillo barriendo la tarjeta */}
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/60 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" />
-
               <div className="w-24 h-4 bg-stone-100 rounded animate-pulse" />
               <div className="flex-1 h-4 bg-stone-100 rounded animate-pulse" />
               <div className="w-16 h-8 bg-stone-50 rounded-xl animate-pulse" />
@@ -629,14 +701,13 @@ export default function LogisticaPage() {
           </div>
         ) : (
           <div className="flex flex-col">
-            {/* Encabezado de Tabla (Solo Desktop) - Alineado a los anchos del LogisticaRow */}
+            {/* Encabezado de Tabla (Solo Desktop) */}
             <div className="hidden md:flex items-center gap-4 px-6 py-3 text-[9px] font-bold uppercase tracking-widest text-stone-400 mb-2">
               <div className="w-36 pl-1">Prioridad / Fecha</div>
               <div className="flex-1">Producto y Solicitante</div>
               <div className="w-28 text-right pr-6">Cantidad</div>
               <div className="w-36 pl-4">Estado</div>
-              <div className="w-16 text-center"></div>{" "}
-              {/* Espacio para los 3 puntos */}
+              <div className="w-16 text-center"></div>
             </div>
 
             {/* Listado de Filas (Row Cards) */}
@@ -646,10 +717,12 @@ export default function LogisticaPage() {
                   <LogisticaRow
                     key={req.id}
                     req={req}
-                    canDelete={canDelete} // <-- ACÁ ESTÁ EL CAMBIO
+                    canDelete={canDelete}
+                    currentUser={currentUser}
                     onOpenDetail={openDetailModal}
                     onDelete={handleDelete}
                     onStatusChange={handleStatusChange}
+                    onEdit={handleOpenEditModal}
                     openMenuId={openMenuId}
                     setOpenMenuId={setOpenMenuId}
                   />
@@ -699,7 +772,7 @@ export default function LogisticaPage() {
         )}
       </main>
 
-      {/* --- MODAL CREAR SOLICITUD (Diseño Limpio y Predictivo) --- */}
+      {/* --- MODAL CREAR O EDITAR SOLICITUD --- */}
       <AnimatePresence>
         {isNewModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 backdrop-blur-sm p-4">
@@ -712,13 +785,18 @@ export default function LogisticaPage() {
               <div className="p-6 md:p-8 border-b border-stone-100 flex justify-between items-center bg-[#fcfbf9] rounded-t-[2rem]">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
                   <div className="p-2.5 bg-[#e3f2fd] text-[#2196f3] rounded-xl">
-                    <FaPlus size={14} />
+                    {editingRequest ? (
+                      <FaEdit size={14} />
+                    ) : (
+                      <FaPlus size={14} />
+                    )}
                   </div>
-                  Crear Solicitud
+                  {editingRequest ? "Editar Solicitud" : "Crear Solicitud"}
                 </h3>
                 <button
                   onClick={() => {
                     setIsNewModalOpen(false);
+                    setEditingRequest(null);
                     setForm({
                       producto: "",
                       cantidad: "",
@@ -743,13 +821,12 @@ export default function LogisticaPage() {
                     <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-stone-300 group-focus-within:text-[#2196f3] transition-colors z-10">
                       <FaSearch size={12} />
                     </div>
-                    {/* Anulamos el estilo nativo del AutoComplete y le inyectamos el nuestro */}
                     <div className="[&_input]:w-full [&_input]:bg-stone-50 hover:[&_input]:bg-stone-100 [&_input]:border [&_input]:border-transparent [&_input]:rounded-xl [&_input]:py-3.5 [&_input]:pl-11 [&_input]:pr-4 [&_input]:text-sm [&_input]:font-bold [&_input]:text-slate-700 focus-within:[&_input]:border-[#bbdefb] focus-within:[&_input]:bg-white focus-within:[&_input]:ring-4 focus-within:[&_input]:ring-[#e3f2fd] [&_input]:transition-all [&_input]:outline-none">
                       <AutoCompleteInput
                         key={resetKey}
                         items={allSemis}
-                        value={form.producto} // <-- ESTO CONECTA EL TEXTO VISUAL AL ESTADO
-                        onChange={(val) => setForm({ ...form, producto: val })} // <-- ESTO ACTUALIZA MIENTRAS ESCRIBÍS
+                        value={form.producto}
+                        onChange={(val) => setForm({ ...form, producto: val })}
                         onSelect={(item) =>
                           setForm({ ...form, producto: item.nombre })
                         }
@@ -797,7 +874,10 @@ export default function LogisticaPage() {
                     type="submit"
                     className="w-full flex items-center justify-center gap-2 bg-[#2196f3] hover:bg-blue-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-600/20 transition-all active:scale-[0.98] text-sm"
                   >
-                    <FaPaperPlane size={12} /> Solicitar Movimiento
+                    <FaPaperPlane size={12} />
+                    {editingRequest
+                      ? "Guardar Cambios"
+                      : "Solicitar Movimiento"}
                   </button>
                 </div>
               </form>

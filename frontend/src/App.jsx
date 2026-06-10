@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react"; // <- Implementamos lazy y Suspense para optimizar rendimiento
 import {
   BrowserRouter,
   Routes,
@@ -12,7 +12,6 @@ import {
   FaChartPie,
   FaSignOutAlt,
   FaClipboardList,
-  FaCube,
   FaPlus,
   FaUsers,
   FaTruck,
@@ -25,58 +24,66 @@ import {
   FaTools,
   FaChevronRight,
   FaChevronLeft,
-  FaBoxOpen,
   FaClipboardCheck,
   FaChartBar,
   FaUserShield,
   FaUserLock,
-  FaMapMarkedAlt,
-  FaLocationArrow,
   FaShoppingCart,
   FaFire,
   FaHistory,
-  FaIndustry, // <- Ícono importado para Torre de Control
+  FaIndustry,
+  FaBell,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { Toaster } from "react-hot-toast";
 
 // --- IMPORTACIÓN DE PLUGINS NATIVOS Y UTILS ---
 import { PushNotifications } from "@capacitor/push-notifications";
-import { Capacitor } from "@capacitor/core";
 
-// Importación de Páginas
-import Dashboard from "./pages/Dashboard.jsx";
-import PanelControl from "./pages/PanelControl.jsx";
-import IngenieriaProductos from "./pages/IngenieriaProductos.jsx";
-import AnalisisPedidos from "./pages/AnalisisPedidos.jsx";
+// Importación estática inmediata solo para páginas críticas (Login y Loader)
+import Loader from "./components/Loader.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
-import PlanificacionPage from "./pages/PlanificacionPage.jsx";
-import RegistrarProduccionPage from "./pages/RegistrarProduccionPage.jsx";
-import OperariosPage from "./pages/OperariosPage.jsx";
-import LogisticaPage from "./pages/LogisticaPage.jsx";
-import SolicitudesPage from "./pages/SolicitudesPage";
-import HojaDeRutaPage from "./pages/HojaDeRutaPage.jsx";
-import CentroComando from "./pages/CentroComando";
-import MantenimientoPage from "./pages/MantenimientoPage";
-import RRHHPage from "./pages/RRHHPage";
-import ChangelogPage from "./pages/ChangelogPage";
-import DetalleProducto from "./pages/DetalleProducto";
-import DepositoPage from "./pages/DepositoPage.jsx";
-import SugerenciasPage from "./pages/SugerenciasPage.jsx";
-import GestorUsuarios from "./pages/GestorUsuarios.jsx";
-import SimuladorCarga3D from "./pages/SimuladorCarga3D.jsx";
-import Home from "./pages/Home.jsx";
-
 import { getAuthData, logout } from "./auth/authHelper";
+import { API_BASE_URL, authFetch } from "./utils";
 
-// --- CONFIGURACIÓN DEL MENÚ BASADO EN MÓDULOS ---
+// 🔥 DIVISION DE CÓDIGO INTELIGENTE: Las páginas pesadas se cargarán bajo demanda de forma asíncrona
+const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
+const PanelControl = lazy(() => import("./pages/PanelControl.jsx"));
+const IngenieriaProductos = lazy(
+  () => import("./pages/IngenieriaProductos.jsx"),
+);
+const AnalisisPedidos = lazy(() => import("./pages/AnalisisPedidos.jsx"));
+const PlanificacionPage = lazy(() => import("./pages/PlanificacionPage.jsx"));
+const RegistrarProduccionPage = lazy(
+  () => import("./pages/RegistrarProduccionPage.jsx"),
+);
+const OperariosPage = lazy(() => import("./pages/OperariosPage.jsx"));
+const LogisticaPage = lazy(() => import("./pages/LogisticaPage.jsx"));
+const SolicitudesPage = lazy(() => import("./pages/SolicitudesPage"));
+const HojaDeRutaPage = lazy(() => import("./pages/HojaDeRutaPage.jsx"));
+const CentroComando = lazy(() => import("./pages/CentroComando"));
+const MantenimientoPage = lazy(() => import("./pages/MantenimientoPage"));
+const RRHHPage = lazy(() => import("./pages/RRHHPage"));
+const ChangelogPage = lazy(() => import("./pages/ChangelogPage"));
+const DetalleProducto = lazy(() => import("./pages/DetalleProducto"));
+const SugerenciasPage = lazy(() => import("./pages/SugerenciasPage.jsx"));
+const GestorUsuarios = lazy(() => import("./pages/GestorUsuarios.jsx"));
+const Home = lazy(() => import("./pages/Home.jsx"));
+const TableroPage = lazy(() => import("./pages/TableroPage.jsx"));
+
 const NAV_LINKS = [
   { path: "/", label: "Inicio", icon: <FaChartPie />, moduloReq: "INICIO" },
   {
-    path: "/calendario", // Ruta del Centro Comando (Torre de Control)
+    path: "/tablero",
+    label: "Proyectos y Tareas",
+    icon: <FaClipboardList />,
+    moduloReq: "INICIO",
+  },
+  {
+    path: "/calendario",
     label: "Centro de Datos",
     icon: <FaIndustry />,
-    moduloReq: "PLANIFICACION", // MISMO MÓDULO QUE PLANIFICACIÓN
+    moduloReq: "PLANIFICACION",
   },
   {
     path: "/planificacion",
@@ -107,18 +114,6 @@ const NAV_LINKS = [
     label: "Logística",
     icon: <FaTruck />,
     moduloReq: "LOGISTICA",
-  },
-  {
-    path: "/deposito-3d",
-    label: "Stock Iglú",
-    icon: <FaWarehouse />,
-    moduloReq: "STOCK",
-  },
-  {
-    path: "/simulador-3d",
-    label: "Cubicaje 3D",
-    icon: <FaCube />,
-    moduloReq: "LOGISTICA", // Le damos el mismo permiso que a logística
   },
   {
     path: "/sugerencias",
@@ -220,6 +215,113 @@ const ProtectedRoute = ({ children, requiredModule }) => {
   return children;
 };
 
+// --- COMPONENTE: CAMPANITA PREMIUM AUTO-AJUSTABLE ---
+const CampanitaNotificaciones = ({ currentUser }) => {
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const fetchNotificaciones = async () => {
+    if (!currentUser) return;
+    try {
+      const resCount = await authFetch(
+        `${API_BASE_URL}/tablero/notificaciones/unread/count?usuario=${currentUser}`,
+      );
+      if (resCount.ok) {
+        const data = await resCount.json();
+        setUnreadCount(data.count);
+      }
+      if (isOpen) {
+        const resList = await authFetch(
+          `${API_BASE_URL}/tablero/notificaciones?usuario=${currentUser}`,
+        );
+        if (resList.ok) setNotifications(await resList.json());
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotificaciones();
+    const interval = setInterval(fetchNotificaciones, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser, isOpen]);
+
+  const handleOpenDropdown = async () => {
+    setIsOpen(!isOpen);
+    if (!isOpen && currentUser) {
+      const resList = await authFetch(
+        `${API_BASE_URL}/tablero/notificaciones?usuario=${currentUser}`,
+      );
+      if (resList.ok) setNotifications(await resList.json());
+
+      await authFetch(`${API_BASE_URL}/tablero/notificaciones/read-all`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario: currentUser }),
+      });
+      setUnreadCount(0);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={handleOpenDropdown}
+        className="relative w-11 h-11 bg-white hover:bg-stone-50 text-slate-700 rounded-xl transition-all active:scale-95 shadow-sm border border-stone-200/80 flex items-center justify-center cursor-pointer group"
+      >
+        <FaBell
+          size={16}
+          className={`transition-transform group-hover:rotate-12 ${unreadCount > 0 ? "text-amber-500 animate-pulse" : "text-slate-500"}`}
+        />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-rose-500 text-white rounded-lg text-[10px] font-black flex items-center justify-center shadow-[0_4px_12px_rgba(244,63,94,0.4)] border-2 border-white animate-bounce">
+            {unreadCount}
+          </span>
+        )}
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setIsOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.95 }}
+              className="absolute right-0 mt-3 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)] border border-stone-200/60 p-4 z-50 max-h-[400px] overflow-y-auto custom-scrollbar origin-top-right"
+            >
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3 border-b border-stone-100 pb-2">
+                Buzón de Notificaciones
+              </h4>
+              {notifications.length === 0 ? (
+                <p className="text-xs font-semibold text-stone-400 text-center py-8">
+                  No hay novedades por aquí.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-3.5 rounded-xl border text-[11px] font-semibold leading-relaxed transition-all ${n.leido ? "bg-stone-50/40 border-stone-100 text-slate-400" : "bg-blue-50/50 border-blue-100/70 text-slate-700 shadow-sm"}`}
+                    >
+                      {n.mensaje}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const Sidebar = ({
   links,
   isCollapsed,
@@ -319,6 +421,17 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
+  let currentUser = nombreUsuario;
+  const rolNormalizado = (role || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+  if (rolNormalizado === "GERENCIA") currentUser = "Andrés";
+  else if (rolNormalizado === "OPERARIO" || rolNormalizado === "PANEL")
+    currentUser = "Leonel";
+  else if (rolNormalizado === "DEPOSITO") currentUser = "Mauro";
+
   let userBadge = { icon: <FaHardHat />, text: nombreUsuario };
   if (role === "GERENCIA" || role === "JEFE PRODUCCIÓN")
     userBadge = { icon: <FaUserTie />, text: nombreUsuario };
@@ -334,7 +447,7 @@ const Layout = ({ children }) => {
   });
 
   return (
-    <div className="flex h-screen bg-[#F3F4F6] text-gray-900 font-sans overflow-hidden">
+    <div className="flex h-screen bg-[#fcfbf9] text-gray-900 font-sans overflow-hidden">
       <Sidebar
         links={allowedLinks}
         isCollapsed={isCollapsed}
@@ -343,6 +456,8 @@ const Layout = ({ children }) => {
         userBadge={userBadge}
         role={role}
       />
+
+      {/* HEADER EXCLUSIVO MÓVIL */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-stone-100 flex items-center justify-between px-6 z-[40]">
         <button
           onClick={() => setSidebarOpen(true)}
@@ -355,7 +470,9 @@ const Layout = ({ children }) => {
             Gestion<span className="text-gray-800">MRP</span>
           </span>
         </div>
+        <CampanitaNotificaciones currentUser={currentUser} />
       </div>
+
       <AnimatePresence>
         {sidebarOpen && (
           <>
@@ -438,8 +555,15 @@ const Layout = ({ children }) => {
           </>
         )}
       </AnimatePresence>
+
+      {/* COMPONENTE CONTENEDOR PRINCIPAL */}
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
-        <main className="flex-1 overflow-y-auto scroll-smooth pt-16 lg:pt-0">
+        {/* CAMPANITA EN EL EXTREMO SUPERIOR DERECHO FIJO EN DESKTOP */}
+        <div className="hidden lg:flex absolute top-6 right-8 z-[45]">
+          <CampanitaNotificaciones currentUser={currentUser} />
+        </div>
+
+        <main className="flex-1 overflow-y-auto scroll-smooth pt-20 lg:pt-0">
           <div className="w-full h-full">{children}</div>
         </main>
       </div>
@@ -451,46 +575,34 @@ export default function App() {
   useEffect(() => {
     const inicializarNotificaciones = async () => {
       const { user, token: authToken } = getAuthData();
-
       if (!user || !authToken) return;
 
       const isNative =
         window.Capacitor && window.Capacitor.getPlatform() !== "web";
-
       if (isNative) {
         try {
           await PushNotifications.removeAllListeners();
-
           PushNotifications.addListener("registration", async (token) => {
-            console.log("🚀 TOKEN CAPTURADO SILENCIOSAMENTE");
-
             if (user && user.id) {
               try {
                 await authFetch(UPDATE_FCM_TOKEN_URL, {
                   method: "PUT",
                   body: JSON.stringify({ fcm_token: token.value }),
                 });
-                console.log("✅ Token guardado en la Base de Datos.");
               } catch (e) {
-                console.error("❌ Error de red guardando en DB:", e);
+                console.error(e);
               }
             }
           });
-
-          PushNotifications.addListener("registrationError", (err) => {
-            console.error("❌ Error nativo de Firebase:", err);
-          });
-
           const permisos = await PushNotifications.requestPermissions();
           if (permisos.receive === "granted") {
             await PushNotifications.register();
           }
         } catch (error) {
-          console.error("❌ Error general inicializando Push:", error);
+          console.error(error);
         }
       }
     };
-
     inicializarNotificaciones();
   }, []);
 
@@ -508,211 +620,214 @@ export default function App() {
           success: { iconTheme: { primary: "#10B981", secondary: "#fff" } },
         }}
       />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute requiredModule="INICIO">
-              <Layout>
-                <Home />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/hornos"
-          element={
-            <ProtectedRoute requiredModule="INICIO">
-              <Layout>
-                <Dashboard />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/analisis-pedidos"
-          element={
-            <ProtectedRoute requiredModule="METRICAS">
-              <Layout>
-                <AnalisisPedidos />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/panel-control"
-          element={
-            <ProtectedRoute requiredModule="PLANIFICACION">
-              <Layout>
-                <PanelControl />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/registrar-produccion"
-          element={
-            <ProtectedRoute requiredModule="REGISTRO">
-              <Layout>
-                <RegistrarProduccionPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/mantenimiento"
-          element={
-            <ProtectedRoute requiredModule="MANTENIMIENTO">
-              <Layout>
-                <MantenimientoPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/planificacion"
-          element={
-            <ProtectedRoute requiredModule="PLANIFICACION">
-              <Layout>
-                <PlanificacionPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/operarios"
-          element={
-            <ProtectedRoute requiredModule="EQUIPO">
-              <Layout>
-                <OperariosPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/logistica"
-          element={
-            <ProtectedRoute requiredModule="LOGISTICA">
-              <Layout>
-                <LogisticaPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/simulador-3d"
-          element={
-            <ProtectedRoute requiredModule="LOGISTICA">
-              <Layout>
-                <SimuladorCarga3D />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/hoja-de-ruta"
-          element={
-            <ProtectedRoute requiredModule="HOJA_RUTA">
-              <Layout>
-                <HojaDeRutaPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        {/* RUTA PROTEGIDA DE LA TORRE DE CONTROL - REQUIERE: PLANIFICACION */}
-        <Route
-          path="/calendario"
-          element={
-            <ProtectedRoute requiredModule="PLANIFICACION">
-              <Layout>
-                <CentroComando />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/ingenieria"
-          element={
-            <ProtectedRoute requiredModule="INGENIERIA">
-              <Layout>
-                <IngenieriaProductos />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/changelog/:slug?"
-          element={
-            <ProtectedRoute requiredModule="INGENIERIA">
-              <Layout>
-                <ChangelogPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/producto/:nombre"
-          element={
-            <ProtectedRoute requiredModule="REGISTRO">
-              <Layout>
-                <DetalleProducto />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/compras"
-          element={
-            <ProtectedRoute requiredModule="COMPRAS">
-              <Layout>
-                <SolicitudesPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/rrhh"
-          element={
-            <ProtectedRoute requiredModule="RRHH">
-              <Layout>
-                <RRHHPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/deposito-3d"
-          element={
-            <ProtectedRoute requiredModule="STOCK">
-              <Layout>
-                <DepositoPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/sugerencias"
-          element={
-            <ProtectedRoute requiredModule="COMPRAS">
-              <Layout>
-                <SugerenciasPage />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/usuarios"
-          element={
-            <ProtectedRoute requiredModule="ACCESOS_ADMIN">
-              <Layout>
-                <GestorUsuarios />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+
+      {/* Envolvemos todas las rutas dinámicas en un bloque Suspense global. Mientras se descarga el trozo de archivo (chunk) bajo demanda, se renderizará el loader estético */}
+      <Suspense
+        fallback={
+          <div className="h-screen w-screen flex items-center justify-center bg-[#fcfbf9]">
+            <Loader />
+          </div>
+        }
+      >
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute requiredModule="INICIO">
+                <Layout>
+                  <Home />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/hornos"
+            element={
+              <ProtectedRoute requiredModule="INICIO">
+                <Layout>
+                  <Dashboard />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analisis-pedidos"
+            element={
+              <ProtectedRoute requiredModule="METRICAS">
+                <Layout>
+                  <AnalisisPedidos />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/panel-control"
+            element={
+              <ProtectedRoute requiredModule="PLANIFICACION">
+                <Layout>
+                  <PanelControl />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/registrar-produccion"
+            element={
+              <ProtectedRoute requiredModule="REGISTRO">
+                <Layout>
+                  <RegistrarProduccionPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mantenimiento"
+            element={
+              <ProtectedRoute requiredModule="MANTENIMIENTO">
+                <Layout>
+                  <MantenimientoPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/planificacion"
+            element={
+              <ProtectedRoute requiredModule="PLANIFICACION">
+                <Layout>
+                  <PlanificacionPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/operarios"
+            element={
+              <ProtectedRoute requiredModule="EQUIPO">
+                <Layout>
+                  <OperariosPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/logistica"
+            element={
+              <ProtectedRoute requiredModule="LOGISTICA">
+                <Layout>
+                  <LogisticaPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/tablero"
+            element={
+              <ProtectedRoute requiredModule="INICIO">
+                <Layout>
+                  <TableroPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/modulos-eliminados-3d"
+            element={<Navigate to="/" replace />}
+          />
+          <Route
+            path="/hoja-de-ruta"
+            element={
+              <ProtectedRoute requiredModule="HOJA_RUTA">
+                <Layout>
+                  <HojaDeRutaPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/calendario"
+            element={
+              <ProtectedRoute requiredModule="PLANIFICACION">
+                <Layout>
+                  <CentroComando />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/ingenieria"
+            element={
+              <ProtectedRoute requiredModule="INGENIERIA">
+                <Layout>
+                  <IngenieriaProductos />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/changelog/:slug?"
+            element={
+              <ProtectedRoute requiredModule="INGENIERIA">
+                <Layout>
+                  <ChangelogPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/producto/:nombre"
+            element={
+              <ProtectedRoute requiredModule="REGISTRO">
+                <Layout>
+                  <DetalleProducto />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/compras"
+            element={
+              <ProtectedRoute requiredModule="COMPRAS">
+                <Layout>
+                  <SolicitudesPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/rrhh"
+            element={
+              <ProtectedRoute requiredModule="RRHH">
+                <Layout>
+                  <RRHHPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sugerencias"
+            element={
+              <ProtectedRoute requiredModule="COMPRAS">
+                <Layout>
+                  <SugerenciasPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/usuarios"
+            element={
+              <ProtectedRoute requiredModule="ACCESOS_ADMIN">
+                <Layout>
+                  <GestorUsuarios />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
