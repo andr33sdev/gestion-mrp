@@ -14,6 +14,7 @@ import {
   FaChevronRight,
   FaEllipsisV,
   FaEdit,
+  FaSpinner,
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -21,25 +22,26 @@ import { API_BASE_URL, authFetch } from "../utils";
 import { getAuthData } from "../auth/authHelper";
 import Loader from "../components/Loader";
 
-// --- HELPER DE FECHAS CORREGIDO (24 HS + AJUSTE PERFECTO DE 2 HORAS) ---
+// --- HELPER DE FECHAS SEGURO (CON DESFASE INMUTABLE DE 3 HORAS Y RELOJ DE 24 HS) ---
 const formatearFechaHoraML = (fechaIso) => {
   if (!fechaIso) return "-";
   try {
-    const d = new Date(fechaIso);
-    // Ajustado a 2 horas para que pase de las 10 am a las 11 am exactas de tu planta
-    const corr2Horas = 2 * 60 * 60 * 1000;
-    const fechaCorregida = new Date(d.getTime() - corr2Horas);
+    // Reemplazamos el espacio por la T para estandarizar el parseo nativo en navegadores
+    const normalized = fechaIso.replace(" ", "T");
+    const d = new Date(normalized);
 
-    return (
-      fechaCorregida.toLocaleString("es-AR", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false, // Formato inconfundible de 24 horas
-      }) + " hs"
-    );
+    // Restamos exactamente las 3 horas de diferencia entre el servidor UTC y la hora de Conoflex
+    const corr3Horas = 3 * 60 * 60 * 1000;
+    const fechaCorregida = new Date(d.getTime() - corr3Horas);
+
+    // Extraemos los componentes de forma manual para evitar que el navegador aplique sus propias reglas
+    const dia = String(fechaCorregida.getDate()).padStart(2, "0");
+    const mes = String(fechaCorregida.getMonth() + 1).padStart(2, "0");
+    const anio = String(fechaCorregida.getFullYear()).slice(-2);
+    const hora = String(fechaCorregida.getHours()).padStart(2, "0");
+    const minuto = String(fechaCorregida.getMinutes()).padStart(2, "0");
+
+    return `${dia}/${mes}/${anio} ${hora}:${minuto} hs`;
   } catch (e) {
     return fechaIso;
   }
@@ -49,6 +51,7 @@ export default function SolicitudesMlPage() {
   const [solicitudes, setSolicitudes] = useState([]);
   const [catalogoMl, setCatalogoMl] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false); // Escudo definitivo contra el doble clic
   const [activeTab, setActiveTab] = useState("ACTIVAS"); // "ACTIVAS" o "ARCHIVADAS"
 
   // Buscador de Tabla e Items por página
@@ -146,6 +149,7 @@ export default function SolicitudesMlPage() {
     if (!form.articulo_nombre || !form.cantidad_actual)
       return toast.error("Completa el artículo y stock actual");
 
+    setSubmitting(true);
     try {
       const res = await authFetch(`${API_BASE_URL}/solicitudes-ml`, {
         method: "POST",
@@ -166,6 +170,7 @@ export default function SolicitudesMlPage() {
     } catch (e) {
       toast.error("Error al procesar");
     }
+    setSubmitting(false);
   };
 
   const handleAtenderClick = (sol, estado) => {
@@ -180,6 +185,11 @@ export default function SolicitudesMlPage() {
   };
 
   const ejecutarDictamen = async (id, estado, qty) => {
+    const finalQty = estado === "APROBADA" ? qty : null;
+    if (estado === "APROBADA" && !finalQty)
+      return toast.error("Especifica la cantidad aprobada final");
+
+    setSubmitting(true); // Se congela el botón al instante para evitar el doble registro en la auditoría
     try {
       const res = await authFetch(
         `${API_BASE_URL}/solicitudes-ml/${id}/atender`,
@@ -188,7 +198,7 @@ export default function SolicitudesMlPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             estado,
-            cantidad_aprobada: qty,
+            cantidad_aprobada: finalQty,
             aprobador: currentUser,
           }),
         },
@@ -201,6 +211,7 @@ export default function SolicitudesMlPage() {
     } catch (e) {
       console.error(e);
     }
+    setSubmitting(false);
   };
 
   const handleSaveEditQty = async (id) => {
@@ -284,11 +295,11 @@ export default function SolicitudesMlPage() {
             <FaBox size={18} />
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">
+            <h1 className="text-xl md:text-2xl font-semibold text-slate-800 tracking-tight">
               Abastecimiento MercadoLibre
             </h1>
-            <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">
-              Sincronización y Validation de Stock en Canales Digitales
+            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest">
+              Sincronización y Validación de Stock en Canales Digitales
             </p>
           </div>
         </div>
@@ -300,7 +311,7 @@ export default function SolicitudesMlPage() {
               e.stopPropagation();
               setIsNewModalOpen(true);
             }}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-3.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-3.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
           >
             <FaPlus size={10} /> CREAR SOLICITUD
           </button>
@@ -311,13 +322,13 @@ export default function SolicitudesMlPage() {
       <div className="flex bg-stone-100 p-1 rounded-2xl border border-stone-200 w-fit mb-4 shrink-0">
         <button
           onClick={() => handleTabChange("ACTIVAS")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all ${activeTab === "ACTIVAS" ? "bg-white text-slate-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}
+          className={`px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${activeTab === "ACTIVAS" ? "bg-white text-slate-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}
         >
           Solicitudes Activas
         </button>
         <button
           onClick={() => handleTabChange("ARCHIVADAS")}
-          className={`px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide transition-all ${activeTab === "ARCHIVADAS" ? "bg-white text-slate-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}
+          className={`px-5 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all ${activeTab === "ARCHIVADAS" ? "bg-white text-slate-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}
         >
           Historial Archivado
         </button>
@@ -355,7 +366,7 @@ export default function SolicitudesMlPage() {
           <div className="flex-1 overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-stone-50/70 border-b border-stone-100 text-[10px] font-bold uppercase tracking-widest text-stone-400">
+                <tr className="bg-stone-50/70 border-b border-stone-100 text-[10px] font-semibold uppercase tracking-widest text-stone-400">
                   <th className="p-4 pl-6 w-40">Fecha y Hora</th>
                   <th className="p-4">Artículo</th>
                   <th className="p-4">Stock Actual</th>
@@ -409,7 +420,7 @@ export default function SolicitudesMlPage() {
                         </span>
                       )}
                     </td>
-                    <td className="p-4 font-bold text-blue-600">
+                    <td className="p-4 font-semibold text-blue-600">
                       {s.cantidad_aprobada ? `${s.cantidad_aprobada} u.` : "-"}
                     </td>
                     <td className="p-4 font-bold text-slate-500">
@@ -417,7 +428,7 @@ export default function SolicitudesMlPage() {
                     </td>
                     <td className="p-4">
                       <span
-                        className={`px-2 py-1 rounded-md text-[9px] font-bold tracking-wide border ${s.estado === "APROBADA" ? "bg-emerald-50 border-emerald-100 text-emerald-600" : s.estado === "RECHAZADA" ? "bg-rose-50 border-rose-100 text-rose-500" : "bg-amber-50 border-amber-100 text-amber-600"}`}
+                        className={`px-2 py-1 rounded-md text-[9px] font-semibold tracking-wide border ${s.estado === "APROBADA" ? "bg-emerald-50 border-emerald-100 text-emerald-600" : s.estado === "RECHAZADA" ? "bg-rose-50 border-rose-100 text-rose-500" : "bg-amber-50 border-amber-100 text-amber-600"}`}
                       >
                         {s.estado}
                       </span>
@@ -459,18 +470,20 @@ export default function SolicitudesMlPage() {
                             {isExpedicion && s.estado === "PENDIENTE" && (
                               <>
                                 <button
+                                  disabled={submitting}
                                   onClick={() =>
                                     handleAtenderClick(s, "APROBADA")
                                   }
-                                  className="w-full px-4 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-2"
+                                  className="w-full px-4 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-2 disabled:opacity-40"
                                 >
                                   <FaCheckCircle /> Aprobar Cambio
                                 </button>
                                 <button
+                                  disabled={submitting}
                                   onClick={() =>
                                     handleAtenderClick(s, "RECHAZADA")
                                   }
-                                  className="w-full px-4 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2"
+                                  className="w-full px-4 py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 flex items-center gap-2 disabled:opacity-40"
                                 >
                                   <FaTimesCircle /> Rechazar Cambio
                                 </button>
@@ -560,13 +573,13 @@ export default function SolicitudesMlPage() {
               exit={{ scale: 0.96, opacity: 0 }}
               className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-6 md:p-8 relative overflow-visible"
             >
-              <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <h3 className="text-base font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <FaBox className="text-[#2196f3]" /> Solicitar Incremento de
                 Stock
               </h3>
               <form onSubmit={handleCreate} className="space-y-4">
                 <div className="relative">
-                  <label className="text-[9px] font-bold uppercase text-stone-400 tracking-wider block mb-1">
+                  <label className="text-[9px] font-semibold uppercase text-stone-400 tracking-wider block mb-1">
                     Artículo MercadoLibre
                   </label>
                   <input
@@ -602,7 +615,7 @@ export default function SolicitudesMlPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-stone-400 tracking-wider block mb-1">
+                    <label className="text-[9px] font-semibold uppercase text-stone-400 tracking-wider block mb-1">
                       Stock Actual Canales
                     </label>
                     <input
@@ -616,7 +629,7 @@ export default function SolicitudesMlPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold uppercase text-stone-400 tracking-wider block mb-1">
+                    <label className="text-[9px] font-semibold uppercase text-stone-400 tracking-wider block mb-1">
                       Sugerencia Sube a (Opcional)
                     </label>
                     <input
@@ -634,6 +647,7 @@ export default function SolicitudesMlPage() {
                 <div className="flex gap-2.5 pt-2">
                   <button
                     type="button"
+                    disabled={submitting}
                     onClick={() => {
                       setIsNewModalOpen(false);
                       setSuggestedSearch("");
@@ -644,9 +658,14 @@ export default function SolicitudesMlPage() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-[#2196f3] text-white font-bold text-xs py-3.5 rounded-xl shadow-md"
+                    disabled={submitting}
+                    className="flex-1 bg-blue-600 text-white font-semibold text-xs py-3.5 rounded-xl shadow-md flex items-center justify-center gap-2"
                   >
-                    Enviar Pedido
+                    {submitting ? (
+                      <FaSpinner className="animate-spin" />
+                    ) : (
+                      "Enviar Pedido"
+                    )}
                   </button>
                 </div>
               </form>
@@ -655,7 +674,7 @@ export default function SolicitudesMlPage() {
         )}
       </AnimatePresence>
 
-      {/* --- MODAL 2: CANTIDAD APROBADA --- */}
+      {/* --- MODAL 2: CANTIDAD APROBADA (CON ESCUDO REFORZADO ANTI-DUPLICADOS) --- */}
       <AnimatePresence>
         {isPromptQtyModalOpen && selectedSol && (
           <div className="fixed inset-0 z-[250] flex items-center justify-center bg-slate-900/30 backdrop-blur-sm p-4">
@@ -665,7 +684,7 @@ export default function SolicitudesMlPage() {
               exit={{ scale: 0.96, opacity: 0 }}
               className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 border border-stone-100"
             >
-              <h3 className="text-sm font-bold text-slate-800 mb-2">
+              <h3 className="text-sm font-semibold text-slate-800 mb-2">
                 Confirmación de Stock
               </h3>
               <p className="text-[11px] font-semibold text-stone-400 leading-relaxed mb-4">
@@ -674,7 +693,7 @@ export default function SolicitudesMlPage() {
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="text-[9px] font-bold uppercase text-stone-400 block mb-1">
+                  <label className="text-[9px] font-semibold uppercase text-stone-400 block mb-1">
                     Unidades Autorizadas
                   </label>
                   <input
@@ -688,6 +707,7 @@ export default function SolicitudesMlPage() {
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    disabled={submitting}
                     onClick={() => setIsPromptQtyModalOpen(false)}
                     className="flex-1 bg-stone-100 text-slate-600 font-bold text-xs py-3 rounded-xl"
                   >
@@ -695,6 +715,7 @@ export default function SolicitudesMlPage() {
                   </button>
                   <button
                     type="button"
+                    disabled={submitting}
                     onClick={() =>
                       ejecutarDictamen(
                         selectedSol.id,
@@ -702,9 +723,13 @@ export default function SolicitudesMlPage() {
                         cantidadAprobadaInput,
                       )
                     }
-                    className="flex-1 bg-emerald-500 text-white font-bold text-xs py-3 rounded-xl shadow-md"
+                    className="flex-1 bg-emerald-500 text-white font-semibold text-xs py-3 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    Aprobar Stock
+                    {submitting ? (
+                      <FaSpinner className="animate-spin" />
+                    ) : (
+                      "Aprobar Stock"
+                    )}
                   </button>
                 </div>
               </div>
@@ -724,7 +749,7 @@ export default function SolicitudesMlPage() {
               className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-6 md:p-8 flex flex-col max-h-[80vh]"
             >
               <div className="flex justify-between items-center border-b border-stone-100 pb-3 mb-4">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                   <FaHistory className="text-slate-400" /> Trazabilidad e
                   Historial
                 </h3>
@@ -749,7 +774,7 @@ export default function SolicitudesMlPage() {
                     key={log.id}
                     className="bg-white p-3 rounded-xl border border-stone-100 shadow-sm"
                   >
-                    <div className="flex justify-between text-[9px] text-stone-400 font-bold uppercase mb-1">
+                    <div className="flex justify-between text-[9px] text-stone-400 font-semibold uppercase mb-1">
                       <span className="flex items-center gap-1">
                         <FaUser /> @{log.usuario}
                       </span>

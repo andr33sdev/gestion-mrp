@@ -41,7 +41,7 @@ export default function Loader({
       */}
 
       {text && (
-        <p className="text-gray-400 text-sm font-bold tracking-wider animate-pulse">
+        <p className="text-gray-400 text-sm font-semibold tracking-wider animate-pulse">
           {text}
         </p>
       )}

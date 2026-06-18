@@ -73,18 +73,24 @@ const TableroPage = lazy(() => import("./pages/TableroPage.jsx"));
 const SolicitudesMlPage = lazy(() => import("./pages/SolicitudesMlPage.jsx"));
 
 const NAV_LINKS = [
-  { path: "/", label: "Inicio", icon: <FaChartPie />, moduloReq: "INICIO" },
+  { path: "/", label: "Inicio", icon: <FaChartPie /> }, // 👈 Al no tener moduloReq, se vuelve visible para TODO el personal automáticamente
   {
     path: "/tablero",
     label: "Proyectos y Tareas",
     icon: <FaClipboardList />,
-    moduloReq: "INICIO",
+    moduloReq: "PROYECTOS",
   },
   {
     path: "/solicitudes-ml",
     label: "Stock MercadoLibre",
     icon: <FaShoppingCart />,
-    moduloReq: "INICIO",
+    moduloReq: "STOCK_ML",
+  },
+  {
+    path: "/hornos",
+    label: "Horno N°2",
+    icon: <FaFire />,
+    moduloReq: "HORNOS", // 👈 Separado por completo con su propia llave
   },
   {
     path: "/calendario",
@@ -97,12 +103,6 @@ const NAV_LINKS = [
     label: "Planificación",
     icon: <FaClipboardList />,
     moduloReq: "PLANIFICACION",
-  },
-  {
-    path: "/hornos",
-    label: "Horno N°2",
-    icon: <FaFire />,
-    moduloReq: "INICIO",
   },
   {
     path: "/analisis-pedidos",
@@ -193,8 +193,8 @@ const ProtectedRoute = ({ children, requiredModule }) => {
     requiredModule &&
     (!user.modulos || !user.modulos.includes(requiredModule))
   ) {
-    const primerEnlacePermitido = NAV_LINKS.find((link) =>
-      user.modulos?.includes(link.moduloReq),
+    const primerEnlacePermitido = NAV_LINKS.find(
+      (link) => link.moduloReq && user.modulos?.includes(link.moduloReq),
     );
     if (
       primerEnlacePermitido &&
@@ -209,7 +209,7 @@ const ProtectedRoute = ({ children, requiredModule }) => {
           Acceso Restringido
         </span>
         <span className="text-sm">
-          Tu cuenta no tiene módulos asignados todavía.
+          Tu cuenta no tiene privilegios para este módulo específico.
         </span>
         <button
           onClick={() => {
@@ -290,7 +290,7 @@ const CampanitaNotificaciones = ({ currentUser }) => {
       );
       if (res.ok) {
         toast.success("Buzón de alertas limpiado");
-        setNotifications([]); // Limpieza inmediata en UI local
+        setNotifications([]);
         setUnreadCount(0);
       }
     } catch (e) {
@@ -305,7 +305,6 @@ const CampanitaNotificaciones = ({ currentUser }) => {
     }
   };
 
-  // Verificación ultra-segura para no fallar si n.id es nulo o indefinido
   const tieneAlertasUi =
     Array.isArray(notifications) &&
     notifications.some((n) => n && n.id && !n.id.toString().startsWith("ml-"));
@@ -321,7 +320,7 @@ const CampanitaNotificaciones = ({ currentUser }) => {
           className={`transition-transform group-hover:rotate-12 ${unreadCount > 0 ? "text-amber-500 animate-pulse" : "text-slate-500"}`}
         />
         {unreadCount > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-rose-500 text-white rounded-lg text-[10px] font-black flex items-center justify-center shadow-[0_4px_12px_rgba(244,63,94,0.4)] border-2 border-white animate-bounce">
+          <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 bg-rose-500 text-white rounded-lg text-[10px] font-semibold flex items-center justify-center shadow-[0_4px_12px_rgba(244,63,94,0.4)] border-2 border-white animate-bounce">
             {unreadCount}
           </span>
         )}
@@ -341,13 +340,13 @@ const CampanitaNotificaciones = ({ currentUser }) => {
               className="absolute right-0 mt-3 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)] border border-stone-200/60 p-4 z-50 max-h-[400px] overflow-y-auto custom-scrollbar origin-top-right"
             >
               <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-2">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-stone-400">
+                <h4 className="text-[10px] font-semibold uppercase tracking-widest text-stone-400">
                   Buzón de Notificaciones
                 </h4>
                 {tieneAlertasUi && (
                   <button
                     onClick={handleClearAllNotifs}
-                    className="text-[10px] font-black text-rose-500 hover:text-rose-700 transition-colors uppercase tracking-wider cursor-pointer bg-transparent border-none outline-none"
+                    className="text-[10px] font-semibold text-rose-500 hover:text-rose-700 transition-colors uppercase tracking-wider cursor-pointer bg-transparent border-none outline-none"
                   >
                     Limpiar Todo
                   </button>
@@ -478,14 +477,17 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
-  // 🔥 SOLUCIÓN ABSOLUTA: Búsqueda flexible por aproximación (.includes) para evitar fallas por acentos o caracteres extra
   let currentUser = nombreUsuario;
   const r = (role || "")
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
-  if (r.includes("GERENCIA") || r.includes("JEFE PRODUCCION")) {
+  if (
+    r.includes("GERENCIA") ||
+    r.includes("JEFE PRODUCTION") ||
+    r.includes("JEFE PRODUCCIÓN")
+  ) {
     currentUser = "Andrés";
   } else if (
     r.includes("OPERARIO") ||
@@ -516,7 +518,7 @@ const Layout = ({ children }) => {
       user?.rol === "JEFE PRODUCCION"
     )
       return true;
-    return user?.modulos?.includes(link.moduloReq);
+    return !link.moduloReq || user?.modulos?.includes(link.moduloReq);
   });
 
   return (
@@ -703,26 +705,30 @@ export default function App() {
       >
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* 👇 Removido requiredModule de Inicio ("/") para que sea un espacio base para todos los logueados */}
           <Route
             path="/"
             element={
-              <ProtectedRoute requiredModule="INICIO">
+              <ProtectedRoute>
                 <Layout>
                   <Home />
                 </Layout>
               </ProtectedRoute>
             }
           />
+
+          {/* 👇 Módulo Horno N°2 enlazado estrictamente a la nueva llave HORNOS */}
           <Route
             path="/hornos"
             element={
-              <ProtectedRoute requiredModule="INICIO">
+              <ProtectedRoute requiredModule="HORNOS">
                 <Layout>
                   <Dashboard />
                 </Layout>
               </ProtectedRoute>
             }
           />
+
           <Route
             path="/analisis-pedidos"
             element={
@@ -793,16 +799,19 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* 👇 Tareas enlazadas a PROYECTOS */}
           <Route
             path="/tablero"
             element={
-              <ProtectedRoute requiredModule="INICIO">
+              <ProtectedRoute requiredModule="PROYECTOS">
                 <Layout>
                   <TableroPage />
                 </Layout>
               </ProtectedRoute>
             }
           />
+
           <Route
             path="/modulos-eliminados-3d"
             element={<Navigate to="/" replace />}
@@ -897,10 +906,12 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* 👇 MercadoLibre enlazado a STOCK_ML */}
           <Route
             path="/solicitudes-ml"
             element={
-              <ProtectedRoute requiredModule="INICIO">
+              <ProtectedRoute requiredModule="STOCK_ML">
                 <Layout>
                   <SolicitudesMlPage />
                 </Layout>

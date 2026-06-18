@@ -21,20 +21,22 @@ import toast from "react-hot-toast";
 import { API_BASE_URL, authFetch } from "../utils.js";
 import { getAuthData } from "../auth/authHelper.js";
 
+// Catálogo maestro unificado idéntico al Sidebar de Conoflex
 const MODULOS_DISPONIBLES = [
-  { id: "INICIO", label: "Inicio / Dashboard" },
-  { id: "METRICAS", label: "Métricas Financieras" },
-  { id: "PLANIFICACION", label: "Planificación" },
-  { id: "REGISTRO", label: "Registrar Producción" },
-  { id: "LOGISTICA", label: "Logística" },
-  { id: "DESPACHO", label: "Despacho" },
-  { id: "STOCK", label: "Stock Iglú" },
-  { id: "COMPRAS", label: "Buzón de Compras" },
-  { id: "EQUIPO", label: "Equipo / Operarios" },
-  { id: "HOJA_RUTA", label: "Hoja de Ruta" },
-  { id: "INGENIERIA", label: "Ingeniería" },
-  { id: "RRHH", label: "Recursos Humanos" },
-  { id: "MANTENIMIENTO", label: "Mantenimiento" },
+  { key: "INICIO", label: "Inicio / Horno N°2" },
+  { key: "PROYECTOS", label: "Proyectos y Tareas" },
+  { key: "STOCK_ML", label: "Stock MercadoLibre" },
+  { key: "PLANIFICACION", label: "Planificación / Centro de Datos" },
+  { key: "METRICAS", label: "Métricas (Análisis)" },
+  { key: "REGISTRO", label: "Registrar Producción" },
+  { key: "LOGISTICA", label: "Logística" },
+  { key: "COMPRAS", label: "Buzón Compras / Compras" },
+  { key: "EQUIPO", label: "Equipo (Operarios)" },
+  { key: "HOJA_RUTA", label: "Hoja de Ruta" },
+  { key: "INGENIERIA", label: "Ingeniería / Cambios Prod." },
+  { key: "RRHH", label: "RRHH" },
+  { key: "MANTENIMIENTO", label: "Mantenimiento" },
+  { key: "ACCESOS_ADMIN", label: "Accesos (Administrador)" },
 ];
 
 export default function GestorUsuarios() {
@@ -56,13 +58,14 @@ export default function GestorUsuarios() {
 
   const esRolAdmin = (rol) => {
     if (!rol) return false;
-    // Normalizamos quitando tildes y espacios para que "Producción" y "Produccion" sean lo mismo
     const r = String(rol)
       .toUpperCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
-    return r === "GERENCIA" || r === "JEFE PRODUCCION";
+    return (
+      r === "GERENCIA" || r === "JEFE PRODUCCION" || r === "JEFE PRODUCCIÓN"
+    );
   };
 
   const cargarDatos = async () => {
@@ -105,16 +108,15 @@ export default function GestorUsuarios() {
     setModalOpen(true);
   };
 
-  const toggleModuloEdit = (moduloId) => {
-    // Si es admin, no necesita seleccionar módulos (tiene todos)
+  const toggleModuloEdit = (moduloKey) => {
     if (esRolAdmin(usuarioEdit.rol)) return;
 
-    const tiene = usuarioEdit.modulos_acceso.includes(moduloId);
+    const tiene = usuarioEdit.modulos_acceso.includes(moduloKey);
     setUsuarioEdit({
       ...usuarioEdit,
       modulos_acceso: tiene
-        ? usuarioEdit.modulos_acceso.filter((m) => m !== moduloId)
-        : [...usuarioEdit.modulos_acceso, moduloId],
+        ? usuarioEdit.modulos_acceso.filter((m) => m !== moduloKey)
+        : [...usuarioEdit.modulos_acceso, moduloKey],
     });
   };
 
@@ -139,17 +141,10 @@ export default function GestorUsuarios() {
       );
 
       if (res.ok) {
-        // --- 🔎 LA PARTE CLAVE ESTÁ AQUÍ ---
-
-        // 1. Si el usuario editado sos VOS:
         if (usuarioEdit.id === currentUser?.id) {
-          // Obtenemos lo que hay hoy en el storage
           const authData = JSON.parse(localStorage.getItem("mrp_data") || "{}");
-
-          // Actualizamos solo el nombre dentro del objeto user
           if (authData.user) {
             authData.user.nombre = usuarioEdit.nombre;
-            // Lo volvemos a guardar actualizado
             localStorage.setItem("mrp_data", JSON.stringify(authData));
           }
 
@@ -157,12 +152,10 @@ export default function GestorUsuarios() {
             id: loadingToast,
           });
 
-          // Refrescamos la página para que el Sidebar y el Layout tomen el nuevo nombre al instante
           setTimeout(() => {
             window.location.reload();
           }, 1000);
         } else {
-          // Si editaste a OTRO usuario, solo avisamos y cerramos modal
           toast.success("Usuario actualizado correctamente", {
             id: loadingToast,
           });
@@ -254,14 +247,11 @@ export default function GestorUsuarios() {
     }
   };
 
-  // --- RENDERIZADO PRINCIPAL ---
   return (
     <div className="min-h-full bg-[#fafafa] flex flex-col font-sans pb-12">
-      {/* HEADER LIMPIO CON COLOR AZUL */}
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-5 md:px-10 md:py-6 shrink-0 z-20 sticky top-0">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
-            {/* Ícono y fondo azul claro */}
             <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-500 shadow-sm shrink-0">
               <FaKey size={18} />
             </div>
@@ -274,10 +264,9 @@ export default function GestorUsuarios() {
               </p>
             </div>
           </div>
-          {/* Botón con texto azul */}
           <button
             onClick={() => setModalPuestosOpen(true)}
-            className="flex items-center gap-2 bg-white border border-slate-200 text-blue-600 font-semibold text-sm px-5 py-2.5 rounded-full shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+            className="flex items-center gap-2 bg-white border border-slate-200 text-blue-600 font-semibold text-sm px-5 py-2.5 rounded-full shadow-sm hover:bg-slate-50 transition-all active:scale-95 cursor-pointer"
           >
             <FaBriefcase className="text-blue-400" /> Catálogo de Puestos
           </button>
@@ -285,7 +274,6 @@ export default function GestorUsuarios() {
       </header>
 
       <main className="flex-1 w-full max-w-6xl mx-auto p-4 md:p-8 flex flex-col mt-2">
-        {/* TABLA DE USUARIOS */}
         <div className="bg-white rounded-[1.5rem] border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.02)] overflow-hidden flex flex-col">
           <div className="overflow-x-auto custom-scrollbar flex-1">
             <table className="w-full text-left border-collapse min-w-[700px]">
@@ -353,11 +341,7 @@ export default function GestorUsuarios() {
                       </td>
                       <td className="px-6 py-4 text-center">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${
-                            u.activo
-                              ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                              : "bg-rose-50 text-rose-500 border-rose-100"
-                          }`}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border ${u.activo ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-500 border-rose-100"}`}
                         >
                           {u.activo ? (
                             <>
@@ -377,12 +361,11 @@ export default function GestorUsuarios() {
                             : `${u.modulos_acceso?.length || 0} Módulos`}
                         </span>
                       </td>
-                      {/* 👇 Íconos de acciones siempre visibles (opacity-100) */}
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2 opacity-100 transition-opacity">
+                        <div className="flex items-center justify-end gap-2 opacity-100">
                           <button
                             onClick={() => abrirModalUsuario(u)}
-                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors cursor-pointer"
                             title="Editar Permisos"
                           >
                             <FaEdit size={14} />
@@ -390,7 +373,7 @@ export default function GestorUsuarios() {
                           <button
                             onClick={() => eliminarUsuario(u.id, u.nombre)}
                             disabled={u.id === currentUser?.id}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                             title="Eliminar Usuario"
                           >
                             <FaTrash size={14} />
@@ -406,9 +389,7 @@ export default function GestorUsuarios() {
         </div>
       </main>
 
-      {/* ========================================================= */}
-      {/* MODAL 1: EDITAR USUARIO CON ACENTOS AZULES */}
-      {/* ========================================================= */}
+      {/* MODAL 1: EDITAR USUARIO */}
       <AnimatePresence>
         {modalOpen && usuarioEdit && (
           <div className="fixed inset-0 z-[8000] bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4">
@@ -429,14 +410,13 @@ export default function GestorUsuarios() {
                 </div>
                 <button
                   onClick={() => setModalOpen(false)}
-                  className="text-slate-400 hover:text-rose-500 p-2 bg-white rounded-full shadow-sm border border-slate-100 transition-all active:scale-95"
+                  className="text-slate-400 hover:text-rose-500 p-2 bg-white rounded-full shadow-sm border border-slate-100 transition-all active:scale-95 cursor-pointer"
                 >
                   <FaTimes size={14} />
                 </button>
               </div>
 
               <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
-                {/* CAMPO DE NOMBRE HABILITADO */}
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">
                     Nombre Completo
@@ -472,12 +452,8 @@ export default function GestorUsuarios() {
                           activo: !usuarioEdit.activo,
                         })
                       }
-                      disabled={usuarioEdit.id === currentUser?.id} // No te podés bloquear a vos mismo
-                      className={`w-full flex justify-center items-center gap-2 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border ${
-                        usuarioEdit.activo
-                          ? "bg-emerald-50 text-emerald-600 border-emerald-100"
-                          : "bg-rose-50 text-rose-600 border-rose-100"
-                      } disabled:opacity-50`}
+                      disabled={usuarioEdit.id === currentUser?.id}
+                      className={`w-full flex justify-center items-center gap-2 px-4 py-3.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${usuarioEdit.activo ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-rose-50 text-rose-600 border-rose-100"} disabled:opacity-50`}
                     >
                       {usuarioEdit.activo ? (
                         <>
@@ -498,7 +474,7 @@ export default function GestorUsuarios() {
                     <div className="relative">
                       <select
                         value={usuarioEdit.rol || ""}
-                        disabled={usuarioEdit.id === currentUser?.id} // No te podés quitar el rango a vos mismo
+                        disabled={usuarioEdit.id === currentUser?.id}
                         onChange={(e) =>
                           setUsuarioEdit({
                             ...usuarioEdit,
@@ -529,7 +505,6 @@ export default function GestorUsuarios() {
                     </label>
                   </div>
 
-                  {/* 👇 Cartel de Admin con color azul claro */}
                   {esRolAdmin(usuarioEdit.rol) ? (
                     <div className="bg-blue-50 text-blue-700 text-xs font-medium px-5 py-4 rounded-2xl border border-blue-100 flex items-center gap-3">
                       <div className="p-2 bg-blue-100 rounded-lg text-blue-600 shrink-0">
@@ -542,24 +517,21 @@ export default function GestorUsuarios() {
                       </p>
                     </div>
                   ) : (
-                    // 👇 Módulos con color azul oscuro al estar seleccionados
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {MODULOS_DISPONIBLES.map((mod) => {
+                        {
+                          /* 🔥 FIX: Cambiado mod.id por mod.key para enlazar correctamente los strings del backend */
+                        }
                         const tieneAcceso = usuarioEdit.modulos_acceso.includes(
-                          mod.id,
+                          mod.key,
                         );
                         return (
                           <button
-                            key={mod.id}
-                            onClick={() => toggleModuloEdit(mod.id)}
-                            className={`text-left px-3.5 py-3 rounded-xl text-[11px] font-semibold transition-all border flex items-center justify-between group ${
-                              tieneAcceso
-                                ? "bg-slate-800 border-slate-700 text-white shadow-md shadow-slate-200"
-                                : "bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:shadow-sm"
-                            }`}
+                            key={mod.key}
+                            onClick={() => toggleModuloEdit(mod.key)}
+                            className={`text-left px-3.5 py-3 rounded-xl text-[11px] font-semibold transition-all border flex items-center justify-between group cursor-pointer ${tieneAcceso ? "bg-slate-800 border-slate-700 text-white shadow-md shadow-slate-200" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:shadow-sm"}`}
                           >
                             <span className="truncate pr-2">{mod.label}</span>
-                            {/* Borde del indicador siempre slate-300 */}
                             <div
                               className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors border-slate-300 group-hover:border-slate-400 ${tieneAcceso ? "bg-emerald-400 text-slate-900 border-emerald-400" : ""}`}
                             >
@@ -576,13 +548,13 @@ export default function GestorUsuarios() {
               <div className="px-6 py-5 bg-white border-t border-slate-100 flex justify-end gap-3 shrink-0">
                 <button
                   onClick={() => setModalOpen(false)}
-                  className="px-6 py-2.5 rounded-full text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                  className="px-6 py-2.5 rounded-full text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={guardarUsuario}
-                  className="px-6 py-2.5 rounded-full text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 shadow-md transition-all active:scale-95 flex items-center gap-2"
+                  className="px-6 py-2.5 rounded-full text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 shadow-md transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
                 >
                   Guardar Cambios
                 </button>
@@ -592,9 +564,7 @@ export default function GestorUsuarios() {
         )}
       </AnimatePresence>
 
-      {/* ========================================================= */}
-      {/* MODAL 2: CATÁLOGO DE PUESTOS CON ACENTOS AZULES */}
-      {/* ========================================================= */}
+      {/* MODAL 2: CATÁLOG DE PUESTOS */}
       <AnimatePresence>
         {modalPuestosOpen && (
           <div className="fixed inset-0 z-[9000] bg-slate-900/30 backdrop-blur-sm flex items-center justify-center p-4">
@@ -605,14 +575,13 @@ export default function GestorUsuarios() {
               className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg flex flex-col max-h-[80vh] overflow-hidden border border-slate-100"
             >
               <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 shrink-0">
-                {/* Ícono azul */}
                 <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
                   <FaBriefcase className="text-blue-400" size={16} /> Catálogo
                   de Puestos
                 </h2>
                 <button
                   onClick={() => setModalPuestosOpen(false)}
-                  className="text-slate-400 hover:text-rose-500 p-2 bg-white rounded-full shadow-sm border border-slate-100 transition-all active:scale-95"
+                  className="text-slate-400 hover:text-rose-500 p-2 bg-white rounded-full shadow-sm border border-slate-100 transition-all active:scale-95 cursor-pointer"
                 >
                   <FaTimes size={14} />
                 </button>
@@ -631,7 +600,7 @@ export default function GestorUsuarios() {
                   <button
                     onClick={agregarPuesto}
                     disabled={!nuevoPuesto.trim()}
-                    className="bg-slate-800 hover:bg-slate-900 disabled:opacity-30 disabled:hover:bg-slate-800 text-white p-3 rounded-xl shadow-sm transition-all active:scale-95"
+                    className="bg-slate-800 hover:bg-slate-900 disabled:opacity-30 disabled:hover:bg-slate-800 text-white p-3 rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer"
                   >
                     <FaPlus size={12} />
                   </button>
@@ -650,7 +619,6 @@ export default function GestorUsuarios() {
                       key={p.id}
                       className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-2xl hover:border-slate-200 hover:shadow-sm transition-all group"
                     >
-                      {/* 👇 Foco y reborde con color azul */}
                       {puestoEditId === p.id ? (
                         <input
                           type="text"
@@ -676,32 +644,31 @@ export default function GestorUsuarios() {
                               onClick={() =>
                                 guardarEdicionPuesto(p.id, p.nombre)
                               }
-                              className="p-2 text-emerald-600 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors"
+                              className="p-2 text-emerald-600 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors cursor-pointer"
                             >
                               <FaSave size={14} />
                             </button>
                             <button
                               onClick={() => setPuestoEditId(null)}
-                              className="p-2 text-slate-400 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
+                              className="p-2 text-slate-400 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
                             >
                               <FaTimes size={14} />
                             </button>
                           </>
                         ) : (
                           <>
-                            {/* 👇 Íconos hover con color azul */}
                             <button
                               onClick={() => {
                                 setPuestoEditId(p.id);
                                 setPuestoEditName(p.nombre);
                               }}
-                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors cursor-pointer"
                             >
                               <FaEdit size={14} />
                             </button>
                             <button
                               onClick={() => eliminarPuesto(p.id)}
-                              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors"
+                              className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
                             >
                               <FaTrash size={14} />
                             </button>
