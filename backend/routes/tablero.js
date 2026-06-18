@@ -2,6 +2,10 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
+// ==========================================
+// --- MÓDULO MAESTRO: CO-WORKING KANBAN ---
+// ==========================================
+
 // 1. OBTENER TODO EL TABLERO (Proyectos con sus tareas y micro-tareas anidadas)
 router.get("/proyectos", async (req, res) => {
   try {
@@ -77,7 +81,7 @@ router.post("/tareas", async (req, res) => {
   }
 });
 
-// 4. ACTUALIZAR POSICIÓN/ESTADO DE UNA TAREA (Esencial para el Drag and Drop)
+// 4. ACTUALIZAR POSICION/ESTADO DE UNA TAREA (Esencial para el Drag and Drop)
 router.put("/tareas/:id/posicion", async (req, res) => {
   const { id } = req.params;
   const { estado, posicion } = req.body;
@@ -93,7 +97,6 @@ router.put("/tareas/:id/posicion", async (req, res) => {
 });
 
 // 5. REGISTRAR MICRO-TAREA AL ARRASTRAR UNA PERSONA DENTRO DE OTRA TAREA
-// (Este endpoint se llamará inmediatamente cuando el frontend confirme el drop)
 router.post("/tareas/:id/microtareas", async (req, res) => {
   const { id: tarea_id } = req.params;
   const { asignado_a, descripcion, creado_por } = req.body;
@@ -155,28 +158,61 @@ router.put("/microtareas/:id/toggle", async (req, res) => {
 
 // 7. OBTENER CANTIDAD DE NOTIFICACIONES SIN LEER (Para el cuadradito rojo con número)
 router.get("/notificaciones/unread/count", async (req, res) => {
-  const { usuario } = req.query; // Pasamos el currentUser por query selector
+  const { usuario } = req.query;
   try {
-    const { rows } = await db.query(
+    // A. Contamos alertas normales de la base de datos
+    const { rows: normalCount } = await db.query(
       "SELECT COUNT(*) as unread_count FROM notificaciones_usuario WHERE usuario = $1 AND leido = FALSE",
       [usuario],
     );
-    res.json({ count: parseInt(rows[0].unread_count) || 0 });
+    let count = parseInt(normalCount[0].unread_count) || 0;
+
+    // B. 🔥 INTELIGENCIA INTEGRADA: Si es Gerencia (Andrés) o Expedición (Mauro), sumamos las solicitudes pendientes de ML
+    if (usuario === "Andrés" || usuario === "Mauro") {
+      const { rows: mlCount } = await db.query(
+        "SELECT COUNT(*) as ml_pending FROM solicitudes_stock_ml WHERE estado = 'PENDIENTE' AND archivada = FALSE",
+      );
+      count += parseInt(mlCount[0].ml_pending) || 0;
+    }
+
+    res.json({ count });
   } catch (err) {
+    console.error(err);
     res.status(500).send("Error al contar notificaciones");
   }
 });
 
-// 8. OBTENER EL HISTORIAL DE NOTIFICACIONES DE UN USUARIO
+// 8. OBTENER EL HISTORIAL DE NOTIFICACIONES DE UN USUARIO (Inyecta las rutas clickables)
 router.get("/notificaciones", async (req, res) => {
   const { usuario } = req.query;
   try {
-    const { rows } = await db.query(
-      "SELECT * FROM notificaciones_usuario WHERE usuario = $1 ORDER BY fecha_creacion DESC LIMIT 20",
+    // A. Traemos el historial tradicional de alertas
+    const { rows: normalNotifs } = await db.query(
+      "SELECT id, mensaje, leido, fecha_creacion FROM notificaciones_usuario WHERE usuario = $1 ORDER BY fecha_creacion DESC LIMIT 20",
       [usuario],
     );
-    res.json(rows);
+    let result = normalNotifs.map((n) => ({ ...n, url: null }));
+
+    // B. 🔥 INTEGRACIÓN DE ENLACES: Si es Andrés o Mauro, les inyectamos al principio las órdenes pendientes de MercadoLibre
+    if (usuario === "Andrés" || usuario === "Mauro") {
+      const { rows: mlNotifs } = await db.query(
+        "SELECT id, articulo_nombre, cantidad_sugerida FROM solicitudes_stock_ml WHERE estado = 'PENDIENTE' AND archivada = FALSE ORDER BY fecha_creacion DESC",
+      );
+
+      const mlAlertas = mlNotifs.map((m) => ({
+        id: `ml-${m.id}`,
+        mensaje: `📦 [MERCADOLIBRE] Nueva solicitud de stock para: "${m.articulo_nombre}". Sugerido: ${m.cantidad_sugerida ? m.cantidad_sugerida + " u." : "No especificado"}.`,
+        leido: false,
+        fecha_creacion: new Date(),
+        url: "/solicitudes-ml", // Al hacer click en el App.jsx, redireccionará de forma instantánea aquí
+      }));
+
+      result = [...mlAlertas, ...result];
+    }
+
+    res.json(result);
   } catch (err) {
+    console.error(err);
     res.status(500).send("Error al obtener notificaciones");
   }
 });
@@ -185,6 +221,7 @@ router.get("/notificaciones", async (req, res) => {
 router.put("/notificaciones/read-all", async (req, res) => {
   const { usuario } = req.body;
   try {
+    // Solo cambia a leídas las notificaciones normales de UI. Las de MercadoLibre persisten hasta que se resuelvan (Aprobada/Rechazada)
     await db.query(
       "UPDATE notificaciones_usuario SET leido = TRUE WHERE usuario = $1",
       [usuario],
@@ -192,6 +229,21 @@ router.put("/notificaciones/read-all", async (req, res) => {
     res.json({ message: "Notificaciones marcadas como leídas" });
   } catch (err) {
     res.status(500).send("Error al actualizar notificaciones");
+  }
+});
+
+// 10. ELIMINAR ALERTAS MAESTRAS DE UI (Omite de forma natural a MercadoLibre)
+router.delete("/notificaciones/clear-all", async (req, res) => {
+  const { usuario } = req.body;
+  try {
+    // Borra permanentemente los logs del sistema del usuario sin tocar la tabla de MercadoLibre
+    await db.query("DELETE FROM notificaciones_usuario WHERE usuario = $1", [
+      usuario,
+    ]);
+    res.json({ message: "Buzón de alertas limpiado correctamente" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error al vaciar buzón de alertas");
   }
 });
 

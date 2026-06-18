@@ -48,7 +48,8 @@ const rrhhRoutes = require("./routes/rrhh");
 const changelogRoutes = require("./routes/changelog");
 const sugerenciasRoutes = require("./routes/sugerencias");
 const depositoRoutes = require("./routes/deposito");
-const tableroRouter = require("./routes/tablero");
+const tableroRoutes = require("./routes/tablero"); // <-- RE-INCORPORADO
+const solicitudesMlRoutes = require("./routes/solicitudesMl"); // <-- RE-INCORPORADO
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -79,7 +80,6 @@ const enviarNotificacionApp = async (fcmToken, titulo, mensaje) => {
 // ==========================================
 app.use("/api/auth", authRoutes);
 
-// Ruta de prueba liberada (movida aquí arriba para que funcione sin token JWT)
 app.get("/api/test-push/:token", async (req, res) => {
   const miToken = req.params.token;
   await enviarNotificacionApp(
@@ -108,7 +108,8 @@ app.use("/api/rrhh", protect, rrhhRoutes);
 app.use("/api/changelog", protect, changelogRoutes);
 app.use("/api/sugerencias", protect, sugerenciasRoutes);
 app.use("/api/deposito", protect, depositoRoutes);
-app.use("/api/tablero", protect,tableroRouter);
+app.use("/api/tablero", protect, tableroRoutes); // <-- ACTIVADO CON JWT
+app.use("/api/solicitudes-ml", protect, solicitudesMlRoutes); // <-- ACTIVADO CON JWT
 
 // ==========================================
 // INICIO DE SERVICIOS
@@ -142,7 +143,6 @@ async function iniciarServidor() {
       60 * 60 * 1000,
     );
 
-    // 👇 ACÁ ESTÁ LA MAGIA QUE FALTABA 👇
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Servidor Express escuchando en http://0.0.0.0:${PORT}`);
     });

@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from "react"; // <- Implementamos lazy y Suspense para optimizar rendimiento
+import { useState, useEffect, lazy, Suspense } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -40,13 +40,13 @@ import { Toaster } from "react-hot-toast";
 // --- IMPORTACIÓN DE PLUGINS NATIVOS Y UTILS ---
 import { PushNotifications } from "@capacitor/push-notifications";
 
-// Importación estática inmediata solo para páginas críticas (Login y Loader)
+// Importación estática inmediata solo para componentes críticos de barrera
 import Loader from "./components/Loader.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import { getAuthData, logout } from "./auth/authHelper";
 import { API_BASE_URL, authFetch } from "./utils";
 
-// 🔥 DIVISION DE CÓDIGO INTELIGENTE: Las páginas pesadas se cargarán bajo demanda de forma asíncrona
+// DIVISIÓN DE CÓDIGO INTELIGENTE (Lazy Loading)
 const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
 const PanelControl = lazy(() => import("./pages/PanelControl.jsx"));
 const IngenieriaProductos = lazy(
@@ -70,6 +70,7 @@ const SugerenciasPage = lazy(() => import("./pages/SugerenciasPage.jsx"));
 const GestorUsuarios = lazy(() => import("./pages/GestorUsuarios.jsx"));
 const Home = lazy(() => import("./pages/Home.jsx"));
 const TableroPage = lazy(() => import("./pages/TableroPage.jsx"));
+const SolicitudesMlPage = lazy(() => import("./pages/SolicitudesMlPage.jsx"));
 
 const NAV_LINKS = [
   { path: "/", label: "Inicio", icon: <FaChartPie />, moduloReq: "INICIO" },
@@ -77,6 +78,12 @@ const NAV_LINKS = [
     path: "/tablero",
     label: "Proyectos y Tareas",
     icon: <FaClipboardList />,
+    moduloReq: "INICIO",
+  },
+  {
+    path: "/solicitudes-ml",
+    label: "Stock MercadoLibre",
+    icon: <FaShoppingCart />,
     moduloReq: "INICIO",
   },
   {
@@ -175,7 +182,11 @@ const ProtectedRoute = ({ children, requiredModule }) => {
     return <Navigate to={`/login?returnTo=${returnTo}`} replace />;
   }
 
-  if (user.rol === "GERENCIA" || user.rol === "JEFE PRODUCCIÓN")
+  if (
+    user.rol === "GERENCIA" ||
+    user.rol === "JEFE PRODUCCIÓN" ||
+    user.rol === "JEFE PRODUCCION"
+  )
     return children;
 
   if (
@@ -215,11 +226,12 @@ const ProtectedRoute = ({ children, requiredModule }) => {
   return children;
 };
 
-// --- COMPONENTE: CAMPANITA PREMIUM AUTO-AJUSTABLE ---
+// --- COMPONENTE: CAMPANITA PREMIUM INTERACTIVA ---
 const CampanitaNotificaciones = ({ currentUser }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   const fetchNotificaciones = async () => {
     if (!currentUser) return;
@@ -265,6 +277,39 @@ const CampanitaNotificaciones = ({ currentUser }) => {
     }
   };
 
+  const handleClearAllNotifs = async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await authFetch(
+        `${API_BASE_URL}/tablero/notificaciones/clear-all`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usuario: currentUser }),
+        },
+      );
+      if (res.ok) {
+        toast.success("Buzón de alertas limpiado");
+        setNotifications([]); // Limpieza inmediata en UI local
+        setUnreadCount(0);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleNotificationClick = (n) => {
+    setIsOpen(false);
+    if (n.url) {
+      navigate(n.url);
+    }
+  };
+
+  // Verificación ultra-segura para no fallar si n.id es nulo o indefinido
+  const tieneAlertasUi =
+    Array.isArray(notifications) &&
+    notifications.some((n) => n && n.id && !n.id.toString().startsWith("ml-"));
+
   return (
     <div className="relative">
       <button
@@ -295,9 +340,20 @@ const CampanitaNotificaciones = ({ currentUser }) => {
               exit={{ opacity: 0, y: 12, scale: 0.95 }}
               className="absolute right-0 mt-3 w-80 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_20px_50px_-12px_rgba(0,0,0,0.15)] border border-stone-200/60 p-4 z-50 max-h-[400px] overflow-y-auto custom-scrollbar origin-top-right"
             >
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-stone-400 mb-3 border-b border-stone-100 pb-2">
-                Buzón de Notificaciones
-              </h4>
+              <div className="flex items-center justify-between mb-3 border-b border-stone-100 pb-2">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-stone-400">
+                  Buzón de Notificaciones
+                </h4>
+                {tieneAlertasUi && (
+                  <button
+                    onClick={handleClearAllNotifs}
+                    className="text-[10px] font-black text-rose-500 hover:text-rose-700 transition-colors uppercase tracking-wider cursor-pointer bg-transparent border-none outline-none"
+                  >
+                    Limpiar Todo
+                  </button>
+                )}
+              </div>
+
               {notifications.length === 0 ? (
                 <p className="text-xs font-semibold text-stone-400 text-center py-8">
                   No hay novedades por aquí.
@@ -307,7 +363,8 @@ const CampanitaNotificaciones = ({ currentUser }) => {
                   {notifications.map((n) => (
                     <div
                       key={n.id}
-                      className={`p-3.5 rounded-xl border text-[11px] font-semibold leading-relaxed transition-all ${n.leido ? "bg-stone-50/40 border-stone-100 text-slate-400" : "bg-blue-50/50 border-blue-100/70 text-slate-700 shadow-sm"}`}
+                      onClick={() => handleNotificationClick(n)}
+                      className={`p-3.5 rounded-xl border text-[11px] font-semibold leading-relaxed transition-all ${n.url ? "hover:bg-stone-50/80 hover:border-stone-300 cursor-pointer" : ""} ${n.leido ? "bg-stone-50/40 border-stone-100 text-slate-400" : "bg-blue-50/50 border-blue-100/70 text-slate-700 shadow-sm"}`}
                     >
                       {n.mensaje}
                     </div>
@@ -421,27 +478,43 @@ const Layout = ({ children }) => {
     navigate("/login");
   };
 
+  // 🔥 SOLUCIÓN ABSOLUTA: Búsqueda flexible por aproximación (.includes) para evitar fallas por acentos o caracteres extra
   let currentUser = nombreUsuario;
-  const rolNormalizado = (role || "")
+  const r = (role || "")
     .toUpperCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-  if (rolNormalizado === "GERENCIA") currentUser = "Andrés";
-  else if (rolNormalizado === "OPERARIO" || rolNormalizado === "PANEL")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (r.includes("GERENCIA") || r.includes("JEFE PRODUCCION")) {
+    currentUser = "Andrés";
+  } else if (
+    r.includes("OPERARIO") ||
+    r.includes("PANEL") ||
+    r.includes("PLANTAS")
+  ) {
     currentUser = "Leonel";
-  else if (rolNormalizado === "DEPOSITO") currentUser = "Mauro";
+  } else if (r.includes("DEPOSITO") || r.includes("EXPEDICION")) {
+    currentUser = "Mauro";
+  }
 
   let userBadge = { icon: <FaHardHat />, text: nombreUsuario };
-  if (role === "GERENCIA" || role === "JEFE PRODUCCIÓN")
+  if (
+    role === "GERENCIA" ||
+    role === "JEFE PRODUCCIÓN" ||
+    role === "JEFE PRODUCCION"
+  )
     userBadge = { icon: <FaUserTie />, text: nombreUsuario };
-  if (role === "DEPOSITO")
+  if (role === "DEPOSITO" || role === "ENC. EXPEDICIÓN")
     userBadge = { icon: <FaWarehouse />, text: nombreUsuario };
-  if (role === "MANTENIMIENTO")
+  if (role === "ENC. MANTENIMIENTO")
     userBadge = { icon: <FaTools />, text: nombreUsuario };
 
   const allowedLinks = NAV_LINKS.filter((link) => {
-    if (user?.rol === "GERENCIA" || user?.rol === "JEFE PRODUCCIÓN")
+    if (
+      user?.rol === "GERENCIA" ||
+      user?.rol === "JEFE PRODUCCIÓN" ||
+      user?.rol === "JEFE PRODUCCION"
+    )
       return true;
     return user?.modulos?.includes(link.moduloReq);
   });
@@ -621,7 +694,6 @@ export default function App() {
         }}
       />
 
-      {/* Envolvemos todas las rutas dinámicas en un bloque Suspense global. Mientras se descarga el trozo de archivo (chunk) bajo demanda, se renderizará el loader estético */}
       <Suspense
         fallback={
           <div className="h-screen w-screen flex items-center justify-center bg-[#fcfbf9]">
@@ -821,6 +893,16 @@ export default function App() {
               <ProtectedRoute requiredModule="ACCESOS_ADMIN">
                 <Layout>
                   <GestorUsuarios />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/solicitudes-ml"
+            element={
+              <ProtectedRoute requiredModule="INICIO">
+                <Layout>
+                  <SolicitudesMlPage />
                 </Layout>
               </ProtectedRoute>
             }
