@@ -180,7 +180,7 @@ export default function SolicitudesMlPage() {
       // Coloca la clave generada aquí (debe empezar con la letra B)
       const publicVapidKey =
         import.meta.env.VITE_PUBLIC_VAPID_KEY ||
-        "BACda5YCAJNetpy6KCdj6n4ghujb0C4Nk4mCytZsHZndZkUWN6Zf4fjR6awrUPoNEK_Irw0-_v8lKCKU6i28QaQ";
+        "BFsgiKUGqpfGkqvdW1ygK_2qit9YB1YHO-k0RcYGrTBBv1VZjrxlcPb47c3wP7CulkDfZz2Vz1UlnsJT6PvhZCw";
 
       if (publicVapidKey.startsWith("REPLACE_")) {
         return toast.error(
@@ -189,7 +189,13 @@ export default function SolicitudesMlPage() {
         );
       }
 
-      // 4. Forzar la subscripción push criptográfica del dispositivo
+      // 4. Forzar la limpieza de cualquier suscripción vieja antes de pedir la nueva
+      const subExistente = await registration.pushManager.getSubscription();
+      if (subExistente) {
+        await subExistente.unsubscribe(); // Desuscripción limpia
+      }
+
+      // Ahora sí, forzar la suscripción push criptográfica del dispositivo
       const suscripcion = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicVapidKey),

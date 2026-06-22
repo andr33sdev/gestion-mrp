@@ -6,9 +6,9 @@ const webpush = require("web-push"); // 🔥 NUEVO: Importar librería push
 // 🔥 CONFIGURACIÓN DE LLAVES VAPID (Reemplaza con tus llaves reales o usa variables de entorno)
 // Puedes generarlas una vez en la consola con: npx web-push generate-vapid-keys
 const publicVapidKey =
-  process.env.PUBLIC_VAPID_KEY || "BACda5YCAJNetpy6KCdj6n4ghujb0C4Nk4mCytZsHZndZkUWN6Zf4fjR6awrUPoNEK_Irw0-_v8lKCKU6i28QaQ";
+  process.env.PUBLIC_VAPID_KEY || "BFsgiKUGqpfGkqvdW1ygK_2qit9YB1YHO-k0RcYGrTBBv1VZjrxlcPb47c3wP7CulkDfZz2Vz1UlnsJT6PvhZCw";
 const privateVapidKey =
-  process.env.PRIVATE_VAPID_KEY || "KmlCjlspTc7AUuvnTHEvEPShDlmXnfzC5eo_FZiEvlE";
+  process.env.PRIVATE_VAPID_KEY || "ZTp9uydVExTkpGAmitq0JJ9Mr3LS3z_UW7fItJ_pMoI";
 
 webpush.setVapidDetails(
   "mailto:produccion.a@conoflex.com.ar",
