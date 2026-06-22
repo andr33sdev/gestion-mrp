@@ -410,7 +410,7 @@ router.get("/cockpit/data", async (req, res) => {
     `);
 
     const pedidosRes = await db.query(`
-      SELECT id as op, cliente, modelo, cantidad, fecha 
+      SELECT op, cliente, modelo, cantidad, fecha 
       FROM pedidos_clientes 
       WHERE estado ILIKE '%SIN STOCK%'
       ORDER BY id DESC

@@ -2,17 +2,15 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
-// --- CORRECCIÓN CLAVE AQUÍ ---
-// Importamos la función NUEVA desde el archivo "listener" (donde están todos los bots)
 const {
   enviarNotificacionLogistica,
 } = require("../services/telegramBotListener");
 
-// 1. OBTENER TODAS
+// 1. OBTENER TODAS (Con cálculo de fórmula automático)
 router.get("/", async (req, res) => {
   try {
     const query = `
-      SELECT * FROM solicitudes_logistica
+      SELECT *, (solicitado - entregado) AS por_retirar FROM solicitudes_logistica
       ORDER BY
         CASE 
           WHEN estado = 'PENDIENTE' AND prioridad = 'ALTA' THEN 1
@@ -57,37 +55,32 @@ router.get("/:id/comentarios", async (req, res) => {
   }
 });
 
-// 4. CREAR SOLICITUD (Conexión al Bot)
+// 4. CREAR SOLICITUD
 router.post("/", async (req, res) => {
-  const { producto, cantidad, prioridad, solicitante, notas } = req.body;
+  const { producto, solicitado, prioridad, solicitante, notas } = req.body;
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
-    // Insertar
     const resSol = await client.query(
-      "INSERT INTO solicitudes_logistica (producto, cantidad, prioridad, solicitante, notas) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [producto, cantidad, prioridad || "MEDIA", solicitante, notas],
+      "INSERT INTO solicitudes_logistica (producto, solicitado, prioridad, solicitante, notas, entregado) VALUES ($1, $2, $3, $4, $5, 0) RETURNING *",
+      [producto, solicitado, prioridad || "MEDIA", solicitante, notas],
     );
     const nuevaSol = resSol.rows[0];
 
-    // Historial
     await client.query(
       "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, $2, $3, $4)",
       [
         nuevaSol.id,
         "CREADO",
         solicitante,
-        `Solicitud iniciada. Prioridad: ${prioridad}. Cant: ${cantidad}`,
+        `Solicitud iniciada. Prioridad: ${prioridad}. Solicitado: ${solicitado} u.`,
       ],
     );
 
     await client.query("COMMIT");
-
-    // 🔥 LLAMADA AL BOT CORREGIDA
     enviarNotificacionLogistica("NUEVA_SOLICITUD", nuevaSol);
-
     res.json(nuevaSol);
   } catch (err) {
     await client.query("ROLLBACK");
@@ -115,11 +108,17 @@ router.put("/:id/estado", async (req, res) => {
     const datosPrevios = prevRes.rows[0];
     const prevEstado = datosPrevios?.estado || "DESC";
 
-    // Actualizar
-    const result = await client.query(
-      "UPDATE solicitudes_logistica SET estado = $1, fecha_actualizacion = NOW() WHERE id = $2 RETURNING *",
-      [estado, id],
-    );
+    // LÓGICA DE ACTUALIZACIÓN DINÁMICA: Si pasa a PREPARADO guarda la fecha_preparado original
+    let queryUpdate =
+      "UPDATE solicitudes_logistica SET estado = $1, fecha_actualizacion = NOW() WHERE id = $2 RETURNING *";
+    let paramsUpdate = [estado, id];
+
+    if (estado === "PREPARADO") {
+      queryUpdate =
+        "UPDATE solicitudes_logistica SET estado = $1, fecha_actualizacion = NOW(), fecha_preparado = NOW() WHERE id = $2 RETURNING *";
+    }
+
+    const result = await client.query(queryUpdate, paramsUpdate);
 
     // Historial
     await client.query(
@@ -134,7 +133,7 @@ router.put("/:id/estado", async (req, res) => {
 
     await client.query("COMMIT");
 
-    // 🔥 LLAMADA AL BOT CORREGIDA
+    // LLAMADA AL BOT
     enviarNotificacionLogistica("CAMBIO_ESTADO", {
       id,
       producto: datosPrevios.producto,
@@ -151,18 +150,17 @@ router.put("/:id/estado", async (req, res) => {
   }
 });
 
-// 5.b EDITAR CONTENIDO DE LA SOLICITUD (Solo permitido al creador)
-router.put("/:id", async (req, res) => {
+// 5.b ACTUALIZAR UNIDADES ENTREGADAS (Filtro estricto para Gerencia / Jefe Producción)
+router.put("/:id/entregado", async (req, res) => {
   const { id } = req.params;
-  const { producto, cantidad, prioridad, notas, usuario } = req.body;
+  const { entregado, usuario } = req.body;
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
-    // Buscamos los datos actuales para verificar el creador original y registrar cambios en el historial
     const prevRes = await client.query(
-      "SELECT producto, cantidad, solicitante FROM solicitudes_logistica WHERE id = $1",
+      "SELECT producto, solicitado, entregado FROM solicitudes_logistica WHERE id = $1",
       [id],
     );
     const datosPrevios = prevRes.rows[0];
@@ -172,7 +170,50 @@ router.put("/:id", async (req, res) => {
       return res.status(404).send("Solicitud no encontrada");
     }
 
-    // Doble verificación de seguridad en backend: que el usuario que edita sea el solicitante original
+    const result = await client.query(
+      "UPDATE solicitudes_logistica SET entregado = $1, fecha_actualizacion = NOW() WHERE id = $2 RETURNING *, (solicitado - $1) AS por_retirar",
+      [entregado, id],
+    );
+
+    await client.query(
+      "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, 'ENTREGA', $2, $3)",
+      [
+        id,
+        usuario,
+        `Despacho parcial/total registrado: ${datosPrevios.entregado} u. -> ${entregado} u.`,
+      ],
+    );
+
+    await client.query("COMMIT");
+    res.json(result.rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).send("Error al actualizar despacho");
+  } finally {
+    client.release();
+  }
+});
+
+// 5.c EDITAR CONTENIDO BASE
+router.put("/:id", async (req, res) => {
+  const { id } = req.params;
+  const { producto, solicitado, prioridad, notas, usuario } = req.body;
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const prevRes = await client.query(
+      "SELECT producto, solicitado, solicitante FROM solicitudes_logistica WHERE id = $1",
+      [id],
+    );
+    const datosPrevios = prevRes.rows[0];
+
+    if (!datosPrevios) {
+      await client.query("ROLLBACK");
+      return res.status(404).send("Solicitud no encontrada");
+    }
+
     if (datosPrevios.solicitante !== usuario) {
       await client.query("ROLLBACK");
       return res
@@ -180,18 +221,16 @@ router.put("/:id", async (req, res) => {
         .send("No tienes permisos para editar esta solicitud");
     }
 
-    // Actualizamos el producto, cantidad, prioridad y notas
     const result = await client.query(
-      "UPDATE solicitudes_logistica SET producto = $1, cantidad = $2, prioridad = $3, notas = $4, fecha_actualizacion = NOW() WHERE id = $5 RETURNING *",
-      [producto, cantidad, prioridad || "MEDIA", notas, id],
+      "UPDATE solicitudes_logistica SET producto = $1, solicitado = $2, prioridad = $3, notas = $4, fecha_actualizacion = NOW() WHERE id = $5 RETURNING *",
+      [producto, solicitado, prioridad || "MEDIA", notas, id],
     );
 
-    // Guardamos en el historial quién lo editó y los datos que cambiaron
     let detalleHistorial = `Solicitud editada.`;
     if (datosPrevios.producto !== producto)
       detalleHistorial += ` Prod: ${datosPrevios.producto} -> ${producto}.`;
-    if (datosPrevios.cantidad !== parseInt(cantidad))
-      detalleHistorial += ` Cant: ${datosPrevios.cantidad} -> ${cantidad}.`;
+    if (datosPrevios.solicitado !== parseInt(solicitado))
+      detalleHistorial += ` Solicitado: ${datosPrevios.solicitado} -> ${solicitado}.`;
 
     await client.query(
       "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, 'EDITADO', $2, $3)",
@@ -199,26 +238,16 @@ router.put("/:id", async (req, res) => {
     );
 
     await client.query("COMMIT");
-
-    // Opcional: Notificación al Bot de Telegram informando la edición
-    enviarNotificacionLogistica("NUEVO_COMENTARIO", {
-      id,
-      producto: producto,
-      usuario: usuario,
-      mensaje: `⚙️ [Modificado] ${detalleHistorial}`,
-    });
-
     res.json(result.rows[0]);
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err);
-    res.status(500).send("Error al editar la solicitud");
+    res.status(500).send("Error al editar");
   } finally {
     client.release();
   }
 });
 
-// 6. AGREGAR COMENTARIO (Conexión al Bot)
+// 6. AGREGAR COMENTARIO
 router.post("/:id/comentarios", async (req, res) => {
   const { id } = req.params;
   const { usuario, mensaje } = req.body;
@@ -226,52 +255,44 @@ router.post("/:id/comentarios", async (req, res) => {
 
   try {
     await client.query("BEGIN");
-
     const prodRes = await client.query(
       "SELECT producto FROM solicitudes_logistica WHERE id = $1",
       [id],
     );
     const nombreProducto = prodRes.rows[0]?.producto || "Producto";
 
-    // Insertar Comentario
     const resCom = await client.query(
       "INSERT INTO comentarios_logistica (solicitud_id, usuario, mensaje) VALUES ($1, $2, $3) RETURNING *",
       [id, usuario, mensaje],
     );
 
-    // Historial
     await client.query(
       "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, 'COMENTARIO', $2, $3)",
       [id, usuario, `Comentario: "${mensaje.substring(0, 50)}..."`],
     );
 
     await client.query("COMMIT");
-
-    // 🔥 LLAMADA AL BOT CORREGIDA
     enviarNotificacionLogistica("NUEVO_COMENTARIO", {
       id,
       producto: nombreProducto,
       usuario,
       mensaje,
     });
-
     res.json(resCom.rows[0]);
   } catch (err) {
     await client.query("ROLLBACK");
-    console.error(err);
     res.status(500).send("Error al comentar");
   } finally {
     client.release();
   }
 });
 
-// 7. ELIMINAR (Conexión al Bot)
+// 7. ELIMINAR
 router.delete("/:id", async (req, res) => {
   const { usuario } = req.body;
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-
     const prodRes = await client.query(
       "SELECT producto FROM solicitudes_logistica WHERE id = $1",
       [req.params.id],
@@ -282,22 +303,18 @@ router.delete("/:id", async (req, res) => {
       "UPDATE solicitudes_logistica SET estado = 'ELIMINADO', fecha_actualizacion = NOW() WHERE id = $1",
       [req.params.id],
     );
-
     await client.query(
       "INSERT INTO historial_logistica (solicitud_id, accion, usuario, detalle) VALUES ($1, 'ELIMINADO', $2, 'Solicitud movida a papelera')",
       [req.params.id, usuario || "Admin"],
     );
 
     await client.query("COMMIT");
-
-    // 🔥 LLAMADA AL BOT CORREGIDA
     enviarNotificacionLogistica("CAMBIO_ESTADO", {
       id: req.params.id,
       producto: nombreProducto,
       estado: "ELIMINADO",
       usuario,
     });
-
     res.json({ message: "Eliminado lógicamente" });
   } catch (err) {
     await client.query("ROLLBACK");

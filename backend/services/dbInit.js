@@ -320,18 +320,27 @@ async function inicializarTablas() {
 
     // --- 13. SOLICITUDES LOGÍSTICA ---
     await client.query(`
-      CREATE TABLE IF NOT EXISTS solicitudes_logistica (
-        id SERIAL PRIMARY KEY,
-        producto VARCHAR(255) NOT NULL,
-        cantidad INT NOT NULL,
-        prioridad VARCHAR(50) DEFAULT 'MEDIA',
-        estado VARCHAR(50) DEFAULT 'PENDIENTE',
-        solicitante VARCHAR(100),
-        notas TEXT,
-        fecha_creacion TIMESTAMP DEFAULT NOW(),
-        fecha_actualizacion TIMESTAMP DEFAULT NOW()
+  CREATE TABLE IF NOT EXISTS solicitudes_logistica (
+    id SERIAL PRIMARY KEY,
+    producto VARCHAR(255) NOT NULL,
+    cantidad INT NOT NULL,
+    prioridad VARCHAR(50) DEFAULT 'MEDIA',
+    estado VARCHAR(50) DEFAULT 'PENDIENTE',
+    solicitante VARCHAR(100),
+    notas TEXT,
+    fecha_creacion TIMESTAMP DEFAULT NOW(),
+    fecha_actualizacion TIMESTAMP DEFAULT NOW()
+  );
+`);
+
+    // MIGRACIÓN: Asegurar la nueva columna fecha_preparado
+    try {
+      await client.query(
+        `ALTER TABLE solicitudes_logistica ADD COLUMN IF NOT EXISTS fecha_preparado TIMESTAMP;`,
       );
-    `);
+    } catch (e) {
+      console.warn("Nota al migrar solicitudes_logistica:", e.message);
+    }
 
     // --- 14. LOGÍSTICA HISTORIAL Y COMENTARIOS ---
     await client.query(`

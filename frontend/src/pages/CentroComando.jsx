@@ -798,9 +798,9 @@ export default function CentroComando() {
                     </p>
                   </div>
                 ) : (
-                  data.pedidosCriticos.map((p) => (
+                  data.pedidosCriticos.map((p, idx) => (
                     <div
-                      key={p.op}
+                      key={`${p.op}_${idx}`}
                       className="bg-rose-50/20 border border-rose-100 rounded-xl p-3 flex justify-between items-center hover:bg-rose-50/50 transition-all"
                     >
                       <div className="min-w-0 pr-4">
@@ -855,7 +855,7 @@ export default function CentroComando() {
                     );
                     return (
                       <div
-                        key={item.id}
+                        key={id}
                         className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex flex-col hover:bg-white hover:shadow-sm transition-all"
                       >
                         <div className="flex justify-between items-start mb-3">
