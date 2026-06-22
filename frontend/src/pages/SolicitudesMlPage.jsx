@@ -213,9 +213,9 @@ export default function SolicitudesMlPage() {
       }
     } catch (err) {
       console.error(err);
-      toast.error("Fallo al enlazar el servicio de notificaciones.", {
-        id: toastId,
-      });
+      // 🔥 CAMBIO TEMPORAL: Ver el error real en pantalla
+      const mensajeError = err?.message || JSON.stringify(err) || String(err);
+      toast.error(`Fallo: ${mensajeError}`, { id: toastId, duration: 6000 });
     }
   };
 
