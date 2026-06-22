@@ -6,9 +6,11 @@ const webpush = require("web-push"); // 🔥 NUEVO: Importar librería push
 // 🔥 CONFIGURACIÓN DE LLAVES VAPID (Reemplaza con tus llaves reales o usa variables de entorno)
 // Puedes generarlas una vez en la consola con: npx web-push generate-vapid-keys
 const publicVapidKey =
-  process.env.PUBLIC_VAPID_KEY || "BFsgiKUGqpfGkqvdW1ygK_2qit9YB1YHO-k0RcYGrTBBv1VZjrxlcPb47c3wP7CulkDfZz2Vz1UlnsJT6PvhZCw";
+  process.env.PUBLIC_VAPID_KEY ||
+  "BFsgiKUGqpfGkqvdW1ygK_2qit9YB1YHO-k0RcYGrTBBv1VZjrxlcPb47c3wP7CulkDfZz2Vz1UlnsJT6PvhZCw";
 const privateVapidKey =
-  process.env.PRIVATE_VAPID_KEY || "ZTp9uydVExTkpGAmitq0JJ9Mr3LS3z_UW7fItJ_pMoI";
+  process.env.PRIVATE_VAPID_KEY ||
+  "ZTp9uydVExTkpGAmitq0JJ9Mr3LS3z_UW7fItJ_pMoI";
 
 webpush.setVapidDetails(
   "mailto:produccion.a@conoflex.com.ar",
@@ -106,8 +108,14 @@ router.post("/", async (req, res) => {
       });
 
       subsRes.rows.forEach((sub) => {
-        webpush.sendNotification(sub.suscripcion_json, payload).catch((err) => {
-          // Si el token del celular caducó (status 410 o 404), lo removemos automáticamente para limpiar la base de datos
+        // 🚀 REPARACIÓN CLAVE: Si viene como string de texto, lo parseamos a Objeto JS
+        const suscripcionObjeto =
+          typeof sub.suscripcion_json === "string"
+            ? JSON.parse(sub.suscripcion_json)
+            : sub.suscripcion_json;
+
+        webpush.sendNotification(suscripcionObjeto, payload).catch((err) => {
+          // Si el token del celular caducó (status 410 o 404), lo removemos automáticamente
           if (err.statusCode === 410 || err.statusCode === 404) {
             db.query("DELETE FROM web_push_suscripciones WHERE id = $1", [
               sub.id,
