@@ -54,8 +54,6 @@ const formatearFechaHora = (fechaIso) => {
 
 const calcularDiasPreparado = (req) => {
   if (!req || req.estado !== "PREPARADO") return "-";
-
-  // 🔥 SOLUCIÓN: Eliminado fecha_actualizacion para evitar reseteos por entregas parciales
   const fechaOrigen = req.fecha_preparado || req.fecha_creacion;
   if (!fechaOrigen) return "-";
   try {
@@ -103,7 +101,6 @@ const LogisticaRow = ({
   req,
   canDelete,
   currentUser,
-  esJefeLogistica,
   onOpenDetail,
   onStatusChange,
   onDelete,
@@ -126,7 +123,6 @@ const LogisticaRow = ({
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.98 }}
-      /* 🔥 SOLUCIÓN: z-50 dinámico y overflow-visible garantizan superposición limpia sobre las filas de abajo */
       className={`relative bg-white rounded-2xl md:rounded-none p-5 md:p-0 border border-stone-100 md:border-b md:border-stone-200/50 shadow-sm md:shadow-none hover:bg-stone-50/60 transition-all duration-200 w-full overflow-visible ${isOpen ? "z-50" : "z-10"}`}
     >
       {/* Indicador de Estado Lateral Izquierdo (Móvil) */}
@@ -142,7 +138,7 @@ const LogisticaRow = ({
         <div className="flex justify-between items-start mb-3">
           <div className="flex gap-2 items-center">
             <span
-              className={`px-2 py-0.5 rounded text-[9px] font-semibold tracking-wide border ${priorityStyles[req.prioridad]}`}
+              className={`px-2 py-0.5 rounded text-[9px] font-black tracking-wide border ${priorityStyles[req.prioridad]}`}
             >
               {req.prioridad}
             </span>
@@ -151,13 +147,13 @@ const LogisticaRow = ({
             </span>
           </div>
           <span
-            className={`px-2 py-0.5 rounded text-[9px] font-semibold border ${getStatusColorTable(req.estado)}`}
+            className={`px-2 py-0.5 rounded text-[9px] font-black border ${getStatusColorTable(req.estado)}`}
           >
             {req.estado}
           </span>
         </div>
 
-        <h3 className="text-xs font-semibold text-slate-800 mb-1 leading-tight">
+        <h3 className="text-xs font-black text-slate-800 mb-1 leading-tight">
           {req.producto}
         </h3>
         <p className="text-[10px] font-bold text-stone-400 mb-4 flex items-center gap-1">
@@ -185,7 +181,7 @@ const LogisticaRow = ({
             <p className="text-[8px] font-bold text-stone-400 uppercase">
               Por Ent.
             </p>
-            <p className="text-xs font-semibold text-rose-600">{porEntregar} u.</p>
+            <p className="text-xs font-black text-rose-600">{porEntregar} u.</p>
           </div>
           <div>
             <p className="text-[8px] font-bold text-stone-400 uppercase">
@@ -221,7 +217,7 @@ const LogisticaRow = ({
             {formatearFechaHora(req.fecha_creacion)} hs
           </span>
           <span
-            className={`px-2 py-0.5 rounded text-[8px] font-semibold tracking-wide border w-fit shrink-0 ${priorityStyles[req.prioridad] || priorityStyles.MEDIA}`}
+            className={`px-2 py-0.5 rounded text-[8px] font-black tracking-wide border w-fit shrink-0 ${priorityStyles[req.prioridad] || priorityStyles.MEDIA}`}
           >
             {req.prioridad}
           </span>
@@ -248,11 +244,11 @@ const LogisticaRow = ({
         <div className="col-span-1 text-right font-extrabold text-emerald-600 pr-2">
           {req.entregado || 0} u.
         </div>
-        <div className="col-span-1 text-right font-semibold text-rose-600 pr-2">
+        <div className="col-span-1 text-right font-black text-rose-600 pr-2">
           {porEntregar} u.
         </div>
 
-        {/* Días Prepared */}
+        {/* Días Preparado */}
         <div className="col-span-1 text-right font-bold text-indigo-500 pr-2 truncate">
           {calcularDiasPreparado(req)}
         </div>
@@ -260,7 +256,7 @@ const LogisticaRow = ({
         {/* Estado */}
         <div className="col-span-1 text-center">
           <span
-            className={`px-2 py-0.5 rounded-md text-[9px] font-semibold tracking-wide border inline-block w-fit ${getStatusColorTable(req.estado)}`}
+            className={`px-2 py-0.5 rounded-md text-[9px] font-black tracking-wide border inline-block w-fit ${getStatusColorTable(req.estado)}`}
           >
             {req.estado}
           </span>
@@ -321,18 +317,32 @@ const LogisticaRow = ({
                   <FaEdit size={13} /> Editar Solicitud
                 </button>
               )}
-              {esJefeLogistica && (
+
+              <button
+                onClick={() => {
+                  onEntregaClick(req);
+                  setOpenMenuId(null);
+                }}
+                className="w-full text-left px-4 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-2 cursor-pointer"
+              >
+                <FaClipboardCheck size={13} /> Registrar Entrega
+              </button>
+
+              {/* 🚀 NUEVA ACCIÓN PÚBLICA: MARCAR COMO COMPLETADO */}
+              {req.estado !== "ENTREGADO" && (
                 <button
-                  onClick={() => {
-                    onEntregaClick(req);
+                  onClick={(e) => {
+                    onStatusChange(e, req.id, "ENTREGADO");
                     setOpenMenuId(null);
                   }}
-                  className="w-full text-left px-4 py-2 text-xs font-bold text-blue-600 hover:bg-blue-50 flex items-center gap-2 cursor-pointer"
+                  className="w-full text-left px-4 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-2 cursor-pointer"
                 >
-                  <FaClipboardCheck size={13} /> Registrar Entrega
+                  <FaCheckDouble size={13} /> Marcar Completado
                 </button>
               )}
+
               <div className="h-px bg-stone-100 my-1" />
+
               {req.estado === "PENDIENTE" && (
                 <button
                   onClick={(e) => onStatusChange(e, req.id, "APROBADO")}
@@ -421,12 +431,6 @@ export default function LogisticaPage() {
     currentUser = "Mauro";
 
   const canDelete =
-    ["GERENCIA", "JEFE PRODUCCION", "JEFE PRODUCCIÓN"].includes(
-      rolNormalizado,
-    ) ||
-    rolNormalizado.includes("GERENCIA") ||
-    rolNormalizado.includes("PRODUCCION");
-  const esJefeLogistica =
     ["GERENCIA", "JEFE PRODUCCION", "JEFE PRODUCCIÓN"].includes(
       rolNormalizado,
     ) ||
@@ -655,10 +659,10 @@ export default function LogisticaPage() {
             <FaTruck size={20} />
           </div>
           <div>
-            <h1 className="text-xl md:text-2xl font-semibold text-slate-800 tracking-tight leading-none mb-1">
+            <h1 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight leading-none mb-1">
               Logística Interna
             </h1>
-            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest">
+            <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">
               Panel de Movimientos Activos en Planta
             </p>
           </div>
@@ -699,7 +703,6 @@ export default function LogisticaPage() {
       </div>
 
       {/* CONTENEDOR DE TABLA CONTINUO */}
-      {/* 🔥 SOLUCIÓN: overflow-visible habilitado para que los menús flotantes se desplieguen sin recortes */}
       <div className="bg-white border border-stone-100 rounded-3xl overflow-visible shadow-sm flex flex-col h-auto shrink-0">
         {loading ? (
           <div className="p-16 flex items-center justify-center">
@@ -715,7 +718,7 @@ export default function LogisticaPage() {
         ) : (
           <div className="w-full flex flex-col">
             {/* Encabezado Superior con Grid Sincronizado */}
-            <div className="hidden md:grid grid-cols-12 items-center gap-2 px-6 py-2.5 text-[9px] font-semibold uppercase tracking-widest text-stone-400 border-b border-stone-100 bg-stone-50/70 rounded-t-3xl">
+            <div className="hidden md:grid grid-cols-12 items-center gap-2 px-6 py-2.5 text-[9px] font-black uppercase tracking-widest text-stone-400 border-b border-stone-100 bg-stone-50/70 rounded-t-3xl">
               <div className="col-span-2">Fecha / Prioridad</div>
               <div className="col-span-3">Artículo / Solicitante</div>
               <div className="col-span-1 text-right pr-2">Solicitado</div>
@@ -736,7 +739,6 @@ export default function LogisticaPage() {
                     req={req}
                     canDelete={canDelete}
                     currentUser={currentUser}
-                    esJefeLogistica={esJefeLogistica}
                     onOpenDetail={openDetailModal}
                     onDelete={handleDelete}
                     onStatusChange={handleStatusChange}
@@ -895,7 +897,7 @@ export default function LogisticaPage() {
               exit={{ scale: 0.96, opacity: 0 }}
               className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl p-6 border border-stone-100"
             >
-              <h3 className="text-sm font-semibold text-slate-800 mb-2">
+              <h3 className="text-sm font-black text-slate-800 mb-2">
                 Despacho / Entrega Logística
               </h3>
               <p className="text-[11px] font-semibold text-stone-400 leading-relaxed mb-4">
@@ -905,7 +907,7 @@ export default function LogisticaPage() {
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="text-[9px] font-semibold uppercase text-stone-400 block mb-1">
+                  <label className="text-[9px] font-black uppercase text-stone-400 block mb-1">
                     Unidades Totales Entregadas
                   </label>
                   <input
@@ -929,7 +931,7 @@ export default function LogisticaPage() {
                     type="button"
                     disabled={submitting}
                     onClick={ejecutarEntregaUnitario}
-                    className="flex-1 bg-emerald-500 text-white font-semibold text-xs py-3 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                    className="flex-1 bg-emerald-500 text-white font-black text-xs py-3 rounded-xl shadow-md flex items-center justify-center gap-2 cursor-pointer"
                   >
                     {submitting ? (
                       <FaSpinner className="animate-spin" />

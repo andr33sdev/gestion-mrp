@@ -15,6 +15,7 @@ import {
   FaEllipsisV,
   FaEdit,
   FaSpinner,
+  FaBell, // 🔥 NUEVO: Icono para activar notificaciones push
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
@@ -22,19 +23,30 @@ import { API_BASE_URL, authFetch } from "../utils";
 import { getAuthData } from "../auth/authHelper";
 import Loader from "../components/Loader";
 
-// --- HELPER DE FECHAS SEGURO (CON DESFASE INMUTABLE DE 3 HORAS Y RELOJ DE 24 HS) ---
+// =========================================================================
+// --- HELPERS GLOBALES ---
+// =========================================================================
+
+// Helper para convertir la clave pública VAPID de Base64 a Uint8Array para el navegador
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 const formatearFechaHoraML = (fechaIso) => {
   if (!fechaIso) return "-";
   try {
-    // Reemplazamos el espacio por la T para estandarizar el parseo nativo en navegadores
     const normalized = fechaIso.replace(" ", "T");
     const d = new Date(normalized);
-
-    // Restamos exactamente las 3 horas de diferencia entre el servidor UTC y la hora de Conoflex
     const corr3Horas = 3 * 60 * 60 * 1000;
     const fechaCorregida = new Date(d.getTime() - corr3Horas);
 
-    // Extraemos los componentes de forma manual para evitar que el navegador aplique sus propias reglas
     const dia = String(fechaCorregida.getDate()).padStart(2, "0");
     const mes = String(fechaCorregida.getMonth() + 1).padStart(2, "0");
     const anio = String(fechaCorregida.getFullYear()).slice(-2);
@@ -141,6 +153,70 @@ export default function SolicitudesMlPage() {
     setActiveTab(tab);
     setCurrentPage(1);
     setOpenMenuId(null);
+  };
+
+  // 🔥 NUEVO: Función para suscribir el navegador/celular actual a las Alertas Push Web
+  const suscribirNotificacionesPush = async () => {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return toast.error(
+        "Este dispositivo o navegador no soporta alertas push nativas.",
+      );
+    }
+
+    const toastId = toast.loading("Sincronizando dispositivo...");
+    try {
+      // 1. Asegurar el registro del Service Worker en la raíz pública
+      const registration = await navigator.serviceWorker.register("/sw.js");
+
+      // 2. Solicitar los permisos nativos al sistema operativo móvil/escritorio
+      const permiso = await Notification.requestPermission();
+      if (permiso !== "granted") {
+        return toast.error("Permiso denegado por el usuario o sistema.", {
+          id: toastId,
+        });
+      }
+
+      // 3. RECUERDA GENERAR UNA LLAVE REAL CON: npx web-push generate-vapid-keys
+      // Coloca la clave generada aquí (debe empezar con la letra B)
+      const publicVapidKey =
+        import.meta.env.VITE_PUBLIC_VAPID_KEY ||
+        "BACda5YCAJNetpy6KCdj6n4ghujb0C4Nk4mCytZsHZndZkUWN6Zf4fjR6awrUPoNEK_Irw0-_v8lKCKU6i28QaQ";
+
+      if (publicVapidKey.startsWith("REPLACE_")) {
+        return toast.error(
+          "Debes generar y configurar tu clave VAPID pública real primero.",
+          { id: toastId },
+        );
+      }
+
+      // 4. Forzar la subscripción push criptográfica del dispositivo
+      const suscripcion = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicVapidKey),
+      });
+
+      // 5. Almacenar el canal push en la tabla de la Base de Datos
+      const res = await authFetch(`${API_BASE_URL}/solicitudes-ml/suscribir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suscripcion, usuario: currentUser }),
+      });
+
+      if (res.ok) {
+        toast.success("¡Alertas Push activadas en este dispositivo!", {
+          id: toastId,
+        });
+      } else {
+        toast.error("Error al registrar canal en el servidor.", {
+          id: toastId,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Fallo al enlazar el servicio de notificaciones.", {
+        id: toastId,
+      });
+    }
   };
 
   // --- CRUD HANDLERS ---
@@ -304,18 +380,30 @@ export default function SolicitudesMlPage() {
           </div>
         </div>
 
-        {(!isExpedicion ||
-          ["GERENCIA", "JEFE PRODUCCION"].includes(rolNormalizado)) && (
+        <div className="flex items-center gap-3 w-full sm:w-auto">
+          {/* 🔥 Botón para enlazar alertas Push nativas del celular o escritorio actual */}
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsNewModalOpen(true);
-            }}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-3.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+            onClick={suscribirNotificacionesPush}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-stone-100 hover:bg-stone-200 text-stone-600 border border-stone-200 font-bold text-xs px-5 py-3.5 rounded-xl shadow-sm transition-all active:scale-95 cursor-pointer"
+            title="Activar notificaciones push en este dispositivo"
           >
-            <FaPlus size={10} /> CREAR SOLICITUD
+            <FaBell className="text-amber-500 animate-pulse" size={12} />{" "}
+            ACTIVAR ALERTAS
           </button>
-        )}
+
+          {(!isExpedicion ||
+            ["GERENCIA", "JEFE PRODUCCION"].includes(rolNormalizado)) && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsNewModalOpen(true);
+              }}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-5 py-3.5 rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+            >
+              <FaPlus size={10} /> CREAR SOLICITUD
+            </button>
+          )}
+        </div>
       </header>
 
       {/* PESTAÑAS DE CONTROL */}
